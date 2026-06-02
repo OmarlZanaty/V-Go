@@ -55,7 +55,9 @@ dependencies:
   url_launcher: ^6.3.2
   uuid: ^4.5.1
   wakelock_plus: ^1.2.8
-  webview_flutter: ^4.13.0
+  # PayMob card form: flutter_inappwebview handles Android keyboard/field focus
+  # correctly (webview_flutter jumps focus name->expiry on the card form).
+  flutter_inappwebview: ^6.1.5
 
 dev_dependencies:
   build_runner: ^2.4.6

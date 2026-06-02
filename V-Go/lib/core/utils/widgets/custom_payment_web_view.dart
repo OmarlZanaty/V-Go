@@ -1,13 +1,15 @@
 import 'dart:developer';
 
 import 'package:flutter/material.dart';
-import 'package:webview_flutter/webview_flutter.dart';
+import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 
 import '../../helpers/extensions.dart';
-import '../../theming/app_colors.dart';
 import 'custom_app_bar.dart';
 import 'custom_toastification.dart';
 
+/// PayMob checkout. Uses flutter_inappwebview because webview_flutter mishandles
+/// text-field focus on the card form (the cardholder-name field jumps to expiry
+/// and can't be typed into) on Android.
 class CustomPaymentWebView extends StatefulWidget {
   const CustomPaymentWebView({required this.url, super.key});
   final String url;
@@ -17,48 +19,46 @@ class CustomPaymentWebView extends StatefulWidget {
 }
 
 class CustomPaymentWebViewState extends State<CustomPaymentWebView> {
-  late WebViewController _controller;
+  bool _handled = false;
 
-  @override
-  void initState() {
-    super.initState();
-    _controller = WebViewController()
-      ..setJavaScriptMode(JavaScriptMode.unrestricted)
-      ..setBackgroundColor(AppColors.black)
-      ..setNavigationDelegate(
-        NavigationDelegate(
-          onProgress: (int progress) {
-            // Update loading bar.
-          },
-          onPageStarted: (String url) {},
-          onPageFinished: (String url) {},
-          onWebResourceError: (WebResourceError error) {},
-          onNavigationRequest: (NavigationRequest request) {
-            log(request.url);
-            if (request.url.contains("success=true") &&
-                request.url.startsWith(
-                  'https://accept.paymobsolutions.com/api/acceptance',
-                )) {
-              successToast(context, 'عملية دفع ناجحة', 'تم دفع الرحلة بنجاح');
-              context.pop();
-
-              return NavigationDecision.navigate;
-            } else if (request.url.contains("success=false")) {
-              errorToast(context, 'حدث خطأ', 'فشلت عملية الدفع');
-              return NavigationDecision.navigate;
-            }
-            return NavigationDecision.navigate;
-          },
-        ),
-      )
-      ..loadRequest(Uri.parse(widget.url));
+  /// Inspect a URL for PayMob's success/failure callback and react once.
+  void _checkResult(String url) {
+    if (_handled) return;
+    if (url.contains('success=true')) {
+      _handled = true;
+      successToast(context, 'عملية دفع ناجحة', 'تم دفع الرحلة بنجاح');
+      context.pop();
+    } else if (url.contains('success=false')) {
+      _handled = true;
+      errorToast(context, 'حدث خطأ', 'فشلت عملية الدفع');
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: customAppBar(title: 'صفحة الدفع', showLogo: true),
-      body: WebViewWidget(controller: _controller),
+      body: SafeArea(
+        child: InAppWebView(
+          initialUrlRequest: URLRequest(url: WebUri(widget.url)),
+          // JS, DOM storage and hybrid composition are on by default in
+          // flutter_inappwebview; hybrid composition is what fixes the card
+          // form's keyboard/focus handling on Android.
+          initialSettings: InAppWebViewSettings(
+            useWideViewPort: true,
+            transparentBackground: true,
+          ),
+          onLoadStop: (controller, url) {
+            if (url != null) _checkResult(url.toString());
+          },
+          onUpdateVisitedHistory: (controller, url, _) {
+            if (url != null) _checkResult(url.toString());
+          },
+          onReceivedError: (controller, request, error) {
+            log('Payment webview error: ${error.description}');
+          },
+        ),
+      ),
     );
   }
 }
