@@ -359,6 +359,26 @@ builder.Logging.AddSerilog();
 
 var app = builder.Build();
 
+#region Database Migration
+
+// Apply any pending EF Core migrations on startup so a fresh Cloud SQL database
+// is provisioned automatically on first boot.
+using (var scope = app.Services.CreateScope())
+{
+    try
+    {
+        var db = scope.ServiceProvider.GetRequiredService<Context>();
+        db.Database.Migrate();
+        Log.Information("Database migrations applied successfully");
+    }
+    catch (Exception ex)
+    {
+        Log.Error(ex, "Database migration failed on startup");
+    }
+}
+
+#endregion
+
 #region Middleware
 
 //if (app.Environment.IsDevelopment())
