@@ -81,12 +81,12 @@ namespace Masafet_Elseka.Infrastructure.Services.PaymentService
                     amount = request.Price * 100,
                     currency = request.Currency,
                     merchant_order_id = payment.Id,
-                    payment_methods = new[] { "cardintegrationliveid", "walletintegrationliveid" },
-
-                    #region for Test
-                    // ---> test credentials (used on development)
-                    //payment_methods = new[] { "cardintegrationid", "walletintegrationid" }, 
-                    #endregion
+                    // Integration IDs come from config (Paymob:CardIntegrationId / WalletIntegrationId).
+                    payment_methods = new[]
+                    {
+                        int.Parse(_configuration["Paymob:CardIntegrationId"] ?? "0"),
+                        int.Parse(_configuration["Paymob:WalletIntegrationId"] ?? "0")
+                    },
 
                     //card_tokens = savedCards.Any() ? savedCards : null,
                     billing_data = new
