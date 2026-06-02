@@ -9,11 +9,8 @@ import '../../features/auth/presentation/views/new_password_view.dart';
 import '../../features/auth/presentation/views/otp_view.dart';
 import '../../features/auth/presentation/views/register_view.dart';
 import '../../features/auth/presentation/views/reset_password_view.dart';
-import '../../features/home/presentation/logic/cubit/captain_home_cubit.dart';
-import '../../features/home/presentation/views/captain_home_view.dart';
+import '../../features/shell/presentation/views/captain_shell_view.dart';
 import '../di/di.dart';
-import '../services/location_service.dart';
-import '../services/realtime_service.dart';
 import '../utils/app_constants.dart';
 import 'routes.dart';
 
@@ -61,15 +58,7 @@ class AppRouter {
         return _page(_auth(const ChangePasswordView()));
 
       case Routes.captainHomeViewRoute:
-        return _page(
-          BlocProvider(
-            create: (_) => CaptainHomeCubit(
-              getIt<RealtimeService>(),
-              getIt<LocationService>(),
-            ),
-            child: const CaptainHomeView(),
-          ),
-        );
+        return _page(const CaptainShellView());
 
       default:
         return _page(
