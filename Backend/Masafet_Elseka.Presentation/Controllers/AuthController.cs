@@ -12,6 +12,8 @@ using Masafet_Elseka.Infrastructure.ExternalService.GoogleAuth.HTMLResponseServi
 using Masafet_Elseka.Infrastructure.ExternalService.GoogleAuth.Models;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
+using Serilog;
 using System.ComponentModel.DataAnnotations;
 
 namespace Masafet_Elseka.Presentation.Controllers
@@ -19,6 +21,7 @@ namespace Masafet_Elseka.Presentation.Controllers
 
     [Route("api/[controller]")]
     [ApiController]
+    [EnableRateLimiting("auth")]
     public class AuthController : ControllerBase
     {
         private readonly IAuthService _authService;
@@ -225,11 +228,11 @@ namespace Masafet_Elseka.Presentation.Controllers
         #region Google Web Auth
 
         [HttpGet("google-login")]
-        public IActionResult GoogleLogin()
+        public async Task<IActionResult> GoogleLogin()
         {
             try
             {
-                var googleAuthUrl = _googleAuthService.GetGoogleAuthUrl_Web().Result;
+                var googleAuthUrl = await _googleAuthService.GetGoogleAuthUrl_Web();
                 return Ok(new
                 {
                     authUrl = googleAuthUrl,
@@ -237,7 +240,8 @@ namespace Masafet_Elseka.Presentation.Controllers
             }
             catch (Exception ex)
             {
-                return StatusCode(500, new { message = ex.Message });
+                Log.Error(ex, "GoogleLogin error");
+                return StatusCode(500, new { message = "حدث خطأ في الخادم. يرجى المحاولة لاحقًا." });
             }
         }
 
@@ -272,7 +276,8 @@ namespace Masafet_Elseka.Presentation.Controllers
             }
             catch (Exception ex)
             {
-                return StatusCode(500, new { message = $"Server error: {ex.Message}" });
+                Log.Error(ex, "GoogleCallback error");
+                return StatusCode(500, new { message = "حدث خطأ في الخادم. يرجى المحاولة لاحقًا." });
             }
         } 
         #endregion

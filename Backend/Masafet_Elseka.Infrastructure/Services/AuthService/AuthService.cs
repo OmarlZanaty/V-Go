@@ -22,6 +22,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;
+using Serilog;
 using System;
 using System.Collections.Generic;
 using System.IdentityModel.Tokens.Jwt;
@@ -156,7 +157,8 @@ namespace Masafet_Elseka.Infrastructure.Services.AuthService
                     await transaction.RollbackAsync();
                 }
 
-                return Response<string>.Failure($"حدث خطأ في الخادم: {ex.Message}", 500);
+                Log.Error(ex, "AuthService error");
+                return Response<string>.Failure("حدث خطأ في الخادم. يرجى المحاولة لاحقًا.", 500);
             }
         }
 
@@ -223,7 +225,8 @@ namespace Masafet_Elseka.Infrastructure.Services.AuthService
             }
             catch (Exception ex)
             {
-                return Response<LoginResponseDTO>.Failure($"حدث خطأ في الخادم. يرجى المحاولة لاحقًا. {ex.Message}", 500);
+                Log.Error(ex, "AuthService error");
+                return Response<LoginResponseDTO>.Failure("حدث خطأ في الخادم. يرجى المحاولة لاحقًا.", 500);
             }
         }
 
@@ -254,12 +257,15 @@ namespace Masafet_Elseka.Infrastructure.Services.AuthService
                 else
                 {
                     await _cacheService.RemoveDataAsync($"OTP_ResetPassword_{email}");
+                    // Mark that this email passed OTP verification so ResetPassword can trust it.
+                    _cacheService.SetData($"OTP_ResetVerified_{email}", true, TimeSpan.FromMinutes(10));
                     return Response<string>.Success("تم تأكيد رمز التحقق بنجاح", "تم تأكيد رمز التحقق بنجاح", 200);
                 }
             }
             catch (Exception ex)
             {
-                return Response<string>.Failure($"حدث خطأ في الخادم. يرجى المحاولة لاحقًا. {ex.Message}", 500);
+                Log.Error(ex, "AuthService error");
+                return Response<string>.Failure("حدث خطأ في الخادم. يرجى المحاولة لاحقًا.", 500);
             }
 
         }
@@ -312,7 +318,8 @@ namespace Masafet_Elseka.Infrastructure.Services.AuthService
             }
             catch (Exception ex)
             {
-                return Response<string>.Failure($"حدث خطأ في الخادم. يرجى المحاولة لاحقًا. {ex.Message}", 500);
+                Log.Error(ex, "AuthService error");
+                return Response<string>.Failure("حدث خطأ في الخادم. يرجى المحاولة لاحقًا.", 500);
             }
         }
 
@@ -342,7 +349,8 @@ namespace Masafet_Elseka.Infrastructure.Services.AuthService
             }
             catch (Exception ex)
             {
-                return Response<string>.Failure($"حدث خطأ في الخادم. يرجى المحاولة لاحقًا. {ex.Message}", 500);
+                Log.Error(ex, "AuthService error");
+                return Response<string>.Failure("حدث خطأ في الخادم. يرجى المحاولة لاحقًا.", 500);
             }
         }
 
@@ -366,7 +374,8 @@ namespace Masafet_Elseka.Infrastructure.Services.AuthService
             }
             catch (Exception ex)
             {
-                return Response<string>.Failure($"حدث خطأ في الخادم. يرجى المحاولة لاحقًا. {ex.Message}", 500);
+                Log.Error(ex, "AuthService error");
+                return Response<string>.Failure("حدث خطأ في الخادم. يرجى المحاولة لاحقًا.", 500);
             }
         }
 
@@ -379,6 +388,14 @@ namespace Masafet_Elseka.Infrastructure.Services.AuthService
                 {
                     return Response<string>.Failure("المستخدم غير موجود", 404);
                 }
+
+                // Require that the OTP was actually verified for this email before allowing reset.
+                var verified = _cacheService.GetData<bool>($"OTP_ResetVerified_{model.Email}");
+                if (!verified)
+                {
+                    return Response<string>.Failure("لم يتم التحقق من رمز التحقق. يرجى تأكيد الرمز أولاً.", 403);
+                }
+
                 var removeResult = await _userManager.RemovePasswordAsync(user);
                 if (!removeResult.Succeeded)
                 {
@@ -391,11 +408,15 @@ namespace Masafet_Elseka.Infrastructure.Services.AuthService
                     return Response<string>.Failure("حدث خطأ اثناء تغيير كلمة المرور", "حدث خطأ اثناء تغيير كلمة المرور", 400);
                 }
 
+                // Consume the verification flag so it can't be replayed.
+                await _cacheService.RemoveDataAsync($"OTP_ResetVerified_{model.Email}");
+
                 return Response<string>.Success("تم تغيير كلمة المرور بنجاح", "تم تغيير كلمة المرور بنجاح", 200);
             }
             catch (Exception ex)
             {
-                return Response<string>.Failure($"حدث خطأ في الخادم. يرجى المحاولة لاحقًا. {ex.Message}", 500);
+                Log.Error(ex, "AuthService error");
+                return Response<string>.Failure("حدث خطأ في الخادم. يرجى المحاولة لاحقًا.", 500);
             }
         }
 
@@ -421,7 +442,8 @@ namespace Masafet_Elseka.Infrastructure.Services.AuthService
             }
             catch (Exception ex)
             {
-                return Response<bool>.Failure($"فشل في إرسال رمز التحقق. السبب: {ex.Message}", 500);
+                Log.Error(ex, "AuthService error");
+                return Response<bool>.Failure("فشل في إرسال رمز التحقق. يرجى المحاولة لاحقًا.", 500);
             }
         }
 
@@ -455,7 +477,8 @@ namespace Masafet_Elseka.Infrastructure.Services.AuthService
             }
             catch (Exception ex)
             {
-                return Response<object>.Failure($"حدث خطأ في الخادم. يرجى المحاولة لاحقًا. {ex.Message}", 500);
+                Log.Error(ex, "AuthService error");
+                return Response<object>.Failure("حدث خطأ في الخادم. يرجى المحاولة لاحقًا.", 500);
             }
         }
 
@@ -504,7 +527,8 @@ namespace Masafet_Elseka.Infrastructure.Services.AuthService
             }
             catch (Exception ex)
             {
-                return Response<string>.Failure($"حدث خطأ في الخادم. يرجى المحاولة لاحقًا. {ex.Message}", 500);
+                Log.Error(ex, "AuthService error");
+                return Response<string>.Failure("حدث خطأ في الخادم. يرجى المحاولة لاحقًا.", 500);
             }
         }
 
@@ -535,7 +559,7 @@ namespace Masafet_Elseka.Infrastructure.Services.AuthService
             }
             catch (Exception ex)
             {
-                var exp = ex.Message;
+                Log.Error(ex, "AuthService error creating driver user");
                 return null;
             }
         }

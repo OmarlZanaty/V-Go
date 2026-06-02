@@ -13,6 +13,8 @@ using Masafet_Elseka.Application.ExternalInterfaces;
 using Masafet_Elseka.Application.Interfaces;
 using Masafet_Elseka.Infrastructure.Services;
 using Microsoft.AspNetCore.HttpOverrides;
+using Microsoft.AspNetCore.RateLimiting;
+using System.Threading.RateLimiting;
 using Masafet_Elseka.Application.ExternalInterfaces.ICachService;
 using Masafet_Elseka.Application.ExternalInterfaces.ICloudinaryService;
 using Masafet_Elseka.Application.ExternalInterfaces.IFirebaseNotificationService;
@@ -142,7 +144,8 @@ builder.Services.AddScoped<IMailService, MailService>();
 
 builder.Services.AddSignalR(options =>
 {
-    options.EnableDetailedErrors = true;
+    // Detailed errors only in Development to avoid leaking internals to clients.
+    options.EnableDetailedErrors = builder.Environment.IsDevelopment();
 
     // Prevent disconnect
     options.KeepAliveInterval = TimeSpan.FromSeconds(15);
@@ -209,7 +212,8 @@ builder.Services.AddAuthentication(options =>
 .AddJwtBearer(options =>
 {
     options.SaveToken = true;
-    options.RequireHttpsMetadata = false;
+    // Require HTTPS metadata in production; relax only in Development.
+    options.RequireHttpsMetadata = !builder.Environment.IsDevelopment();
 
     options.TokenValidationParameters = new TokenValidationParameters
     {
@@ -265,6 +269,37 @@ FirebaseApp.Create(new AppOptions
 
 #endregion
 
+
+#region Rate Limiting
+
+builder.Services.AddRateLimiter(options =>
+{
+    options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+
+    // Strict limiter for auth/OTP endpoints: 5 requests / minute per client IP.
+    options.AddPolicy("auth", httpContext =>
+        RateLimitPartition.GetFixedWindowLimiter(
+            partitionKey: httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+            factory: _ => new FixedWindowRateLimiterOptions
+            {
+                PermitLimit = 5,
+                Window = TimeSpan.FromMinutes(1),
+                QueueLimit = 0
+            }));
+
+    // Global fallback limiter: 100 requests / minute per client IP.
+    options.GlobalLimiter = PartitionedRateLimiter.Create<HttpContext, string>(httpContext =>
+        RateLimitPartition.GetFixedWindowLimiter(
+            partitionKey: httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+            factory: _ => new FixedWindowRateLimiterOptions
+            {
+                PermitLimit = 100,
+                Window = TimeSpan.FromMinutes(1),
+                QueueLimit = 0
+            }));
+});
+
+#endregion
 
 #region CORS
 
@@ -326,6 +361,7 @@ app.UseRouting();
 app.UseWebSockets();
 
 app.UseCors("Default");
+app.UseRateLimiter();
 app.UseAuthentication();
 app.UseAuthorization();
 

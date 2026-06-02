@@ -46,14 +46,15 @@ namespace Masafet_Elseka.Infrastructure.ExternalService.JWTService
                 claims.Add(new Claim(ClaimTypes.Role, role));
             }
 
-            SecurityKey key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(_configuration["JWT:key"]));
+            var jwtKey = _configuration["JWT:Key"] ?? throw new InvalidOperationException("JWT Key not found in Config");
+            SecurityKey key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtKey));
             SigningCredentials signingCred = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
             var Token = new JwtSecurityToken(
-                issuer: _configuration["JWT:issuer"],
-                audience: _configuration["JWT:audience"],
+                issuer: _configuration["JWT:Issuer"],
+                audience: _configuration["JWT:Audience"],
                 claims: claims,
                 signingCredentials: signingCred,
-                expires: DateTime.Now.ToEgyptTime().AddDays(1)
+                expires: DateTime.UtcNow.AddDays(1)
             );
 
             return Token;
@@ -67,8 +68,8 @@ namespace Masafet_Elseka.Infrastructure.ExternalService.JWTService
                 return Response<NewRefreshTokenDTO>.Failure("هذا المستخدم غير مصرح له، يرجى تسجيل الدخول اولا.", 401);
             }
 
-            var refreshToken = user.RefreshTokens!.Single(t => t.Token == token);
-            if (!refreshToken.IsActive)
+            var refreshToken = user.RefreshTokens?.FirstOrDefault(t => t.Token == token);
+            if (refreshToken == null || !refreshToken.IsActive)
             {
                 return Response<NewRefreshTokenDTO>.Failure(new NewRefreshTokenDTO
                 {
