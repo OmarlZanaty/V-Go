@@ -13,18 +13,32 @@ namespace Masafet_Elseka.Infrastructure.ExternalService.CloudinaryService
 {
     public class CloudinaryService:ICloudinaryService
     {
-        private readonly Cloudinary _cloudinary;
+        private readonly IConfiguration _configuration;
+        private Cloudinary? _cloudinaryInstance;
 
         public CloudinaryService(IConfiguration configuration)
         {
-            var account = new Account
-            {
-                Cloud = configuration["Cloudinary:CloudName"],
-                ApiKey = configuration["Cloudinary:ApiKey"],
-                ApiSecret = configuration["Cloudinary:ApiSecret"]
-            };
+            // Build the Cloudinary client lazily so a missing config doesn't crash
+            // app startup (the client is only needed when an upload is performed).
+            _configuration = configuration;
+        }
 
-            _cloudinary = new Cloudinary(account);
+        private Cloudinary _cloudinary
+        {
+            get
+            {
+                if (_cloudinaryInstance == null)
+                {
+                    var account = new Account
+                    {
+                        Cloud = _configuration["Cloudinary:CloudName"],
+                        ApiKey = _configuration["Cloudinary:ApiKey"],
+                        ApiSecret = _configuration["Cloudinary:ApiSecret"]
+                    };
+                    _cloudinaryInstance = new Cloudinary(account);
+                }
+                return _cloudinaryInstance;
+            }
         }
 
 
