@@ -44,6 +44,9 @@ dependencies:
   dio: ^5.8.0+1
   pretty_dio_logger: ^1.4.0
 
+  # Media
+  image_picker: ^1.1.2
+
   # Storage
   flutter_secure_storage: ^9.2.4
   shared_preferences: ^2.5.3
@@ -71,6 +74,30 @@ dev_dependencies:
   # package. See that file for information about deactivating specific lint
   # rules and activating additional ones.
   flutter_lints: ^6.0.0
+  flutter_native_splash: ^2.4.6
+  flutter_launcher_icons: ^0.14.4
+
+# Native splash screen (matches the rider app).
+flutter_native_splash:
+  color: "#ffffff"
+  color_dark: "#000000"
+  image: assets/images/icon2.png
+  image_dark: assets/images/icon.png
+  android: true
+  ios: false
+  android_12:
+    image: assets/images/icon2.png
+    icon_background_color: "#ffffff"
+    image_dark: assets/images/icon.png
+    icon_background_color_dark: "#000000"
+  web: false
+
+# App launcher icon (matches the rider branding).
+flutter_launcher_icons:
+  android: true
+  ios: false
+  image_path: "assets/images/v-go--icon.png"
+  min_sdk_android: 21
 
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec
@@ -82,6 +109,11 @@ flutter:
   # included with your application, so that you can use the icons in
   # the material Icons class.
   uses-material-design: true
+
+  assets:
+    - assets/images/
+    - assets/sounds/
+    - assets/map_style.json
 
   # To add assets to your application, add an assets section, like this:
   # assets:

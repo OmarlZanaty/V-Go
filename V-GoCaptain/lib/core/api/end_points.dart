@@ -7,6 +7,7 @@ abstract class EndPoint {
 
   // Auth
   static const String login = 'Auth/login';
+  static const String register = 'Auth/register';
   static const String logout = 'Auth/logout';
   static const String confirmOtp = 'Auth/confirmOtp';
   static const String resendOtp = 'Auth/resendotp';

@@ -45,7 +45,7 @@ class _LoginViewState extends State<LoginView> {
       body: SafeArea(
         child: BlocConsumer<AuthCubit, AuthState>(
           listener: (context, state) {
-            if (state is AuthSuccess) {
+            if (state is LoginSuccess) {
               Navigator.of(context).pushNamedAndRemoveUntil(
                 Routes.captainHomeViewRoute,
                 (route) => false,
@@ -72,8 +72,8 @@ class _LoginViewState extends State<LoginView> {
                     mainAxisSize: MainAxisSize.min,
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      Icon(Icons.electric_moped_rounded,
-                          size: 88.r, color: AppColors.primary),
+                      Image.asset('assets/images/v-go-logo.png',
+                          height: 110.h, fit: BoxFit.contain),
                       SizedBox(height: 12.h),
                       Text('V-Go Captain',
                           textAlign: TextAlign.center, style: AppStyle.heading),
@@ -84,8 +84,32 @@ class _LoginViewState extends State<LoginView> {
                       _emailField(),
                       SizedBox(height: 16.h),
                       _passwordField(),
-                      SizedBox(height: 28.h),
+                      Align(
+                        alignment: Alignment.centerLeft,
+                        child: TextButton(
+                          onPressed: () => Navigator.of(context)
+                              .pushNamed(Routes.resetPasswordViewRoute),
+                          child: Text('نسيت كلمة المرور؟',
+                              style: AppStyle.hint
+                                  .copyWith(color: AppColors.primary)),
+                        ),
+                      ),
+                      SizedBox(height: 12.h),
                       _loginButton(context, isLoading),
+                      SizedBox(height: 16.h),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Text('ليس لديك حساب؟', style: AppStyle.hint),
+                          TextButton(
+                            onPressed: () => Navigator.of(context)
+                                .pushNamed(Routes.registerViewRoute),
+                            child: Text('سجّل ككابتن',
+                                style: AppStyle.body
+                                    .copyWith(color: AppColors.primary)),
+                          ),
+                        ],
+                      ),
                     ],
                   ),
                 ),
