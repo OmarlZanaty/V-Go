@@ -103,6 +103,8 @@ class TokenService {
   Future<void> setTokens(String accessToken, String refreshToken) async {
     await CacheHelper.setSecuredString(AppConstants.token, accessToken);
     await CacheHelper.setSecuredString(AppConstants.refreshToken, refreshToken);
+    // Keep the in-memory token in sync (SignalR reads it for reconnects).
+    AppConstants.kToken = accessToken;
   }
 
   Future<void> clearTokens() async {

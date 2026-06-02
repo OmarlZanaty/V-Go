@@ -46,8 +46,18 @@ class _CaptainShellViewState extends State<CaptainShellView> {
           create: (_) => TripsCubit(getIt<TripRepo>())..load(),
         ),
       ],
-      child: Scaffold(
-        body: IndexedStack(index: _index, children: _tabs),
+      child: Builder(builder: (context) {
+        // Refresh history/earnings whenever a trip is completed on the home tab.
+        context.read<CaptainHomeCubit>().onTripCompleted =
+            () => context.read<TripsCubit>().load();
+        return _scaffold(context);
+      }),
+    );
+  }
+
+  Widget _scaffold(BuildContext context) {
+    return Scaffold(
+      body: IndexedStack(index: _index, children: _tabs),
         bottomNavigationBar: BottomNavigationBar(
           currentIndex: _index,
           onTap: (i) => setState(() => _index = i),
@@ -70,7 +80,6 @@ class _CaptainShellViewState extends State<CaptainShellView> {
                 icon: Icon(Icons.person_outline), label: 'حسابي'),
           ],
         ),
-      ),
-    );
+      );
   }
 }

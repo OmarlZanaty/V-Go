@@ -16,13 +16,16 @@ class TripsState extends Equatable {
   List<TripModel> get completed =>
       trips.where((t) => t.isCompleted).toList();
 
-  /// Total earnings = sum of completed trips' price.
-  double get totalEarnings =>
-      completed.fold(0.0, (sum, t) => sum + t.price);
+  /// Only completed AND paid trips count toward earnings.
+  List<TripModel> get paid =>
+      trips.where((t) => t.isCompleted && t.isPaid).toList();
+
+  /// Total earnings = sum of paid trips' price.
+  double get totalEarnings => paid.fold(0.0, (sum, t) => sum + t.price);
 
   double get todayEarnings {
     final now = DateTime.now();
-    return completed
+    return paid
         .where((t) =>
             t.createdAt != null &&
             t.createdAt!.year == now.year &&

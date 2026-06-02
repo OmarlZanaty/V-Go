@@ -3,27 +3,14 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:toastification/toastification.dart';
 
-import '../../../../core/cache/cache_helper.dart';
-import '../../../../core/helpers/navigation_handler.dart';
 import '../../../../core/theming/app_colors.dart';
 import '../../../../core/theming/app_style.dart';
-import '../../../../core/utils/app_constants.dart';
 import '../logic/cubit/captain_home_cubit.dart';
 import '../widgets/active_trip_panel.dart';
 import '../widgets/incoming_trip_card.dart';
 
 class CaptainHomeView extends StatelessWidget {
   const CaptainHomeView({super.key});
-
-  Future<void> _logout(BuildContext context) async {
-    await context.read<CaptainHomeCubit>().goOffline();
-    await CacheHelper.clearAllSecuredData();
-    await CacheHelper.removeData(key: AppConstants.role);
-    AppConstants.kToken = '';
-    AppConstants.kUserId = '';
-    AppConstants.kRole = '';
-    NavigationHandler.instance.goToLoginView();
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -33,12 +20,6 @@ class CaptainHomeView extends StatelessWidget {
           'V-Go Captain',
           style: AppStyle.title.copyWith(color: AppColors.black),
         ),
-        actions: [
-          IconButton(
-            onPressed: () => _logout(context),
-            icon: const Icon(Icons.logout, color: AppColors.black),
-          ),
-        ],
       ),
       body: BlocConsumer<CaptainHomeCubit, CaptainHomeState>(
         listenWhen: (prev, curr) => curr.error != null && prev.error != curr.error,

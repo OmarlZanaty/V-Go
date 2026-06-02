@@ -4,6 +4,8 @@ class LoginResponseModel {
   final String refreshToken;
   final String gender;
   final String role;
+  final String name;
+  final String profilePicture;
 
   LoginResponseModel({
     required this.token,
@@ -11,6 +13,8 @@ class LoginResponseModel {
     required this.refreshToken,
     required this.role,
     required this.gender,
+    required this.name,
+    required this.profilePicture,
   });
 
   factory LoginResponseModel.fromJson(Map<String, dynamic> json) {
@@ -23,6 +27,8 @@ class LoginResponseModel {
       refreshToken: json['refreshToken']?.toString() ?? '',
       role: firstRole,
       gender: json['gender']?.toString() ?? '',
+      name: json['name']?.toString() ?? '',
+      profilePicture: json['profilePicture']?.toString() ?? '',
     );
   }
 }

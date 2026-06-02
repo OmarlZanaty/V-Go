@@ -147,9 +147,14 @@ class AuthCubit extends Cubit<AuthState> {
     );
     await CacheHelper.setSecuredString(AppConstants.userId, result.userId);
     await CacheHelper.setData(key: AppConstants.role, value: result.role);
+    await CacheHelper.setData(key: AppConstants.userName, value: result.name);
+    await CacheHelper.setData(
+        key: AppConstants.profileImage, value: result.profilePicture);
     AppConstants.kToken = result.token;
     AppConstants.kUserId = result.userId;
     AppConstants.kRole = result.role;
+    AppConstants.kUserName = result.name;
+    AppConstants.kProfileImage = result.profilePicture;
     await DioFactory.setTokenIntoHeaderAfterLogin(result.token);
   }
 }

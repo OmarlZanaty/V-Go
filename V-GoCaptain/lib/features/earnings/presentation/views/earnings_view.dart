@@ -24,8 +24,7 @@ class EarningsView extends StatelessWidget {
             return const Center(
                 child: SpinKitThreeBounce(color: AppColors.primary, size: 32));
           }
-          final paidTrips =
-              state.completed.where((t) => t.isPaid).toList();
+          final paidTrips = state.paid;
           return RefreshIndicator(
             onRefresh: () => context.read<TripsCubit>().load(),
             child: ListView(

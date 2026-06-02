@@ -28,6 +28,8 @@ Future<void> _loadSession() async {
   AppConstants.kUserId = await CacheHelper.getSecuredString(AppConstants.userId);
   AppConstants.kToken = await CacheHelper.getSecuredString(AppConstants.token);
   AppConstants.kRole = CacheHelper.getString(AppConstants.role);
+  AppConstants.kUserName = CacheHelper.getString(AppConstants.userName);
+  AppConstants.kProfileImage = CacheHelper.getString(AppConstants.profileImage);
 }
 
 Future<void> _portraitOnly() {

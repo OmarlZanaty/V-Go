@@ -18,15 +18,22 @@ class CaptainHomeCubit extends Cubit<CaptainHomeState> {
   StreamSubscription<Position>? _positionSub;
   Position? _lastPosition;
 
+  /// Set by the shell to refresh the trips/earnings list after a completed trip.
+  void Function()? onTripCompleted;
+
   CaptainHomeCubit(this._realtime, this._location)
       : super(const CaptainHomeState()) {
     _realtime.onTripOffer = _handleOffer;
     _realtime.onTripTaken = _handleTripTaken;
     _realtime.onConnectionLost = _handleConnectionLost;
+    _realtime.onReconnected = _handleReconnected;
   }
 
   Future<void> goOnline() async {
-    emit(state.copyWith(connection: CaptainConnection.connecting, clearError: true));
+    // Only start from a clean offline state (prevents double-connect on rapid taps).
+    if (state.connection != CaptainConnection.offline) return;
+    emit(state.copyWith(
+        connection: CaptainConnection.connecting, clearError: true));
 
     final granted = await _location.ensurePermission();
     if (!granted) {
@@ -48,6 +55,7 @@ class CaptainHomeCubit extends Cubit<CaptainHomeState> {
       _startLocationStream();
       emit(state.copyWith(connection: CaptainConnection.online));
     } catch (_) {
+      await _realtime.disconnect();
       emit(state.copyWith(
         connection: CaptainConnection.offline,
         error: 'تعذّر الاتصال بالخادم، حاول مرة أخرى',
@@ -72,18 +80,19 @@ class CaptainHomeCubit extends Cubit<CaptainHomeState> {
     _positionSub?.cancel();
     _positionSub = _location.positionStream().listen((pos) {
       _lastPosition = pos;
-      // Push live location while available (and not mid-trip handoff).
-      _realtime.updateDriverStatus(
-        isAvailable: !state.hasActiveTrip,
-        lat: pos.latitude,
-        lng: pos.longitude,
-      );
+      // Fire-and-forget but never let a failed push crash the stream.
+      unawaited(_realtime
+          .updateDriverStatus(
+            isAvailable: !state.hasActiveTrip,
+            lat: pos.latitude,
+            lng: pos.longitude,
+          )
+          .catchError((_) {}));
     });
   }
 
   void _handleOffer(Map<dynamic, dynamic> raw) {
-    // Ignore new offers while already serving a trip.
-    if (state.hasActiveTrip) return;
+    if (state.hasActiveTrip) return; // already serving a trip
     final offer = TripOfferModel.fromMap(raw);
     if (offer.tripId.isEmpty) return;
     emit(state.copyWith(offer: offer));
@@ -91,14 +100,29 @@ class CaptainHomeCubit extends Cubit<CaptainHomeState> {
 
   void _handleTripTaken(String tripId) {
     if (state.offer?.tripId == tripId) {
-      emit(state.copyWith(clearOffer: true, error: 'تم قبول الرحلة من كابتن آخر'));
+      emit(state.copyWith(
+          clearOffer: true, error: 'تم قبول الرحلة من كابتن آخر'));
     }
   }
 
   void _handleConnectionLost() {
-    if (!isClosed) {
+    if (isClosed) return;
+    if (state.connection == CaptainConnection.online) {
       emit(state.copyWith(connection: CaptainConnection.connecting));
     }
+  }
+
+  /// After an auto-reconnect, restore availability and the online UI.
+  void _handleReconnected() {
+    if (isClosed || state.connection == CaptainConnection.offline) return;
+    unawaited(_realtime
+        .updateDriverStatus(
+          isAvailable: !state.hasActiveTrip,
+          lat: _lastPosition?.latitude,
+          lng: _lastPosition?.longitude,
+        )
+        .catchError((_) {}));
+    emit(state.copyWith(connection: CaptainConnection.online));
   }
 
   Future<void> acceptOffer() async {
@@ -141,11 +165,9 @@ class CaptainHomeCubit extends Cubit<CaptainHomeState> {
         case TripStage.accepted:
           await _realtime.arrived(trip.tripId);
           emit(state.copyWith(stage: TripStage.arrived, isBusy: false));
-          break;
         case TripStage.arrived:
           await _realtime.startTrip(trip.tripId);
           emit(state.copyWith(stage: TripStage.inProgress, isBusy: false));
-          break;
         case TripStage.inProgress:
           await _realtime.endTrip(trip.tripId);
           emit(state.copyWith(
@@ -153,10 +175,17 @@ class CaptainHomeCubit extends Cubit<CaptainHomeState> {
             isBusy: false,
             clearActiveTrip: true,
           ));
-          break;
+          // Re-mark available for the next ride + refresh history/earnings.
+          unawaited(_realtime
+              .updateDriverStatus(
+                isAvailable: true,
+                lat: _lastPosition?.latitude,
+                lng: _lastPosition?.longitude,
+              )
+              .catchError((_) {}));
+          onTripCompleted?.call();
         case TripStage.completed:
           emit(state.copyWith(isBusy: false));
-          break;
       }
     } catch (_) {
       emit(state.copyWith(isBusy: false, error: 'تعذّر تحديث حالة الرحلة'));

@@ -2,25 +2,25 @@ import 'dart:developer';
 
 import 'package:signalr_netcore/signalr_client.dart';
 
+import '../cache/cache_helper.dart';
 import '../config/app_config.dart';
 import '../utils/app_constants.dart';
 
 /// Manages the two SignalR connections the Captain app needs:
 /// - driverHub: push availability + live location (`UpdateDriverStatus`)
 /// - tripHub:   receive trip offers and drive the trip lifecycle
-///
-/// On connect to tripHub the backend auto-joins the driver to their
-/// `Driver_{uid}` group, so offers for this driver arrive automatically.
 class RealtimeService {
   HubConnection? _driverHub;
   HubConnection? _tripHub;
   bool _connected = false;
+  bool _connecting = false;
   bool get isConnected => _connected;
 
   // Callbacks the UI/cubit can listen to.
   void Function(Map<dynamic, dynamic> offer)? onTripOffer;
   void Function(String tripId)? onTripTaken;
   void Function()? onConnectionLost;
+  void Function()? onReconnected;
 
   HubConnection _build(String hubPath) {
     return HubConnectionBuilder()
@@ -28,7 +28,13 @@ class RealtimeService {
           AppConfig.hubUrl(hubPath),
           options: HttpConnectionOptions(
             requestTimeout: 60000,
-            accessTokenFactory: () async => AppConstants.kToken,
+            // Read the cached token so reconnects always use the freshest one
+            // (Dio refresh updates the cache).
+            accessTokenFactory: () async {
+              final cached =
+                  await CacheHelper.getSecuredString(AppConstants.token);
+              return cached.isNotEmpty ? cached : AppConstants.kToken;
+            },
           ),
         )
         .withAutomaticReconnect()
@@ -36,38 +42,61 @@ class RealtimeService {
   }
 
   Future<void> connect() async {
-    if (_connected) return;
+    if (_connected || _connecting) return;
+    _connecting = true;
+    try {
+      final driverHub = _build('driverHub');
+      final tripHub = _build('tripHub');
+      // Assign before start() so a failed start is cleaned up by the catch below.
+      _driverHub = driverHub;
+      _tripHub = tripHub;
 
-    _driverHub = _build('driverHub');
-    _tripHub = _build('tripHub');
+      void offerHandler(List<Object?>? args) {
+        final data = (args != null && args.isNotEmpty) ? args.first : null;
+        if (data is Map) onTripOffer?.call(data);
+      }
 
-    // Incoming trip offers (two events depending on backend path).
-    void offerHandler(List<Object?>? args) {
-      final data = (args != null && args.isNotEmpty) ? args.first : null;
-      if (data is Map) onTripOffer?.call(data);
-    }
-
-    _tripHub!.on('RecievePendingTrips', offerHandler);
-    _tripHub!.on('ReceiveNewTrip', offerHandler);
-    _tripHub!.on('TripTakenByAnotherDriver', (args) {
-      final data = (args != null && args.isNotEmpty) ? args.first : null;
-      final id = (data is Map ? (data['tripId'] ?? data['TripId']) : data)
-          ?.toString();
-      if (id != null) onTripTaken?.call(id);
-    });
-
-    for (final hub in [_driverHub!, _tripHub!]) {
-      hub.onclose(({error}) {
-        _connected = false;
-        log('Hub closed: $error', name: 'RealtimeService');
-        onConnectionLost?.call();
+      tripHub.on('RecievePendingTrips', offerHandler);
+      tripHub.on('ReceiveNewTrip', offerHandler);
+      tripHub.on('TripTakenByAnotherDriver', (args) {
+        final data = (args != null && args.isNotEmpty) ? args.first : null;
+        final id = (data is Map ? (data['tripId'] ?? data['TripId']) : data)
+            ?.toString();
+        if (id != null) onTripTaken?.call(id);
       });
-    }
 
-    await _driverHub!.start();
-    await _tripHub!.start();
-    _connected = true;
-    log('Connected to driverHub + tripHub', name: 'RealtimeService');
+      for (final hub in [driverHub, tripHub]) {
+        hub.onclose(({error}) {
+          _connected = false;
+          log('Hub closed: $error', name: 'RealtimeService');
+          onConnectionLost?.call();
+        });
+        hub.onreconnecting(({error}) {
+          _connected = false;
+          onConnectionLost?.call();
+        });
+        hub.onreconnected(({connectionId}) {
+          _connected = true;
+          log('Hub reconnected', name: 'RealtimeService');
+          onReconnected?.call();
+        });
+      }
+
+      await driverHub.start();
+      await tripHub.start();
+      _connected = true;
+      log('Connected to driverHub + tripHub', name: 'RealtimeService');
+    } catch (e) {
+      // Clean up any partially-started connection so we never leak a zombie.
+      await _stopQuietly(_driverHub);
+      await _stopQuietly(_tripHub);
+      _driverHub = null;
+      _tripHub = null;
+      _connected = false;
+      rethrow;
+    } finally {
+      _connecting = false;
+    }
   }
 
   Future<void> updateDriverStatus({
@@ -116,11 +145,16 @@ class RealtimeService {
   }
 
   Future<void> disconnect() async {
+    await _stopQuietly(_driverHub);
+    await _stopQuietly(_tripHub);
+    _driverHub = null;
+    _tripHub = null;
+    _connected = false;
+  }
+
+  Future<void> _stopQuietly(HubConnection? hub) async {
     try {
-      await _driverHub?.stop();
-      await _tripHub?.stop();
-    } finally {
-      _connected = false;
-    }
+      await hub?.stop();
+    } catch (_) {}
   }
 }

@@ -19,9 +19,13 @@ class ProfileView extends StatelessWidget {
     } catch (_) {}
     await CacheHelper.clearAllSecuredData();
     await CacheHelper.removeData(key: AppConstants.role);
+    await CacheHelper.removeData(key: AppConstants.userName);
+    await CacheHelper.removeData(key: AppConstants.profileImage);
     AppConstants.kToken = '';
     AppConstants.kUserId = '';
     AppConstants.kRole = '';
+    AppConstants.kUserName = '';
+    AppConstants.kProfileImage = '';
     NavigationHandler.instance.goToLoginView();
   }
 
@@ -65,16 +69,28 @@ class ProfileView extends StatelessWidget {
           CircleAvatar(
             radius: 32.r,
             backgroundColor: AppColors.primary,
-            child: Icon(Icons.person, color: AppColors.black, size: 34.r),
+            backgroundImage: AppConstants.kProfileImage.isNotEmpty
+                ? NetworkImage(AppConstants.kProfileImage)
+                : null,
+            child: AppConstants.kProfileImage.isEmpty
+                ? Icon(Icons.person, color: AppColors.black, size: 34.r)
+                : null,
           ),
           SizedBox(width: 16.w),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text('كابتن V-Go', style: AppStyle.title),
-              SizedBox(height: 4.h),
-              Text('سائق', style: AppStyle.hint),
-            ],
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  AppConstants.kUserName.isNotEmpty
+                      ? AppConstants.kUserName
+                      : 'كابتن V-Go',
+                  style: AppStyle.title,
+                ),
+                SizedBox(height: 4.h),
+                Text('سائق', style: AppStyle.hint),
+              ],
+            ),
           ),
         ],
       ),
