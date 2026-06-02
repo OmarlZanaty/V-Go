@@ -46,7 +46,6 @@ class CustomPaymentWebViewState extends State<CustomPaymentWebView> {
           // form's keyboard/focus handling on Android.
           initialSettings: InAppWebViewSettings(
             useWideViewPort: true,
-            transparentBackground: true,
           ),
           onLoadStop: (controller, url) {
             if (url != null) _checkResult(url.toString());
