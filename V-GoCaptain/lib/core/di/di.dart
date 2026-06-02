@@ -5,6 +5,8 @@ import '../../features/auth/data/repo/auth_repo.dart';
 import '../../features/auth/data/repo/auth_repo_impl.dart';
 import '../api/api_service.dart';
 import '../api/dio_factory.dart';
+import '../services/location_service.dart';
+import '../services/realtime_service.dart';
 
 final getIt = GetIt.instance;
 
@@ -17,4 +19,8 @@ void setupGetIt() {
   getIt.registerLazySingleton<AuthRepo>(
     () => AuthRepoImpl(apiServices: getIt<ApiServices>()),
   );
+
+  // Realtime + location services (driver trip-matching)
+  getIt.registerLazySingleton<LocationService>(LocationService.new);
+  getIt.registerLazySingleton<RealtimeService>(RealtimeService.new);
 }
