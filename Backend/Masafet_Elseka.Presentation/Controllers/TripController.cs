@@ -25,6 +25,17 @@ namespace Masafet_Elseka.Presentation.Controllers
             _statisticsService = statisticsService;
         }
 
+        // The id of the currently authenticated user (set as the "uid" claim by JWTService).
+        private string? CurrentUserId => User.FindFirst("uid")?.Value;
+
+        // Staff roles may query any user's trips; a Client/Driver may only query their own.
+        private bool IsPrivileged =>
+            User.IsInRole("Admin") || User.IsInRole("Dispatcher") || User.IsInRole("Accountant");
+
+        // Prevents IDOR: non-privileged callers are forced to their own id regardless of input.
+        private string ResolveUserId(string requestedUserId) =>
+            IsPrivileged ? requestedUserId : (CurrentUserId ?? requestedUserId);
+
         [HttpGet("GetAllTripsByStatus")]
         public async Task<IActionResult> GetAllTrips([FromQuery] TripStatus? status, [FromQuery] PaginationRequest pagination, CancellationToken ct = default)
         {
@@ -67,6 +78,7 @@ namespace Masafet_Elseka.Presentation.Controllers
         [HttpGet("tripByUserId/{userId}")]
         public async Task<IActionResult> GetTripByUserId(string userId,[FromQuery] PaginationRequest pagination,CancellationToken ct)
         {
+            userId = ResolveUserId(userId);
             var response = await _tripService.GetByUserId(userId, pagination, ct);
 
             if (response.IsSuccess)
@@ -79,6 +91,7 @@ namespace Masafet_Elseka.Presentation.Controllers
         [HttpGet("cuurentTrip")]
         public async Task<IActionResult> GetCurrentTrip(string userId, UserTripRole role)
         {
+            userId = ResolveUserId(userId);
             var response = await _tripService.GetCurrentTrip(userId, role);
             if (response.IsSuccess)
             {
@@ -90,6 +103,7 @@ namespace Masafet_Elseka.Presentation.Controllers
         [HttpGet("cuurentTrips")]
         public async Task<IActionResult> GetCurrentTrips(string userId)
         {
+            userId = ResolveUserId(userId);
             var response = await _tripService.GetCurrentTrips(userId);
             if (response.IsSuccess)
             {

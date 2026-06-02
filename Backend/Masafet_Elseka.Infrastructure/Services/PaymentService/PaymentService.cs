@@ -11,6 +11,7 @@ using Masafet_Elseka.Infrastructure.Hubs;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
+using Serilog;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -127,7 +128,8 @@ namespace Masafet_Elseka.Infrastructure.Services.PaymentService
             catch (Exception ex)
             {
                 transaction.Rollback();
-                return Response<PaymobIntentResponseDTO>.Failure($"حدث خطأ غير متوقع : {ex.Message}", 500);
+                Log.Error(ex, "PaymentService CreatePaymentIntent error");
+                return Response<PaymobIntentResponseDTO>.Failure("حدث خطأ غير متوقع، يرجى المحاولة لاحقًا.", 500);
             }
         }
         public async Task<Response<string>> HandleTransactionWebhookAsync(PaymobWebhookDTO webhook /*PaymobTransactionDTO webhook*/,string hmacSecret)
@@ -137,6 +139,11 @@ namespace Masafet_Elseka.Infrastructure.Services.PaymentService
                 var concatenatedString = BuildTransactionConcatenatedString(webhook.Obj);
 
                 var secret = _configuration["Paymob:HmacSecret"];
+                if (string.IsNullOrEmpty(secret))
+                {
+                    Log.Error("Paymob:HmacSecret is not configured");
+                    return Response<string>.Failure("خطأ في إعدادات الدفع", 500);
+                }
                 using var hmac = new HMACSHA512(Encoding.UTF8.GetBytes(secret));
                 var computedHash = BitConverter.ToString(
                     hmac.ComputeHash(Encoding.UTF8.GetBytes(concatenatedString))
@@ -171,7 +178,8 @@ namespace Masafet_Elseka.Infrastructure.Services.PaymentService
             }
             catch (Exception ex)
             {
-                return Response<string>.Failure($"خطأ أثناء معالجة Webhook: {ex.Message}", 500);
+                Log.Error(ex, "PaymentService webhook error");
+                return Response<string>.Failure("خطأ أثناء معالجة الطلب، يرجى المحاولة لاحقًا.", 500);
             }
         }
 
@@ -181,6 +189,11 @@ namespace Masafet_Elseka.Infrastructure.Services.PaymentService
             {
                 var concatenatedString = BuildTokenConcatenatedString(webhook);
                 var secret = _configuration["Paymob:HmacSecret"];
+                if (string.IsNullOrEmpty(secret))
+                {
+                    Log.Error("Paymob:HmacSecret is not configured");
+                    return Response<string>.Failure("خطأ في إعدادات الدفع", 500);
+                }
                 using var hmac = new HMACSHA512(Encoding.UTF8.GetBytes(secret));
 
                 var computedHash = BitConverter.ToString(
@@ -222,7 +235,8 @@ namespace Masafet_Elseka.Infrastructure.Services.PaymentService
             }
             catch (Exception ex)
             {
-                return Response<string>.Failure($"خطأ أثناء معالجة Webhook: {ex.Message}", 500);
+                Log.Error(ex, "PaymentService webhook error");
+                return Response<string>.Failure("خطأ أثناء معالجة الطلب، يرجى المحاولة لاحقًا.", 500);
             }
         }
 
@@ -274,7 +288,8 @@ namespace Masafet_Elseka.Infrastructure.Services.PaymentService
             }
             catch (Exception ex)
             {
-                return Response<string>.Failure("حدث خطأ أثناء محاولة دفع الرحلة نقدا", ex.Message, 500);
+                Log.Error(ex, "PaymentService cash payment error");
+                return Response<string>.Failure("حدث خطأ أثناء محاولة دفع الرحلة نقدا", "حدث خطأ أثناء محاولة دفع الرحلة نقدا", 500);
             }
         }
 
