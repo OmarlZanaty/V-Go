@@ -1,0 +1,58 @@
+# ============ Flutter / Dart ============
+**/.dart_tool/
+**/.flutter-plugins
+**/.flutter-plugins-dependencies
+**/.packages
+**/build/
+**/.pub-cache/
+**/.pub/
+**/doc/api/
+**/*.iml
+.flutter-plugins
+.flutter-plugins-dependencies
+
+# Flutter / Android local config
+**/android/local.properties
+**/android/.gradle/
+**/android/key.properties
+**/*.keystore
+**/*.jks
+
+# Flutter iOS / macOS
+**/ios/Pods/
+**/ios/.symlinks/
+**/ios/Flutter/Flutter.framework
+**/ios/Flutter/Flutter.podspec
+**/macos/Pods/
+**/Podfile.lock
+
+# ============ .NET ============
+**/bin/
+**/obj/
+**/Debug/
+**/Release/
+**/.vs/
+*.user
+*.suo
+*.userprefs
+
+# ============ Secrets / Firebase ============
+**/appdata/secrets/
+**/secrets/
+**/*firebase-adminsdk*.json
+**/google-services.json
+**/GoogleService-Info.plist
+**/firebase_options.dart
+*.env
+.env*
+appsettings.*.json
+secrets.json
+
+# ============ IDE ============
+.idea/
+.vscode/
+*.swp
+
+# ============ OS ============
+.DS_Store
+Thumbs.db

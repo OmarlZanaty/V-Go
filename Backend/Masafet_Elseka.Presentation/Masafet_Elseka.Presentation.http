@@ -1,0 +1,6 @@
+@Masafet_Elseka.Presentation_HostAddress = http://localhost:5064
+
+GET {{Masafet_Elseka.Presentation_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###
