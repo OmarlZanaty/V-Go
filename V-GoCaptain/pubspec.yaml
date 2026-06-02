@@ -92,11 +92,14 @@ flutter_native_splash:
     icon_background_color_dark: "#000000"
   web: false
 
-# App launcher icon (matches the rider branding).
+# App launcher icon: same V-Go logo, but on an orange (captain) background so it
+# is visually distinct from the client app in the launcher.
 flutter_launcher_icons:
   android: true
   ios: false
   image_path: "assets/images/v-go--icon.png"
+  adaptive_icon_background: "#FE7600"
+  adaptive_icon_foreground: "assets/images/v-go--icon.png"
   min_sdk_android: 21
 
 # For information on the generic Dart part of this file, see the
