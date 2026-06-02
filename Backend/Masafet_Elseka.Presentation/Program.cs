@@ -81,6 +81,17 @@ using System.Text;
 
 var builder = WebApplication.CreateBuilder(args);
 
+#region Cloud Run port binding
+
+// Cloud Run injects the port to listen on via the PORT env var (default 8080).
+var port = Environment.GetEnvironmentVariable("PORT");
+if (!string.IsNullOrEmpty(port))
+{
+    builder.WebHost.UseUrls($"http://0.0.0.0:{port}");
+}
+
+#endregion
+
 #region Services
 
 builder.Services.AddControllers();
@@ -255,16 +266,21 @@ builder.Services.AddAuthentication(options =>
 
 #region Firebase
 
-// FireBase 
+// Firebase credentials resolution order:
+//   1. FIREBASE_CREDENTIALS_PATH env var (e.g. a Secret Manager volume mount on Cloud Run)
+//   2. the bundled file under appdata/secrets (local development)
+//   3. Application Default Credentials (Cloud Run service account in the same GCP project)
 var rootPath = builder.Environment.ContentRootPath;
-var firebasePath = Path.Combine(rootPath, "appdata", "secrets", "v-go-f6d46-firebase-adminsdk-fbsvc-ab74bd572b.json");
+var firebasePath = Environment.GetEnvironmentVariable("FIREBASE_CREDENTIALS_PATH")
+    ?? Path.Combine(rootPath, "appdata", "secrets", "v-go-f6d46-firebase-adminsdk-fbsvc-ab74bd572b.json");
 
-if (!System.IO.File.Exists(firebasePath))
-    throw new Exception($"Firebase key not found at {firebasePath}");
+GoogleCredential firebaseCredential = System.IO.File.Exists(firebasePath)
+    ? GoogleCredential.FromFile(firebasePath)
+    : GoogleCredential.GetApplicationDefault();
 
 FirebaseApp.Create(new AppOptions
 {
-    Credential = GoogleCredential.FromFile(firebasePath)
+    Credential = firebaseCredential
 });
 
 #endregion
@@ -331,8 +347,9 @@ builder.Services.AddCors(options =>
 
 #region Serilog
 
+// Log to stdout so Google Cloud Logging captures it (the container FS is ephemeral).
 Log.Logger = new LoggerConfiguration()
-    .WriteTo.File("/var/log/myapp/app.log", rollingInterval: RollingInterval.Day)
+    .WriteTo.Console()
     .CreateLogger();
 
 builder.Logging.ClearProviders();
@@ -355,7 +372,12 @@ app.UseForwardedHeaders(new ForwardedHeadersOptions
     ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto
 });
 
-app.UseHttpsRedirection();
+// Cloud Run terminates TLS at the edge and forwards plain HTTP on $PORT, so
+// HTTPS redirection would break health checks there. Only redirect locally.
+if (app.Environment.IsDevelopment())
+{
+    app.UseHttpsRedirection();
+}
 
 app.UseRouting();
 app.UseWebSockets();
