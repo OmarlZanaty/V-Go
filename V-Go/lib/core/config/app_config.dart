@@ -1,8 +1,10 @@
 class AppConfig {
   AppConfig._();
 
-  static const String _defaultApiBaseUrl = 'https://www.vgo-eg.com/api/';
-  static const String _defaultSignalRBaseUrl = 'https://www.vgo-eg.com';
+  static const String _defaultApiBaseUrl =
+      'https://vgo-api-792221536894.europe-west1.run.app/api/';
+  static const String _defaultSignalRBaseUrl =
+      'https://vgo-api-792221536894.europe-west1.run.app';
 
   /// Base URL for REST APIs. Override with:
   /// `--dart-define=API_BASE_URL=https://your-domain/api/`
