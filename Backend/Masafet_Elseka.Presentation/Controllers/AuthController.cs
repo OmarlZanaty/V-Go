@@ -97,6 +97,78 @@ namespace Masafet_Elseka.Presentation.Controllers
             return StatusCode(result.StatusCode, result.Message);
         }
 
+        [HttpPost("phone-login")]
+        public async Task<IActionResult> PhoneLogin([FromBody] PhoneLoginDTO model)
+        {
+            if (model == null)
+            {
+                return BadRequest("نموذج البيانات غير صالح");
+            }
+
+            var result = await _authService.LoginWithPhoneAsync(model);
+
+            if (result.IsSuccess)
+            {
+                return StatusCode(result.StatusCode, new { data = result.Data, message = result.Message });
+            }
+
+            return StatusCode(result.StatusCode, result.Message);
+        }
+
+        [HttpPost("phone-register")]
+        public async Task<IActionResult> PhoneRegister([FromBody] PhoneRegisterDTO model)
+        {
+            if (model == null)
+            {
+                return BadRequest("نموذج البيانات غير صالح");
+            }
+
+            var result = await _authService.RegisterWithPhoneAsync(model);
+
+            if (result.IsSuccess)
+            {
+                return StatusCode(result.StatusCode, new { data = result.Data, message = result.Message });
+            }
+
+            return StatusCode(result.StatusCode, result.Message);
+        }
+
+        [HttpPost("phone-login-driver")]
+        public async Task<IActionResult> PhoneLoginDriver([FromBody] PhoneLoginDTO model)
+        {
+            if (model == null)
+            {
+                return BadRequest("نموذج البيانات غير صالح");
+            }
+
+            var result = await _authService.LoginDriverWithPhoneAsync(model);
+
+            if (result.IsSuccess)
+            {
+                return StatusCode(result.StatusCode, new { data = result.Data, message = result.Message });
+            }
+
+            return StatusCode(result.StatusCode, result.Message);
+        }
+
+        [HttpPost("phone-register-driver")]
+        public async Task<IActionResult> PhoneRegisterDriver([FromBody] PhoneRegisterDriverDTO model)
+        {
+            if (model == null)
+            {
+                return BadRequest("نموذج البيانات غير صالح");
+            }
+
+            var result = await _authService.RegisterDriverWithPhoneAsync(model);
+
+            if (result.IsSuccess)
+            {
+                return StatusCode(result.StatusCode, new { data = result.Data, message = result.Message });
+            }
+
+            return StatusCode(result.StatusCode, result.Message);
+        }
+
         [HttpPost("newrefreshtoken")]
         public async Task<IActionResult> NewRefreshToken(string token)
         {
@@ -329,6 +401,26 @@ namespace Masafet_Elseka.Presentation.Controllers
 
             return BadRequest(result);
         } 
+        #endregion
+
+        #region Google Sign-In (native token)
+
+        /// Rider: Google ID token → login or create Client account.
+        [HttpPost("google-login-token")]
+        public async Task<IActionResult> GoogleLoginToken([FromBody] GoogleTokenLoginDTO model)
+        {
+            var result = await _authService.GoogleTokenLoginAsync(model);
+            return StatusCode(result.StatusCode, result.IsSuccess ? new { data = result.Data, message = result.Message } : (object)result.Message);
+        }
+
+        /// Captain: Google ID token → login existing driver or return isNewUser for signup.
+        [HttpPost("google-login-driver-token")]
+        public async Task<IActionResult> GoogleLoginDriverToken([FromBody] GoogleTokenDriverDTO model)
+        {
+            var result = await _authService.GoogleTokenDriverAsync(model);
+            return StatusCode(result.StatusCode, result.IsSuccess ? new { data = result.Data, message = result.Message } : (object)result.Message);
+        }
+
         #endregion
     }
 }

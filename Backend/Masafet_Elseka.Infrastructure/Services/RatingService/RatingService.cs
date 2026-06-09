@@ -113,7 +113,7 @@ namespace Masafet_Elseka.Infrastructure.Services.RatingService
             }
             catch (Exception ex)
             {
-                return Response<RatingResponseDTO>.Failure("حدث خطأ أثناء إضافة التقييم: " + ex.Message, 500);
+                return Response<RatingResponseDTO>.Failure("حدث خطأ أثناء إضافة التقييم: " + "حدث خطأ غير متوقع، يرجى المحاولة لاحقًا", 500);
             }
         }
 
@@ -145,7 +145,7 @@ namespace Masafet_Elseka.Infrastructure.Services.RatingService
             }
             catch (Exception ex)
             {
-                return Response<ICollection<RatingResponseDTO>>.Failure("حدث خطأ أثناء جلب التقييمات: " + ex.Message,500);
+                return Response<ICollection<RatingResponseDTO>>.Failure("حدث خطأ أثناء جلب التقييمات: " + "حدث خطأ غير متوقع، يرجى المحاولة لاحقًا",500);
             }
         }
 
@@ -164,7 +164,6 @@ namespace Masafet_Elseka.Infrastructure.Services.RatingService
             }
             catch
             {
-                //Console.WriteLine("Server Error in GetTotalRate");
                 return 0;
             }
         }
@@ -193,7 +192,6 @@ namespace Masafet_Elseka.Infrastructure.Services.RatingService
             }
             catch (Exception ex)
             {
-                //Console.WriteLine("Server Error in GetCurrentUserRates: " + ex.Message);
                 return new List<RatingResponseDTO>();
             }
         }

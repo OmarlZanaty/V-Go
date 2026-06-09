@@ -24,8 +24,13 @@ class TripService {
   Function(List<Object?>?)? tripCanceledForTripDriver;
   Function(List<Object?>?)? receivePendingTrips;
   Function(List<Object?>?)? receiveCurrentTrip;
+  Function(List<Object?>?)? receiveDriverLocation;
   Function(List<Object?>?)? tripTakenByAnotherDriver;
   Function(List<Object?>?)? tripPaymentUpdated;
+
+  /// Fired after the socket transparently reconnects, so callers can re-sync the
+  /// current trip (SignalR never replays messages missed while disconnected).
+  void Function()? onReconnected;
 
   TripService() {
     _initializeHubConnection();
@@ -52,6 +57,14 @@ class TripService {
         name: 'TripService',
       );
     });
+
+    _hubConnection.onreconnected(({connectionId}) {
+      _isConnected = true;
+      log('TripHub reconnected: $connectionId', name: 'TripService');
+      // Pull the authoritative current trip — any events sent while we were
+      // disconnected are gone, so this is how the UI recovers from "searching".
+      onReconnected?.call();
+    });
   }
 
   void _initListeners() {
@@ -65,6 +78,11 @@ class TripService {
     _hubConnection.on('RecievePendingTrips', (args) {
       receivePendingTrips?.call(args);
       log('PendingTrips received in Driver: $args', name: 'TripService');
+    });
+
+    //! live driver location during a trip
+    _hubConnection.on('ReceiveDriverLocation', (args) {
+      receiveDriverLocation?.call(args);
     });
 
     //! receiveCurrentTrip Listeners
@@ -156,6 +174,24 @@ class TripService {
     } catch (e) {
       log('Error connecting to TripHub: $e', name: 'TripService');
       throw 'حدث خطاء اثناء الاتصال , حاول مره اخرى';
+    }
+  }
+
+  /// Ask the server to (re)push the caller's current trip (ReceiveCurrentTrip).
+  /// Called on connect/reconnect/resume so the UI recovers after any missed
+  /// events instead of being stuck on the last state it saw.
+  Future<void> requestCurrentTrip() async {
+    if (!_isConnected) return;
+    // Backend UserTripRole enum: Client = 1, Driver = 2.
+    final role = AppConstants.kRole == 'Driver' ? 2 : 1;
+    try {
+      await _hubConnection.invoke(
+        'SendCurrentTrip',
+        args: [AppConstants.kUserId, role],
+      );
+      log('Requested current-trip re-sync (role=$role)', name: 'TripService');
+    } catch (e) {
+      log('requestCurrentTrip failed: $e', name: 'TripService');
     }
   }
 
@@ -268,31 +304,69 @@ class TripService {
   }
 
   Future<void> cancelTrip(String tripId, String userId) async {
+    // Cancelling only works over the socket. If the connection dropped (e.g.
+    // after a network error) a pending trip would be impossible to cancel and
+    // the user gets stuck on the "searching" screen — so reconnect and retry
+    // instead of giving up on the first failure.
     if (!_isConnected) {
-      log('Cannot cancel trip: Not connected to TripHub', name: 'TripService');
-      throw 'حدث خطاء اثناء الاتصال , حاول مره اخرى';
+      log('Cancel: socket down, reconnecting first…', name: 'TripService');
+      try {
+        await connect();
+      } catch (e) {
+        log('Cancel: reconnect attempt failed: $e', name: 'TripService');
+      }
     }
 
-    try {
-      await _hubConnection.invoke('CancelTripRequest', args: [tripId, userId]);
-      log('Trip $tripId Canceled', name: 'TripService');
-    } catch (e) {
-      log('Error canceling trip: $e', name: 'TripService');
-      throw 'حدث خطاء اثناء الغاء الرحلة , حاول مره اخرى';
+    for (var attempt = 1; attempt <= 2; attempt++) {
+      try {
+        await _hubConnection.invoke('CancelTripRequest', args: [tripId, userId]);
+        log('Trip $tripId Canceled (attempt $attempt)', name: 'TripService');
+        return;
+      } catch (e) {
+        log('Error canceling trip (attempt $attempt): $e', name: 'TripService');
+        if (attempt == 2) {
+          throw 'حدث خطاء اثناء الغاء الرحلة , حاول مره اخرى';
+        }
+        // The connection likely died mid-invoke; force a fresh reconnect.
+        _isConnected = false;
+        try {
+          await connect();
+        } catch (e2) {
+          log('Cancel: reconnect before retry failed: $e2', name: 'TripService');
+        }
+      }
     }
   }
 
   Future<void> payTripInCash(String tripId, String driverId) async {
+    // Same resilience as cancelTrip: a dropped socket must not leave a trip
+    // stuck on "awaiting payment" — reconnect and retry instead of failing.
     if (!_isConnected) {
-      log('Cannot pay trip: Not connected to TripHub', name: 'TripService');
-      throw 'حدث خطاء اثناء الاتصال , حاول مره اخرى';
+      log('PayCash: socket down, reconnecting first…', name: 'TripService');
+      try {
+        await connect();
+      } catch (e) {
+        log('PayCash: reconnect attempt failed: $e', name: 'TripService');
+      }
     }
-    try {
-      await _hubConnection.invoke('PayTripInCash', args: [tripId, driverId]);
-      log('Trip $tripId Paid', name: 'TripService');
-    } catch (e) {
-      log('Error paying trip: $e', name: 'TripService');
-      throw 'حدث خطاء اثناء دفع الرحلة , حاول مره اخرى';
+
+    for (var attempt = 1; attempt <= 2; attempt++) {
+      try {
+        await _hubConnection.invoke('PayTripInCash', args: [tripId, driverId]);
+        log('Trip $tripId Paid (attempt $attempt)', name: 'TripService');
+        return;
+      } catch (e) {
+        log('Error paying trip (attempt $attempt): $e', name: 'TripService');
+        if (attempt == 2) {
+          throw 'حدث خطاء اثناء دفع الرحلة , حاول مره اخرى';
+        }
+        _isConnected = false;
+        try {
+          await connect();
+        } catch (e2) {
+          log('PayCash: reconnect before retry failed: $e2', name: 'TripService');
+        }
+      }
     }
   }
 

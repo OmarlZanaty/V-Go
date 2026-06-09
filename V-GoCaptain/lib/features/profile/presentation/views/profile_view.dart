@@ -33,6 +33,7 @@ class ProfileView extends StatelessWidget {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
+        automaticallyImplyLeading: false,
         title: Text('حسابي',
             style: AppStyle.title.copyWith(color: AppColors.black)),
       ),
@@ -44,11 +45,21 @@ class ProfileView extends StatelessWidget {
           _tile(Icons.lock_outline, 'تغيير كلمة المرور',
               () => NavigationHandler.navigatorKey.currentState
                   ?.pushNamed(Routes.changePasswordViewRoute)),
-          _tile(Icons.two_wheeler_outlined, 'بيانات السكوتر', null),
-          _tile(Icons.star_outline, 'تقييماتي', null),
-          _tile(Icons.settings_outlined, 'الإعدادات', null),
-          _tile(Icons.support_agent_outlined, 'الدعم الفني', null),
-          _tile(Icons.privacy_tip_outlined, 'الشروط والخصوصية', null),
+          _tile(Icons.two_wheeler_outlined, 'بيانات السكوتر',
+              () => NavigationHandler.navigatorKey.currentState
+                  ?.pushNamed(Routes.scooterViewRoute)),
+          _tile(Icons.star_outline, 'تقييماتي',
+              () => NavigationHandler.navigatorKey.currentState
+                  ?.pushNamed(Routes.ratingsViewRoute)),
+          _tile(Icons.settings_outlined, 'الإعدادات',
+              () => NavigationHandler.navigatorKey.currentState
+                  ?.pushNamed(Routes.settingsViewRoute)),
+          _tile(Icons.support_agent_outlined, 'الدعم الفني',
+              () => NavigationHandler.navigatorKey.currentState
+                  ?.pushNamed(Routes.supportViewRoute)),
+          _tile(Icons.privacy_tip_outlined, 'الشروط والخصوصية',
+              () => NavigationHandler.navigatorKey.currentState
+                  ?.pushNamed(Routes.termsViewRoute)),
           SizedBox(height: 8.h),
           _tile(Icons.logout, 'تسجيل الخروج', () => _logout(context),
               color: AppColors.danger),

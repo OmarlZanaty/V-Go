@@ -16,6 +16,7 @@ namespace Masafet_Elseka.Application.DTOs.Trip
         public double? DistanceKm { get; set; }
         public string Status { get; set; }
         public bool IsPaid { get; set; }
+        public string PaymentMethod { get; set; } = "Cash";
 
         public string UserId { get; set; }
         public string UserName { get; set; } // Full Name 

@@ -3,6 +3,8 @@ import 'package:get_it/get_it.dart';
 
 import '../../features/auth/data/repo/auth_repo.dart';
 import '../../features/auth/data/repo/auth_repo_impl.dart';
+import '../../features/profile/data/repo/profile_repo.dart';
+import '../../features/profile/data/repo/profile_repo_impl.dart';
 import '../../features/trips/data/repo/trip_repo.dart';
 import '../../features/trips/data/repo/trip_repo_impl.dart';
 import '../api/api_service.dart';
@@ -29,5 +31,10 @@ void setupGetIt() {
   // Trips repository (history + earnings)
   getIt.registerLazySingleton<TripRepo>(
     () => TripRepoImpl(apiServices: getIt<ApiServices>()),
+  );
+
+  // Profile repository (scooter data, ratings, support)
+  getIt.registerLazySingleton<ProfileRepo>(
+    () => ProfileRepoImpl(apiServices: getIt<ApiServices>()),
   );
 }

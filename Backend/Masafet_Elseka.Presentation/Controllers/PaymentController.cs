@@ -34,6 +34,38 @@ namespace Masafet_Elseka.Presentation.Controllers
             return StatusCode(response.StatusCode, response.Message);
         }
 
+        // Visa pre-authorization: client creates a hold intention. Returns the same
+        // unified-checkout payload as createIntent, so the Flutter webview is unchanged.
+        [Authorize(Roles = "Client", AuthenticationSchemes = JwtBearerDefaults.AuthenticationScheme)]
+        [HttpPost("initiate-preauth")]
+        public async Task<IActionResult> InitiatePreAuth(PaymentRequestDTO request)
+        {
+            var response = await _paymentService.InitiatePreAuthAsync(request);
+            if (response.IsSuccess)
+            {
+                return StatusCode(response.StatusCode, response.Data);
+            }
+            return StatusCode(response.StatusCode, response.Message);
+        }
+
+        // Capture the held amount on ride completion (driver/admin).
+        [Authorize(Roles = "Driver, Admin", AuthenticationSchemes = JwtBearerDefaults.AuthenticationScheme)]
+        [HttpPost("capture/{tripId}")]
+        public async Task<IActionResult> Capture(string tripId)
+        {
+            var response = await _paymentService.CaptureRidePaymentAsync(tripId);
+            return StatusCode(response.StatusCode, response.IsSuccess ? (object)response.Data : response.Message);
+        }
+
+        // Void the held amount on cancellation (rider/admin).
+        [Authorize(Roles = "Client, Admin", AuthenticationSchemes = JwtBearerDefaults.AuthenticationScheme)]
+        [HttpPost("void/{tripId}")]
+        public async Task<IActionResult> Void(string tripId)
+        {
+            var response = await _paymentService.VoidRidePaymentAsync(tripId);
+            return StatusCode(response.StatusCode, response.IsSuccess ? (object)response.Data : response.Message);
+        }
+
         [AllowAnonymous]
         [HttpPost("webhook")]
         public async Task<IActionResult> HandleWebhook([FromBody] PaymobWebhookDTO webhook, [FromQuery] string hmac)

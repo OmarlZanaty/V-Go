@@ -91,9 +91,11 @@ class CacheHelper {
     return _sharedPreferences.containsKey(key);
   }
 
-  /// used to remove all data from shared preference
+  /// Remove only the item identified by [key] from SharedPreferences.
+  /// (Previously this called `.clear()` and wiped ALL stored data — role,
+  /// preferences, login state — regardless of the key passed in.)
   static Future<bool> clearData({required String key}) async {
-    return _sharedPreferences.clear();
+    return _sharedPreferences.remove(key);
   }
 
   //!------- these method used to save data in secure storage -------

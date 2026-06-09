@@ -69,7 +69,7 @@ namespace Masafet_Elseka.Infrastructure.Services.AccountatService
             }
             catch (Exception ex)
             {
-                return Response<RevenueSummaryDto>.Failure(ex.Message, 500);
+                return Response<RevenueSummaryDto>.Failure("حدث خطأ غير متوقع، يرجى المحاولة لاحقًا", 500);
             }
         }
 

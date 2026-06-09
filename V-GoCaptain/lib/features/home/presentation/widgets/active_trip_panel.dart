@@ -52,11 +52,11 @@ class ActiveTripPanel extends StatelessWidget {
                 borderRadius: BorderRadius.circular(14.r),
               ),
             ),
-            onPressed: state.isBusy ? null : cubit.advanceStage,
+            onPressed: state.isBusy ? null : _onPressed(cubit, state),
             child: state.isBusy
                 ? const CircularProgressIndicator(
                     strokeWidth: 2, color: AppColors.black)
-                : Text(_actionLabel(state.stage), style: AppStyle.button),
+                : Text(_buttonLabel(state), style: AppStyle.button),
           ),
         ),
       ],
@@ -105,6 +105,28 @@ class ActiveTripPanel extends StatelessWidget {
       case TripStage.completed:
         return 'تم';
     }
+  }
+
+  /// At the completed stage the captain settles payment: confirm cash, re-check
+  /// the client's visa payment, or — if already paid — just finish.
+  VoidCallback _onPressed(CaptainHomeCubit cubit, CaptainHomeState state) {
+    if (state.stage == TripStage.completed) {
+      if (state.activeTripPaid) return cubit.finishTrip;
+      return (state.activeTrip?.isVisa ?? false)
+          ? () => cubit.recheckActivePayment(showFeedback: true)
+          : cubit.confirmCashPayment;
+    }
+    return cubit.advanceStage;
+  }
+
+  String _buttonLabel(CaptainHomeState state) {
+    if (state.stage == TripStage.completed) {
+      if (state.activeTripPaid) return 'تم';
+      return (state.activeTrip?.isVisa ?? false)
+          ? 'تحقّق من دفع العميل'
+          : 'تأكيد استلام الدفع';
+    }
+    return _actionLabel(state.stage);
   }
 
   Widget _row(IconData icon, String text, {Color color = AppColors.grey}) {

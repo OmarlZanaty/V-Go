@@ -27,6 +27,7 @@ namespace Masafet_Elseka.Domain.Const
         public const string TripCancelledForTripDriver = "TripCancelledForTripDriver";
         public const string TripTakenByAnotherDriver = "TripTakenByAnotherDriver";
         public const string TripPaymentUpdated = "TripPaymentUpdated";
+        public const string ReceiveDriverLocation = "ReceiveDriverLocation";
 
     }
 }

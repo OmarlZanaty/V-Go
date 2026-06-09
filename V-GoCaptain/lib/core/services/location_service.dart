@@ -18,6 +18,13 @@ class LocationService {
     return true;
   }
 
+  /// Check-only: true if location permission is already granted (does NOT prompt).
+  Future<bool> hasPermission() async {
+    if (!await Geolocator.isLocationServiceEnabled()) return false;
+    final p = await Geolocator.checkPermission();
+    return p == LocationPermission.always || p == LocationPermission.whileInUse;
+  }
+
   Future<Position> currentPosition() {
     return Geolocator.getCurrentPosition(
       locationSettings: const LocationSettings(

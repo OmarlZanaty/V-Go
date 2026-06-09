@@ -11,7 +11,13 @@ import '../utils/model/location_model.dart';
 
 class MapService {
   final Dio dio;
-  static const String _apiKey = 'AIzaSyDpdwRptK8i3McizINpuE3WmrWQHBQCmbc';
+  // Supplied at build time via --dart-define=MAPS_API_KEY=... (CI / production
+  // builds should pass a key restricted by package name + SHA). The literal below
+  // is only a dev fallback and should be rotated.
+  static const String _apiKey = String.fromEnvironment(
+    'MAPS_API_KEY',
+    defaultValue: 'AIzaSyDpdwRptK8i3McizINpuE3WmrWQHBQCmbc',
+  );
   static const String _routesUrl =
       'https://routes.googleapis.com/directions/v2:computeRoutes';
   static const String _placesAutocompleteUrl =

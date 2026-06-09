@@ -2,6 +2,9 @@ abstract class Routes {
   static const String welcomeViewRoute = "/welcomeView";
   static const String accountTypeViewRoute = "/accountTypeView";
   static const String loginViewRoute = "/loginView";
+  static const String phoneLoginViewRoute = "/phoneLoginView";
+  static const String phoneSignupViewRoute = "/phoneSignupView";
+  static const String googleCompleteProfileViewRoute = "/googleCompleteProfileView";
   static const String registerViewRoute = "/registerView";
   static const String otpViewRoute = "/otpView";
   static const String resetPasswordViewRoute = "/resetPasswordView";

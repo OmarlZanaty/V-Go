@@ -132,7 +132,7 @@ namespace Masafet_Elseka.Infrastructure.Services.StatisticsService
             }
             catch (Exception ex)
             {
-                return Response<AccountantStatisticsDto>.Failure("حدث خطأ أثناء جلب الإحصائيات", 500, new List<string> { ex.Message });
+                return Response<AccountantStatisticsDto>.Failure("حدث خطأ أثناء جلب الإحصائيات", 500, new List<string> { "حدث خطأ غير متوقع، يرجى المحاولة لاحقًا" });
             }
         }
 

@@ -52,7 +52,7 @@ namespace Masafet_Elseka.Infrastructure.Services.PricingRoleService
             }
             catch (Exception ex)
             {
-                return Response<string>.Failure("حدث خطأ أثناء حفظ إعدادات قاعدة التسعير", ex.Message, 500);
+                return Response<string>.Failure("حدث خطأ أثناء حفظ إعدادات قاعدة التسعير", "حدث خطأ غير متوقع، يرجى المحاولة لاحقًا", 500);
             }
         }
 

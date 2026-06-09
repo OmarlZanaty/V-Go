@@ -7,6 +7,7 @@ import '../errors/exception.dart';
 import '../helpers/navigation_handler.dart';
 import '../utils/app_constants.dart';
 import 'end_points.dart';
+import 'retry_interceptor.dart';
 
 class DioFactory {
   DioFactory._();
@@ -52,6 +53,7 @@ class DioFactory {
           requestHeader: true,
           responseHeader: true,
         ),
+      RetryInterceptor(dio!),
       _authInterceptor(),
     ]);
   }

@@ -1,19 +1,22 @@
-﻿
 
+
+using System.Security.Cryptography;
 using System.Text;
 
 namespace Masafet_Elseka.Application.Common
 {
     static public class GenerateOTP
     {
-        private static Random _random = new Random();
         public static string Generateotp(int length = 6)
         {
-            var otp = new StringBuilder();
+            var otp = new StringBuilder(length);
 
             for (int i = 0; i < length; i++)
             {
-                otp.Append(_random.Next(0, 10));
+                // Cryptographically secure, uniformly-distributed digit (0-9).
+                // Replaces the shared System.Random, which is insecure and not
+                // thread-safe (concurrent calls could produce correlated/duplicate codes).
+                otp.Append(RandomNumberGenerator.GetInt32(0, 10));
             }
             return otp.ToString();
         }

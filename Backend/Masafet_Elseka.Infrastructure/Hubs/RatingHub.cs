@@ -1,5 +1,7 @@
 ﻿using Masafet_Elseka.Application.DTOs.Rating;
 using Masafet_Elseka.Application.Interfaces.IRatingService;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.SignalR;
 using System;
 using System.Collections.Concurrent;
@@ -11,6 +13,7 @@ using System.Threading.Tasks;
 
 namespace Masafet_Elseka.Infrastructure.Hubs
 {
+    [Authorize(AuthenticationSchemes = JwtBearerDefaults.AuthenticationScheme)]
     public class RatingHub:Hub
     {
         private readonly IRatingService _ratingService;

@@ -14,6 +14,13 @@ namespace Masafet_Elseka.Application.Interfaces.IAuthService
     {
         public Task<Response<string>> Register(RegisterDTO model);
         public Task<Response<LoginResponseDTO>> LoginAsync(LoginDTO model);
+        public Task<Response<LoginResponseDTO>> LoginWithPhoneAsync(PhoneLoginDTO model);
+        public Task<Response<LoginResponseDTO>> RegisterWithPhoneAsync(PhoneRegisterDTO model);
+        public Task<Response<LoginResponseDTO>> LoginDriverWithPhoneAsync(PhoneLoginDTO model);
+        public Task<Response<LoginResponseDTO>> RegisterDriverWithPhoneAsync(PhoneRegisterDriverDTO model);
+        // Google Sign-In (native token flow)
+        public Task<Response<LoginResponseDTO>> GoogleTokenLoginAsync(GoogleTokenLoginDTO model);
+        public Task<Response<LoginResponseDTO>> GoogleTokenDriverAsync(GoogleTokenDriverDTO model);
         public Task<Response<object>> LoginToDashboardAsync(LoginDTO model);
         public Task<Response<string>> ConfirmOtp(string otp, OtpType type, string email);
         public Task<Response<string>> LogoutAsync(string refreshToken);

@@ -63,7 +63,7 @@ namespace Masafet_Elseka.Infrastructure.Services.UserTripService
             }
             catch (Exception ex)
             {
-                return Response<string>.Failure("حدث خطأ أثناء العميل للرحلة", ex.Message, 500);
+                return Response<string>.Failure("حدث خطأ أثناء العميل للرحلة", "حدث خطأ غير متوقع، يرجى المحاولة لاحقًا", 500);
             }
         }
     }

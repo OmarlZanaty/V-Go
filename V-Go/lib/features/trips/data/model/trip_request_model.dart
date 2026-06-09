@@ -7,6 +7,8 @@ class TripRequestModel {
   final String startAddress;
   final String endAddress;
   final double distance;
+  // 'Cash' or 'Visa' — chosen before searching for a captain.
+  final String paymentMethod;
 
   TripRequestModel({
     required this.userId,
@@ -17,6 +19,7 @@ class TripRequestModel {
     required this.distance,
     required this.startAddress,
     required this.endAddress,
+    this.paymentMethod = 'Cash',
   });
 
   Map<String, dynamic> toJson() => {
@@ -28,5 +31,6 @@ class TripRequestModel {
     'startAddress': startAddress,
     'endAddress': endAddress,
     'distance': distance,
+    'paymentMethod': paymentMethod,
   };
 }

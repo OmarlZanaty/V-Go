@@ -69,7 +69,11 @@ namespace Masafet_Elseka.Infrastructure.Services.TripService
                     StartAddress = request.StartAddress,
                     EndAddress= request.EndAddress,
                     CreatedAt = DateTime.Now.ToEgyptTime(),
-                    Status = TripStatus.Pending
+                    Status = TripStatus.Pending,
+                    PaymentMethod =
+                        string.Equals(request.PaymentMethod, "Visa", StringComparison.OrdinalIgnoreCase)
+                            ? "Visa"
+                            : "Cash",
                 };
 
                 var validate = new TripValidator().Validate(trip);
@@ -96,16 +100,16 @@ namespace Masafet_Elseka.Infrastructure.Services.TripService
                     StartAddress = trip.StartAddress,
                     EndAddress= trip.EndAddress,
                     CreatedAt = trip.CreatedAt,
-                    Status = trip.Status
+                    Status = trip.Status,
+                    PaymentMethod = trip.PaymentMethod
                 };
 
-                //Console.WriteLine($"Trip created with ID: {trip.Id}, Price: {trip.Price}");
                 return Response<TripResponseDTO>.Success(result, "تم إضافة الرحلة بنجاح", 201);
             }
             catch (Exception ex)
             {
                 await transaction.RollbackAsync();
-                return Response<TripResponseDTO>.Failure(new TripResponseDTO(), ex.Message, 500);
+                return Response<TripResponseDTO>.Failure(new TripResponseDTO(), "حدث خطأ غير متوقع، يرجى المحاولة لاحقًا", 500);
             }
         }
 
@@ -139,7 +143,7 @@ namespace Masafet_Elseka.Infrastructure.Services.TripService
             catch(Exception ex)
             {
                 await transaction.RollbackAsync();
-                return Response<string>.Failure("حدث خطأ أثناء إلغاء الرحلة", ex.Message, 500);
+                return Response<string>.Failure("حدث خطأ أثناء إلغاء الرحلة", "حدث خطأ غير متوقع، يرجى المحاولة لاحقًا", 500);
             }
 
         }
@@ -206,7 +210,7 @@ namespace Masafet_Elseka.Infrastructure.Services.TripService
             }
             catch (Exception ex)
             {
-                return Response<PaginationPagedResponse<TripDetailsDTO>>.Failure(null, $"حدث خطأ: {ex.Message}", 500);
+                return Response<PaginationPagedResponse<TripDetailsDTO>>.Failure(null, $"حدث خطأ", 500);
             }
         }
         public async Task<Response<TripDetailsDTO>> GetCurrentTrip(string userId, UserTripRole role)
@@ -255,6 +259,7 @@ namespace Masafet_Elseka.Infrastructure.Services.TripService
                     To = new LocationDTO { Lat = trip.EndLat, Lng = trip.EndLng, Address = trip.EndAddress },
                     CreatedAt = trip.CreatedAt,
                     IsPaid = trip.Payment.Any(p => p.Status == PaymentStatus.Paid),
+                    PaymentMethod = trip.PaymentMethod,
 
                     UserId = passengerTrip?.User?.Id,
                     UserName = passengerTrip?.User?.FullName,
@@ -279,7 +284,7 @@ namespace Masafet_Elseka.Infrastructure.Services.TripService
             }
             catch (Exception ex)
             {
-                return Response<TripDetailsDTO>.Failure(null, ex.Message, 500);
+                return Response<TripDetailsDTO>.Failure(null, "حدث خطأ غير متوقع، يرجى المحاولة لاحقًا", 500);
             }
         }
 
@@ -339,7 +344,7 @@ namespace Masafet_Elseka.Infrastructure.Services.TripService
             }
             catch (Exception ex)
             {
-                return Response<List<TripDetailsDTO>>.Failure(new List<TripDetailsDTO>(), ex.Message, 500);
+                return Response<List<TripDetailsDTO>>.Failure(new List<TripDetailsDTO>(), "حدث خطأ غير متوقع، يرجى المحاولة لاحقًا", 500);
             }
         }
 
@@ -373,12 +378,12 @@ namespace Masafet_Elseka.Infrastructure.Services.TripService
                 trip.StartTime = DateTime.Now.ToEgyptTime();
                 await _context.SaveChangesAsync();
                 await transaction.CommitAsync();
-                return Response<TripProgressDTO>.Success(new TripProgressDTO { CLientId= clientId! , DriverId=driverId! }, "تم بدء الرحلة بنجاح", 200);
+                return Response<TripProgressDTO>.Success(new TripProgressDTO { CLientId= clientId! , DriverId=driverId!, PaymentMethod = trip.PaymentMethod }, "تم بدء الرحلة بنجاح", 200);
             }
             catch (Exception ex)
             {
                 await transaction.RollbackAsync();
-                return Response<TripProgressDTO>.Failure( $"حدث خطأ أثناء بدء هذه الرحلة {ex.Message}", 500);
+                return Response<TripProgressDTO>.Failure( $"حدث خطأ أثناء بدء هذه الرحلة", 500);
             }
         }
 
@@ -418,7 +423,7 @@ namespace Masafet_Elseka.Infrastructure.Services.TripService
             catch (Exception ex)
             { 
                 await transaction.RollbackAsync();
-                return Response<TripProgressDTO>.Failure($"حدث خطأ أثناء بدء هذه الرحلة {ex.Message}", 500);
+                return Response<TripProgressDTO>.Failure($"حدث خطأ أثناء بدء هذه الرحلة", 500);
             }
         }
         public async Task<Response<TripProgressDTO>> EndTrip(string tripId)
@@ -471,7 +476,7 @@ namespace Masafet_Elseka.Infrastructure.Services.TripService
             catch (Exception ex)
             {
                 await transaction.RollbackAsync();
-                return Response<TripProgressDTO>.Failure( $"حدث خطأ أثناء إنهاء هذه الرحلة  {ex.Message}", 500);
+                return Response<TripProgressDTO>.Failure( $"حدث خطأ أثناء إنهاء هذه الرحلة", 500);
             }
         }
         public async Task<Response<List<TripDetailsDTO>>> GetPendingTrips()
@@ -504,20 +509,21 @@ namespace Masafet_Elseka.Infrastructure.Services.TripService
                         DriverPhone = driverTrip != null ? driverTrip.User.PhoneNumber : "لم يتم تحديد سائق حتى الان",
                         Status = trip.Status.ToString(),
                         DistanceKm = trip.DistanceInKm,
+                        PaymentMethod = trip.PaymentMethod,
                         DriverRating= driverTrip != null ? _ratingService.GetAverageRate(driverTrip.UserId).Result : 0,
                         Userrating= passengerTrip != null ? _ratingService.GetAverageRate(passengerTrip.UserId).Result : 0,
                     };
                 }).ToList();
                 if (!tripDtos.Any())
                 {
-                    return Response<List<TripDetailsDTO>>.Success(new List<TripDetailsDTO>(), "لا توجد رحلات متاحة", 201);
+                    return Response<List<TripDetailsDTO>>.Success(new List<TripDetailsDTO>(), "لا توجد رحلات متاحة", 200);
                 }
 
                 return Response<List<TripDetailsDTO>>.Success(tripDtos, "تم استرجاع الرحلات بنجاح", 200);
             }
             catch (Exception ex)
             {
-                return Response<List<TripDetailsDTO>>.Failure(new List<TripDetailsDTO>(), ex.Message, 500);
+                return Response<List<TripDetailsDTO>>.Failure(new List<TripDetailsDTO>(), "حدث خطأ غير متوقع، يرجى المحاولة لاحقًا", 500);
             }
         }
 
@@ -556,7 +562,33 @@ namespace Masafet_Elseka.Infrastructure.Services.TripService
             }
             catch (Exception ex)
             {
-                return Response<TripDetailsDTO>.Failure(new TripDetailsDTO(), ex.Message, 500);
+                return Response<TripDetailsDTO>.Failure(new TripDetailsDTO(), "حدث خطأ غير متوقع، يرجى المحاولة لاحقًا", 500);
+            }
+        }
+
+        // Lightweight projection used to relay live driver location: returns the
+        // client id of the driver's active trip (Accepted/Arrived/InProgress).
+        public async Task<string> GetActiveTripClientIdAsync(string driverId)
+        {
+            try
+            {
+                var clientId = await _context.Trips
+                    .Where(t =>
+                        (t.Status == TripStatus.Accepted ||
+                         t.Status == TripStatus.Arrived ||
+                         t.Status == TripStatus.InProgress) &&
+                        t.UserTrips.Any(ut => ut.UserId == driverId && ut.Role == UserTripRole.Driver))
+                    .OrderByDescending(t => t.CreatedAt)
+                    .Select(t => t.UserTrips
+                        .Where(ut => ut.Role == UserTripRole.Client)
+                        .Select(ut => ut.UserId)
+                        .FirstOrDefault())
+                    .FirstOrDefaultAsync();
+                return clientId ?? string.Empty;
+            }
+            catch
+            {
+                return string.Empty;
             }
         }
 
@@ -568,6 +600,8 @@ namespace Masafet_Elseka.Infrastructure.Services.TripService
                     .Include(ut => ut.Trip)
                         .ThenInclude(t => t.UserTrips)
                             .ThenInclude(ut => ut.User)
+                    .Include(ut => ut.Trip)
+                        .ThenInclude(t => t.Payment)
                     .Where(ut => ut.UserId == userId)
                     .AsQueryable();
 
@@ -606,6 +640,9 @@ namespace Masafet_Elseka.Infrastructure.Services.TripService
                         DriverRating = driverTrip != null ? _ratingService.GetAverageRate(driverTrip.UserId).Result : 0,
                         Status = trip.Status.ToString(),
                         DistanceKm = trip.DistanceInKm,
+                        // Was never set → every trip showed "awaiting payment" in
+                        // the captain's earnings regardless of actual status.
+                        IsPaid = trip.Payment.Any(p => p.Status == PaymentStatus.Paid),
                     };
                 }).ToList();
 
@@ -626,7 +663,7 @@ namespace Masafet_Elseka.Infrastructure.Services.TripService
             }
             catch (Exception ex)
             {
-                return Response<PaginationPagedResponse<TripDetailsDTO>>.Failure(null, $"حدث خطأ: {ex.Message}", 500);
+                return Response<PaginationPagedResponse<TripDetailsDTO>>.Failure(null, $"حدث خطأ", 500);
             }
         }
 
@@ -711,6 +748,27 @@ namespace Masafet_Elseka.Infrastructure.Services.TripService
                     .Skip((pagination.PageNumber - 1) * pagination.PageSize)
                     .Take(pagination.PageSize)
                     .ToListAsync(ct);
+
+                // Batch-load average ratings for every user on this page in ONE query.
+                // Previously each row called GetAverageRate(...).Result twice (client + driver),
+                // producing ~2*PageSize blocking queries (the dashboard N+1).
+                var userIds = trips
+                    .SelectMany(t => t.UserTrips)
+                    .Select(ut => ut.UserId)
+                    .Distinct()
+                    .ToList();
+
+                var avgRates = await _context.Rates.AsNoTracking()
+                    .Where(r => userIds.Contains(r.ToUserId))
+                    .GroupBy(r => r.ToUserId)
+                    .Select(g => new { UserId = g.Key, Avg = g.Average(x => (double)x.Score) })
+                    .ToDictionaryAsync(x => x.UserId, x => x.Avg, ct);
+
+                decimal RateFor(string? uid) =>
+                    uid != null && avgRates.TryGetValue(uid, out var avg)
+                        ? (decimal)Math.Round(avg, 1)
+                        : 0;
+
                 var tripDtos = trips.Select(trip =>
                 {
                     var passengerTrip = trip.UserTrips.FirstOrDefault(ut => ut.Role == UserTripRole.Client);
@@ -724,9 +782,9 @@ namespace Masafet_Elseka.Infrastructure.Services.TripService
                         To = trip.EndAddress!,
                         CreatedAt = trip.CreatedAt,
                         ClientName = passengerTrip?.User.FullName!,
-                        ClientRate = passengerTrip != null ? _ratingService.GetAverageRate(passengerTrip.UserId).Result : 0,
+                        ClientRate = RateFor(passengerTrip?.UserId),
                         DriverName = driverTrip != null ? driverTrip.User.FullName : "لم يتم تحديد سائق حتى الان",
-                        DriverRate = driverTrip != null ? _ratingService.GetAverageRate(driverTrip.UserId).Result : 0,
+                        DriverRate = RateFor(driverTrip?.UserId),
                         Status = trip.Status.ToString(),
                         DistanceKm = trip.DistanceInKm,
                     };
@@ -757,7 +815,7 @@ namespace Masafet_Elseka.Infrastructure.Services.TripService
             }
             catch (Exception ex)
             {
-                return Response<PaginationPagedResponse<DashboardTripDTO>>.Failure(null, $"حدث خطأ: {ex.Message}", 500);
+                return Response<PaginationPagedResponse<DashboardTripDTO>>.Failure(null, $"حدث خطأ", 500);
             }
         }
 

@@ -77,7 +77,7 @@ namespace Masafet_Elseka.Infrastructure.Services.UserService
             }
             catch (Exception ex)
             {
-                return Response<ICollection<UserListDTO>>.Failure($"حدث خطأ أثناء جلب المستخدمين: {ex.Message}", 500);
+                return Response<ICollection<UserListDTO>>.Failure($"حدث خطأ أثناء جلب المستخدمين", 500);
             }
         }
 
@@ -141,7 +141,7 @@ namespace Masafet_Elseka.Infrastructure.Services.UserService
             }
             catch (Exception ex)
             {
-                return Response<PaginationPagedResponse<UserDTO>>.Failure($"حدث خطأ أثناء جلب المستخدمين: {ex.Message}", 500);
+                return Response<PaginationPagedResponse<UserDTO>>.Failure($"حدث خطأ أثناء جلب المستخدمين", 500);
             }
         }
 
@@ -186,7 +186,7 @@ namespace Masafet_Elseka.Infrastructure.Services.UserService
             }
             catch (Exception ex)
             {
-                return Response<UserDTO>.Failure($"حدث خطأ أثناء جلب بيانات المستخدم: {ex.Message}", 500);
+                return Response<UserDTO>.Failure($"حدث خطأ أثناء جلب بيانات المستخدم", 500);
             }
         }
         public async Task<Response<BulkOperationResult>> RemoveUsersBulk(List<string> userIds)
@@ -269,7 +269,7 @@ namespace Masafet_Elseka.Infrastructure.Services.UserService
                 }
                 catch (Exception ex)
                 {
-                    result.Failed.Add(new FailedItem { Id = id, Reason = $"Exception: {ex.Message}" });
+                    result.Failed.Add(new FailedItem { Id = id, Reason = "حدث خطأ أثناء معالجة هذا العنصر" });
                 }
             }
 
@@ -317,7 +317,7 @@ namespace Masafet_Elseka.Infrastructure.Services.UserService
                 }
                 catch (Exception ex)
                 {
-                    result.Failed.Add(new FailedItem { Id = id, Reason = $"Exception: {ex.Message}" });
+                    result.Failed.Add(new FailedItem { Id = id, Reason = "حدث خطأ أثناء معالجة هذا العنصر" });
                 }
             }
 
@@ -360,7 +360,7 @@ namespace Masafet_Elseka.Infrastructure.Services.UserService
             }
             catch (Exception ex)
             {
-                return Response<string>.Failure($"حدث خطأ اثناء تحديث البيانات: {ex.Message}", 500);
+                return Response<string>.Failure($"حدث خطأ اثناء تحديث البيانات", 500);
             }
         }
 
@@ -382,7 +382,7 @@ namespace Masafet_Elseka.Infrastructure.Services.UserService
             }
             catch (Exception ex)
             {
-                return Response<int>.Failure($"حدث خطأ أثناء جلب عدد المستخدمين: {ex.Message}", 500);
+                return Response<int>.Failure($"حدث خطأ أثناء جلب عدد المستخدمين", 500);
             }
         }
 
@@ -435,7 +435,7 @@ namespace Masafet_Elseka.Infrastructure.Services.UserService
             }
             catch (Exception ex)
             {
-                return Response<UpdateAllDTO>.Failure($"حدث خطأ اثناء تحديث البيانات: {ex.Message}", 500);
+                return Response<UpdateAllDTO>.Failure($"حدث خطأ اثناء تحديث البيانات", 500);
             }
         }
 

@@ -92,7 +92,6 @@ namespace Masafet_Elseka.Infrastructure.ExternalService.CloudinaryService
 
                 if (resource == null)
                 {
-                    //Console.WriteLine("File not found on Cloudinary.");
                     return false;
                 }
 
@@ -118,7 +117,6 @@ namespace Masafet_Elseka.Infrastructure.ExternalService.CloudinaryService
             }
             catch (Exception ex)
             {
-                //Console.WriteLine($"Error deleting file: {ex.Message}");
                 return false;
             }
         }

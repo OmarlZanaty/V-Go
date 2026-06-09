@@ -32,11 +32,13 @@ namespace Masafet_Elseka.Infrastructure.ExternalService.JWTService
         {
             var claims = new List<Claim>
             {
-                new Claim(ClaimTypes.Name, user.FullName),
+                // Null-safe: phone-OTP users may have no email, and some fields can
+                // be null — a null claim value throws ArgumentNullException.
+                new Claim(ClaimTypes.Name, user.FullName ?? string.Empty),
                 new Claim(ClaimTypes.NameIdentifier, user.Id),
-                new Claim(JwtRegisteredClaimNames.Sub, user.UserName),
+                new Claim(JwtRegisteredClaimNames.Sub, user.UserName ?? string.Empty),
                 new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString()),
-                new Claim(JwtRegisteredClaimNames.Email,user.Email),
+                new Claim(JwtRegisteredClaimNames.Email, user.Email ?? string.Empty),
                 new Claim("uid", user.Id)
             };
 

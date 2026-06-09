@@ -1,6 +1,8 @@
 ﻿using Masafet_Elseka.Application.Interfaces.IChatService;
 using Masafet_Elseka.Application.Interfaces.IDispatcherService;
 using Masafet_Elseka.Application.Interfaces.IMessageService;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.Extensions.Logging;
 using System;
@@ -13,6 +15,7 @@ using System.Threading.Tasks;
 
 namespace Masafet_Elseka.Infrastructure.Hubs
 {
+    [Authorize(AuthenticationSchemes = JwtBearerDefaults.AuthenticationScheme)]
     public class SupportChatHub : Hub
     {
         private readonly IChatService _chatService;

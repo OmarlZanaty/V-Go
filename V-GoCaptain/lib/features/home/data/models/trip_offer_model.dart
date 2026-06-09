@@ -7,6 +7,7 @@ class TripOfferModel {
   final TripPoint end;
   final double price;
   final TripClient client;
+  final String paymentMethod;
 
   TripOfferModel({
     required this.tripId,
@@ -14,7 +15,10 @@ class TripOfferModel {
     required this.end,
     required this.price,
     required this.client,
+    this.paymentMethod = 'Cash',
   });
+
+  bool get isVisa => paymentMethod.toLowerCase() == 'visa';
 
   static dynamic _pick(Map map, String camel, String pascal) =>
       map[camel] ?? map[pascal];
@@ -32,6 +36,8 @@ class TripOfferModel {
       client: TripClient.fromMap(
         (_pick(map, 'client', 'Client') as Map?) ?? const {},
       ),
+      paymentMethod:
+          _pick(map, 'paymentMethod', 'PaymentMethod')?.toString() ?? 'Cash',
     );
   }
 

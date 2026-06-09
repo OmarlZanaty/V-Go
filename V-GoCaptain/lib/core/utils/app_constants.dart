@@ -9,6 +9,9 @@ abstract class AppConstants {
   static const String profileImage = "profileImage";
   static const String fcmToken = "fcmToken";
 
+  // Settings: when true the in-app notifications feature is muted.
+  static const String notificationsMuted = "notificationsMuted";
+
   // In-memory session values
   static String kUserId = "";
   static String kToken = "";

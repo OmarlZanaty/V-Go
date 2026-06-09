@@ -95,7 +95,7 @@ namespace Masafet_Elseka.Infrastructure.Services.DriverService
             }
             catch (Exception ex)
             {
-                return Response<DriverDTO>.Failure($"حدث خطأ أثناء جلب بيانات السائق: {ex.Message}", 500);
+                return Response<DriverDTO>.Failure($"حدث خطأ أثناء جلب بيانات السائق", 500);
             }
         }
 
@@ -183,7 +183,7 @@ namespace Masafet_Elseka.Infrastructure.Services.DriverService
             }
             catch (Exception ex)
             {
-                return Response<PaginationPagedResponse<DriverDTO>>.Failure($"حدث خطأ أثناء جلب بيانات السائقين: {ex.Message}", 500);
+                return Response<PaginationPagedResponse<DriverDTO>>.Failure($"حدث خطأ أثناء جلب بيانات السائقين", 500);
             }
         }
 
@@ -219,7 +219,7 @@ namespace Masafet_Elseka.Infrastructure.Services.DriverService
             }
             catch (Exception ex)
             {
-                return Response<ICollection<DriverStatusDTO>>.Failure($"حدث خطأ أثناء جلب السائقين المتاحين: {ex.Message}", 500);
+                return Response<ICollection<DriverStatusDTO>>.Failure($"حدث خطأ أثناء جلب السائقين المتاحين", 500);
             }
         }
 
@@ -284,7 +284,7 @@ namespace Masafet_Elseka.Infrastructure.Services.DriverService
             }
             catch (Exception ex)
             {
-                return Response<ICollection<DriverStatusDTO>>.Failure($"حدث خطأ أثناء جلب السائقين المتاحين: {ex.Message}", 500);
+                return Response<ICollection<DriverStatusDTO>>.Failure($"حدث خطأ أثناء جلب السائقين المتاحين", 500);
             }
         }
 
@@ -327,7 +327,7 @@ namespace Masafet_Elseka.Infrastructure.Services.DriverService
             }
             catch (Exception ex)
             {
-                return Response<bool>.Failure($"حدث خطأ أثناء تحديث حالة التوفر: {ex.Message}", 500);
+                return Response<bool>.Failure($"حدث خطأ أثناء تحديث حالة التوفر", 500);
             }
         }
 
@@ -356,7 +356,7 @@ namespace Masafet_Elseka.Infrastructure.Services.DriverService
             }
             catch (Exception ex)
             {
-                return Response<bool>.Failure($"حدث خطأ أثناء تحديث الموقع: {ex.Message}", 500);
+                return Response<bool>.Failure($"حدث خطأ أثناء تحديث الموقع", 500);
             }
         }
 
@@ -376,7 +376,6 @@ namespace Masafet_Elseka.Infrastructure.Services.DriverService
             }
             _cacheService.SetData($"DriverStatus_{status.DriverId}", status);
             await _cacheService.SetKeyToList("DriversStatusKeys", $"DriverStatus_{status.DriverId}");
-            //Console.WriteLine($"\nDriver status cached: {status.DriverId},Gender:{status.DriverGender}, Available: {status.IsAvailable}\n");
         }
 
         // Helper

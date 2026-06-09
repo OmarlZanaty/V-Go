@@ -276,6 +276,9 @@ namespace Masafet_Elseka.Infrastructure.Migrations
                     b.Property<decimal>("Amount")
                         .HasColumnType("decimal(18,2)");
 
+                    b.Property<string>("CaptureTransactionId")
+                        .HasColumnType("nvarchar(max)");
+
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("datetime2");
 
@@ -283,10 +286,19 @@ namespace Masafet_Elseka.Infrastructure.Migrations
                         .IsRequired()
                         .HasColumnType("nvarchar(max)");
 
+                    b.Property<string>("FailureReason")
+                        .HasColumnType("nvarchar(max)");
+
                     b.Property<string>("Method")
                         .HasColumnType("nvarchar(max)");
 
                     b.Property<string>("OrderId")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<DateTime?>("PreauthExpiresAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("PreauthTransactionId")
                         .HasColumnType("nvarchar(max)");
 
                     b.Property<int>("Status")
@@ -457,6 +469,10 @@ namespace Masafet_Elseka.Infrastructure.Migrations
 
                     b.Property<DateTime?>("EndTime")
                         .HasColumnType("datetime2");
+
+                    b.Property<string>("PaymentMethod")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
 
                     b.Property<decimal>("Price")
                         .HasColumnType("decimal(10,2)");

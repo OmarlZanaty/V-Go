@@ -74,7 +74,7 @@ namespace Masafet_Elseka.Infrastructure.Services.EmergencyService
             }
             catch (Exception ex)
             {
-                return Response<DriverAlertDataDTO>.Failure($"حدث خطأ أثناء إرسال التنبيه الطارئ: {ex.Message}", 500);
+                return Response<DriverAlertDataDTO>.Failure($"حدث خطأ أثناء إرسال التنبيه الطارئ", 500);
             }
         }
     }

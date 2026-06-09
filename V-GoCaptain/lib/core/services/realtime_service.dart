@@ -21,6 +21,10 @@ class RealtimeService {
   void Function(String tripId)? onTripTaken;
   void Function()? onConnectionLost;
   void Function()? onReconnected;
+  // Fired when the backend reports this trip's payment became Paid (cash
+  // confirmed or online checkout completed). Payload carries no tripId, but the
+  // captain only serves one trip at a time, so it always refers to the active one.
+  void Function()? onPaymentUpdated;
 
   HubConnection _build(String hubPath) {
     return HubConnectionBuilder()
@@ -63,6 +67,9 @@ class RealtimeService {
         final id = (data is Map ? (data['tripId'] ?? data['TripId']) : data)
             ?.toString();
         if (id != null) onTripTaken?.call(id);
+      });
+      tripHub.on('TripPaymentUpdated', (args) {
+        onPaymentUpdated?.call();
       });
 
       for (final hub in [driverHub, tripHub]) {
@@ -142,6 +149,12 @@ class RealtimeService {
 
   Future<void> endTrip(String tripId) async {
     await _tripHub?.invoke('EndTrip', args: [tripId, AppConstants.kUserId]);
+  }
+
+  /// Driver confirms they received the cash for this trip → backend marks it
+  /// paid and unlocks the rider's completion screen.
+  Future<void> confirmCashPayment(String tripId) async {
+    await _tripHub?.invoke('ConfirmCashPayment', args: [tripId]);
   }
 
   Future<void> disconnect() async {

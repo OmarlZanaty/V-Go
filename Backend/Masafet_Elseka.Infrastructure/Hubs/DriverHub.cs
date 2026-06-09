@@ -23,12 +23,15 @@ using System.Threading.Tasks;
 
 namespace Masafet_Elseka.Infrastructure.Hubs
 {
-    //[Authorize(Roles = "Driver", AuthenticationSchemes = JwtBearerDefaults.AuthenticationScheme)]
+    [Authorize(AuthenticationSchemes = JwtBearerDefaults.AuthenticationScheme)]
     public class DriverHub : Hub
     {
         private readonly IDriverService _driverService;
         private readonly ICacheService _cacheService;
         private static readonly ConcurrentDictionary<string, string> _driversIds = new();
+        // Cache of driver -> active-trip client id, so we don't hit the DB on
+        // every location tick. Cleared when the driver becomes available again.
+        private static readonly ConcurrentDictionary<string, string> _driverActiveClient = new();
         private readonly ITripService _tripService;
         private readonly UserManager<ApplicationUser> _userManager;
         private readonly IHubContext<TripHub> _tripHubContext;
@@ -92,6 +95,33 @@ namespace Masafet_Elseka.Infrastructure.Hubs
             if(status.Latitude.HasValue && status.Longitude.HasValue)
             {
                 await _driverService.UpdateLocation(driverId, status.Latitude.Value, status.Longitude.Value);
+
+                // While serving a trip, forward the live location to that trip's
+                // rider so the client map can track the captain in real time.
+                if (!status.IsAvailable)
+                {
+                    if (!_driverActiveClient.TryGetValue(driverId, out var clientId)
+                        || string.IsNullOrEmpty(clientId))
+                    {
+                        clientId = await _tripService.GetActiveTripClientIdAsync(driverId);
+                        if (!string.IsNullOrEmpty(clientId))
+                            _driverActiveClient[driverId] = clientId;
+                    }
+                    if (!string.IsNullOrEmpty(clientId))
+                    {
+                        await _tripHubContext.Clients.Group(HubGroups.User(clientId))
+                            .SendAsync(HubEvents.ReceiveDriverLocation, new
+                            {
+                                DriverId = driverId,
+                                Lat = status.Latitude.Value,
+                                Lng = status.Longitude.Value
+                            });
+                    }
+                }
+                else
+                {
+                    _driverActiveClient.TryRemove(driverId, out _);
+                }
             }
 
             if (status.IsAvailable)
@@ -198,7 +228,10 @@ namespace Masafet_Elseka.Infrastructure.Hubs
             {
                 if(latitude.HasValue && longitude.HasValue)
                 {
-                    var distance = trip.DistanceInKm;
+                    // Proximity = distance from the driver to the trip's PICKUP point.
+                    // Previously this used trip.DistanceInKm (the trip's own length), which
+                    // wrongly hid every trip longer than the threshold from all drivers.
+                    var distance = GeoHelper.CalculateDistance(trip.StartLat, trip.StartLng, latitude.Value, longitude.Value);
                     if (distance > _distanceThresholdKm)
                     {
                         continue;
@@ -221,13 +254,14 @@ namespace Masafet_Elseka.Infrastructure.Hubs
                     },
                     Price = trip.Price,
                     CreatedAt = trip.CreatedAt,
+                    PaymentMethod = trip.PaymentMethod,
                     Client = new ClientTripDataDTO
                     {
                         ClientId = trip.ClientId,
                         FullName = trip.ClientName,
                         PhoneNumber = trip.ClientPhone,
                         ProfileImageUrl = trip.ClientProfilePicture,
-                        Rating = trip.ClientRating,       
+                        Rating = trip.ClientRating,
                     }
                 };
                 await _tripHubContext.Clients.Group(HubGroups.Driver(driverId))

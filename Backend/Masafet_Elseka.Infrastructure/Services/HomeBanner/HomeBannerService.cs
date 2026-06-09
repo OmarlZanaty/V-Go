@@ -37,7 +37,7 @@ namespace Masafet_Elseka.Infrastructure.Services.HomeBanner
             }
             catch (Exception ex)
             {
-                return Response<List<string>>.Failure($"حدث خطأ أثناء جلب الصور: {ex.Message}", 500);
+                return Response<List<string>>.Failure($"حدث خطأ أثناء جلب الصور", 500);
             }
         }
 
@@ -73,7 +73,7 @@ namespace Masafet_Elseka.Infrastructure.Services.HomeBanner
             }
             catch (Exception ex)
             {
-                return Response<string>.Failure($"حدث خطأ أثناء إضافة الصور: {ex.Message}", 500);
+                return Response<string>.Failure($"حدث خطأ أثناء إضافة الصور", 500);
             }
         }
 
@@ -101,7 +101,7 @@ namespace Masafet_Elseka.Infrastructure.Services.HomeBanner
             }
             catch (Exception ex)
             {
-                return Response<string>.Failure($"حدث خطأ أثناء حذف الصور: {ex.Message}", 500);
+                return Response<string>.Failure($"حدث خطأ أثناء حذف الصور", 500);
             }
         }
     }

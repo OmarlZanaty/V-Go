@@ -32,14 +32,16 @@ namespace Masafet_Elseka.Infrastructure.Services.PaymentService
         private readonly IConfiguration _configuration;
         private readonly IHubContext<TripHub> _tripHub;
         private readonly ITripService _tripService;
+        private readonly Application.Interfaces.INotificationService.INotificationService _notificationService;
 
-        public PaymentService(HttpClient httpClient, Context context, IConfiguration configuration, IHubContext<TripHub> tripHub, ITripService tripService)
+        public PaymentService(HttpClient httpClient, Context context, IConfiguration configuration, IHubContext<TripHub> tripHub, ITripService tripService, Application.Interfaces.INotificationService.INotificationService notificationService)
         {
             _httpClient = httpClient;
             _context = context;
             _configuration = configuration;
             _tripHub = tripHub;
             _tripService = tripService;
+            _notificationService = notificationService;
         }
 
         public async Task<Response<PaymobIntentResponseDTO>> CreatePaymentIntentAsync(PaymentRequestDTO request)
@@ -69,27 +71,25 @@ namespace Masafet_Elseka.Infrastructure.Services.PaymentService
                 };
                 _context.Payments.Add(payment);
 
-                //var savedCards = _context.SavedCards
-                //    .Where(c => c.UserId == request.UserId)
-                //    .Select(c => new
-                //    {
-                //        c.Token
-                //    }).ToArray();
+                // The user's previously-saved card tokens (populated by HandleTokenWebhookAsync).
+                // Passed to Paymob as `card_tokens` so saved cards can be used for one-click payment.
+                var savedCardTokens = await _context.SavedCards
+                    .Where(c => c.UserId == request.UserId && c.IsActive)
+                    .Select(c => c.Token)
+                    .ToArrayAsync();
 
-                var body = new
+                var body = new Dictionary<string, object?>
                 {
-                    amount = request.Price * 100,
-                    currency = request.Currency,
-                    merchant_order_id = payment.Id,
+                    ["amount"] = request.Price * 100,
+                    ["currency"] = request.Currency,
+                    ["merchant_order_id"] = payment.Id,
                     // Integration IDs come from config (Paymob:CardIntegrationId / WalletIntegrationId).
-                    payment_methods = new[]
+                    ["payment_methods"] = new[]
                     {
                         int.Parse(_configuration["Paymob:CardIntegrationId"] ?? "0"),
                         int.Parse(_configuration["Paymob:WalletIntegrationId"] ?? "0")
                     },
-
-                    //card_tokens = savedCards.Any() ? savedCards : null,
-                    billing_data = new
+                    ["billing_data"] = new
                     {
                         first_name = user.FullName,
                         last_name = "NA",
@@ -97,6 +97,13 @@ namespace Masafet_Elseka.Infrastructure.Services.PaymentService
                         email = user.Email,
                     }
                 };
+
+                // Only include card_tokens when the user actually has saved cards, so the
+                // default new-card flow is byte-for-byte unchanged for everyone else.
+                if (savedCardTokens.Length > 0)
+                {
+                    body["card_tokens"] = savedCardTokens;
+                }
 
                 using var requestMessage = new HttpRequestMessage(HttpMethod.Post,
                     "https://accept.paymob.com/v1/intention/");
@@ -108,13 +115,19 @@ namespace Masafet_Elseka.Infrastructure.Services.PaymentService
                 var response = await _httpClient.SendAsync(requestMessage);
                 response.EnsureSuccessStatusCode();
                 var intentResponse = await response.Content.ReadFromJsonAsync<PaymobIntentResponseDTO>();
-                payment.OrderId = intentResponse.IntentionOrderId.ToString();
-                await _context.SaveChangesAsync();
 
+                // Validate the gateway response BEFORE dereferencing it. Previously the null
+                // check ran after `intentResponse.IntentionOrderId`, so a null/unparseable
+                // response threw an NRE. Returning here disposes the transaction without a
+                // commit, so no partial Pending payment row is left behind.
                 if (intentResponse == null)
                 {
                     return Response<PaymobIntentResponseDTO>.Failure("فشل في إنشاء الدفع", 400);
                 }
+
+                payment.OrderId = intentResponse.IntentionOrderId.ToString();
+                await _context.SaveChangesAsync();
+
                 intentResponse.PublicKey = _configuration["Paymob:PublicKey"];
 
                 transaction.Commit();
@@ -123,7 +136,8 @@ namespace Masafet_Elseka.Infrastructure.Services.PaymentService
             catch (HttpRequestException httpEx)
             {
                 transaction.Rollback();
-                return Response<PaymobIntentResponseDTO>.Failure($"خطأ في الاتصال بخدمة الدفع: {httpEx.Message}", 503);
+                Log.Error(httpEx, "PaymentService CreatePaymentIntent HTTP error");
+                return Response<PaymobIntentResponseDTO>.Failure("تعذّر الاتصال بخدمة الدفع. يرجى المحاولة لاحقًا.", 503);
             }
             catch (Exception ex)
             {
@@ -132,6 +146,354 @@ namespace Masafet_Elseka.Infrastructure.Services.PaymentService
                 return Response<PaymobIntentResponseDTO>.Failure("حدث خطأ غير متوقع، يرجى المحاولة لاحقًا.", 500);
             }
         }
+        // ===================== Visa Pre-Authorization (Auth & Capture) =====================
+
+        // Cached Paymob auth token (legacy /api/auth/tokens), shared across scoped
+        // PaymentService instances. Paymob tokens last 1 hour; we refresh after 55 min.
+        private static string? _cachedAuthToken;
+        private static DateTime _authTokenExpiresAtUtc;
+        private static readonly SemaphoreSlim _authLock = new(1, 1);
+
+        private string PaymobBaseUrl =>
+            _configuration["Paymob:BaseUrl"] ?? "https://accept.paymob.com";
+
+        // 4.1 — Create a pre-authorization (hold) intention. Mirrors CreatePaymentIntentAsync
+        // but uses the Auth integration id so the resulting transaction is a hold, not a sale.
+        // Returns the same unified-checkout payload (client_secret + public key) the Flutter
+        // app already consumes, so the mobile initiation path is unchanged.
+        public async Task<Response<PaymobIntentResponseDTO>> InitiatePreAuthAsync(PaymentRequestDTO request)
+        {
+            var authIntegrationId = _configuration["Paymob:AuthIntegrationId"];
+            if (string.IsNullOrWhiteSpace(authIntegrationId) || authIntegrationId == "0")
+            {
+                Log.Warning("InitiatePreAuth called but Paymob:AuthIntegrationId is not configured");
+                return Response<PaymobIntentResponseDTO>.Failure("خدمة الدفع غير متاحة حالياً، يرجى الدفع نقداً", 503);
+            }
+
+            using var transaction = await _context.Database.BeginTransactionAsync();
+            try
+            {
+                var user = await _context.Users.FindAsync(request.UserId);
+                if (user == null)
+                {
+                    return Response<PaymobIntentResponseDTO>.Failure("المستخدم غير موجود", 404);
+                }
+
+                if (_context.Payments.Any(p => p.TripId == request.TripId &&
+                        (p.Status == PaymentStatus.Paid || p.Status == PaymentStatus.Captured ||
+                         p.Status == PaymentStatus.PreAuthSuccess)))
+                {
+                    return Response<PaymobIntentResponseDTO>.Failure("تم دفع أو حجز مبلغ هذه الرحلة مسبقاً", 400);
+                }
+
+                var payment = new Payment
+                {
+                    UserId = request.UserId,
+                    TripId = request.TripId,
+                    Amount = request.Price,
+                    Currency = request.Currency,
+                    CreatedAt = DateTime.Now.ToEgyptTime(),
+                    Status = PaymentStatus.PreAuthInitiated,
+                    // Paymob holds funds ~7 days; void at +6 to stay safely inside the window.
+                    PreauthExpiresAt = DateTime.Now.ToEgyptTime().AddDays(6)
+                };
+                _context.Payments.Add(payment);
+
+                var body = new Dictionary<string, object?>
+                {
+                    ["amount"] = (int)Math.Round(request.Price * 100),
+                    ["currency"] = request.Currency,
+                    ["merchant_order_id"] = payment.Id,
+                    ["payment_methods"] = new[] { int.Parse(authIntegrationId) },
+                    ["billing_data"] = new
+                    {
+                        first_name = user.FullName,
+                        last_name = "NA",
+                        phone_number = user.PhoneNumber,
+                        email = user.Email,
+                    }
+                };
+
+                using var requestMessage = new HttpRequestMessage(HttpMethod.Post,
+                    $"{PaymobBaseUrl}/v1/intention/");
+                requestMessage.Headers.Authorization =
+                    new System.Net.Http.Headers.AuthenticationHeaderValue("Token", _configuration["Paymob:SecretKey"]);
+                requestMessage.Content = JsonContent.Create(body);
+
+                using var cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(15000));
+                var response = await _httpClient.SendAsync(requestMessage, cts.Token);
+                response.EnsureSuccessStatusCode();
+                var intentResponse = await response.Content.ReadFromJsonAsync<PaymobIntentResponseDTO>(cancellationToken: cts.Token);
+
+                if (intentResponse == null)
+                {
+                    return Response<PaymobIntentResponseDTO>.Failure("فشل في إنشاء الحجز المسبق", 400);
+                }
+
+                payment.OrderId = intentResponse.IntentionOrderId.ToString();
+                await _context.SaveChangesAsync();
+
+                intentResponse.PublicKey = _configuration["Paymob:PublicKey"];
+
+                await transaction.CommitAsync();
+                return Response<PaymobIntentResponseDTO>.Success(intentResponse, "تم إنشاء الحجز المسبق بنجاح", 200);
+            }
+            catch (HttpRequestException httpEx)
+            {
+                await transaction.RollbackAsync();
+                Log.Error(httpEx, "PaymentService InitiatePreAuth HTTP error");
+                return Response<PaymobIntentResponseDTO>.Failure("تعذّر الاتصال بخدمة الدفع. يرجى المحاولة لاحقاً أو الدفع نقداً.", 503);
+            }
+            catch (Exception ex)
+            {
+                await transaction.RollbackAsync();
+                Log.Error(ex, "PaymentService InitiatePreAuth error");
+                return Response<PaymobIntentResponseDTO>.Failure("حدث خطأ غير متوقع، يرجى المحاولة لاحقاً.", 500);
+            }
+        }
+
+        // 4.3 — Capture the held amount when the ride completes. Retries once after a 5s
+        // backoff on transient failure; on final failure marks CaptureFailed and alerts admin.
+        public async Task<Response<Payment>> CaptureRidePaymentAsync(string tripId)
+        {
+            try
+            {
+                var payment = await _context.Payments
+                    .Where(p => p.TripId == tripId)
+                    .OrderByDescending(p => p.CreatedAt)
+                    .FirstOrDefaultAsync();
+
+                if (payment == null)
+                {
+                    return Response<Payment>.Failure("لا يوجد دفع مسجل لهذه الرحلة", 404);
+                }
+                if (payment.Status != PaymentStatus.PreAuthSuccess || string.IsNullOrEmpty(payment.PreauthTransactionId))
+                {
+                    return Response<Payment>.Failure("لا يمكن تحصيل المبلغ: لا يوجد حجز ناجح لهذه الرحلة", 400);
+                }
+
+                var amountCents = (int)Math.Round(payment.Amount * 100);
+                var captured = false;
+                for (var attempt = 0; attempt < 2 && !captured; attempt++)
+                {
+                    if (attempt > 0)
+                    {
+                        await Task.Delay(TimeSpan.FromSeconds(5)); // single 5s backoff retry
+                    }
+                    try
+                    {
+                        var token = await AuthenticateAsync();
+                        captured = await CaptureTransactionAsync(token, payment.PreauthTransactionId, amountCents);
+                    }
+                    catch (Exception ex)
+                    {
+                        Log.Error(ex, "Capture attempt {Attempt} failed for trip {TripId}", attempt + 1, tripId);
+                    }
+                }
+
+                if (!captured)
+                {
+                    payment.Status = PaymentStatus.CaptureFailed;
+                    payment.FailureReason = "Capture failed at Paymob after retry";
+                    payment.UpdatedAt = DateTime.Now.ToEgyptTime();
+                    await _context.SaveChangesAsync();
+                    Log.Error("ADMIN ALERT: capture failed for trip {TripId}, payment {PaymentId}, amount {Amount}",
+                        tripId, payment.Id, payment.Amount);
+                    await AlertAdminsAsync("فشل تحصيل دفعة فيزا",
+                        $"تعذّر تحصيل مبلغ الرحلة {tripId}. يرجى المتابعة يدوياً.");
+                    return Response<Payment>.Failure("فشل تحصيل المبلغ من البطاقة", 500);
+                }
+
+                // Optimistic update; the capture webhook (is_capture) confirms and sets the real id.
+                payment.Status = PaymentStatus.Captured;
+                payment.CaptureTransactionId ??= payment.PreauthTransactionId;
+                payment.UpdatedAt = DateTime.Now.ToEgyptTime();
+                await _context.SaveChangesAsync();
+                return Response<Payment>.Success(payment, "تم تحصيل المبلغ بنجاح", 200);
+            }
+            catch (Exception ex)
+            {
+                Log.Error(ex, "CaptureRidePayment error for trip {TripId}", tripId);
+                return Response<Payment>.Failure("حدث خطأ أثناء تحصيل المبلغ", 500);
+            }
+        }
+
+        // 4.4 — Void (release) the held amount when the ride is cancelled before capture.
+        public async Task<Response<Payment>> VoidRidePaymentAsync(string tripId)
+        {
+            try
+            {
+                var payment = await _context.Payments
+                    .Where(p => p.TripId == tripId)
+                    .OrderByDescending(p => p.CreatedAt)
+                    .FirstOrDefaultAsync();
+
+                if (payment == null)
+                {
+                    return Response<Payment>.Failure("لا يوجد دفع مسجل لهذه الرحلة", 404);
+                }
+                if (payment.Status != PaymentStatus.PreAuthSuccess || string.IsNullOrEmpty(payment.PreauthTransactionId))
+                {
+                    return Response<Payment>.Failure("لا يوجد حجز ناجح يمكن إلغاؤه لهذه الرحلة", 400);
+                }
+
+                var voided = false;
+                try
+                {
+                    var token = await AuthenticateAsync();
+                    voided = await VoidTransactionAsync(token, payment.PreauthTransactionId);
+                }
+                catch (Exception ex)
+                {
+                    Log.Error(ex, "Void call failed for trip {TripId}", tripId);
+                }
+
+                if (!voided)
+                {
+                    payment.Status = PaymentStatus.VoidFailed;
+                    payment.FailureReason = "Void failed at Paymob";
+                    payment.UpdatedAt = DateTime.Now.ToEgyptTime();
+                    await _context.SaveChangesAsync();
+                    Log.Error("ADMIN ALERT: void failed for trip {TripId}, payment {PaymentId}", tripId, payment.Id);
+                    await AlertAdminsAsync("فشل إلغاء حجز فيزا",
+                        $"تعذّر إلغاء حجز مبلغ الرحلة {tripId}. يرجى المتابعة يدوياً.");
+                    return Response<Payment>.Failure("فشل إلغاء الحجز", 500);
+                }
+
+                payment.Status = PaymentStatus.Voided;
+                payment.UpdatedAt = DateTime.Now.ToEgyptTime();
+                await _context.SaveChangesAsync();
+                return Response<Payment>.Success(payment, "تم إلغاء الحجز بنجاح", 200);
+            }
+            catch (Exception ex)
+            {
+                Log.Error(ex, "VoidRidePayment error for trip {TripId}", tripId);
+                return Response<Payment>.Failure("حدث خطأ أثناء إلغاء الحجز", 500);
+            }
+        }
+
+        // Edge case 5 — cron sweep: void any pre-auth still held past its expiry window.
+        public async Task<int> VoidExpiredPreAuthsAsync()
+        {
+            var now = DateTime.Now.ToEgyptTime();
+            var expired = await _context.Payments
+                .Where(p => p.Status == PaymentStatus.PreAuthSuccess
+                            && p.PreauthExpiresAt != null
+                            && p.PreauthExpiresAt < now)
+                .ToListAsync();
+
+            var count = 0;
+            foreach (var payment in expired)
+            {
+                var result = await VoidRidePaymentAsync(payment.TripId);
+                if (result.IsSuccess)
+                {
+                    count++;
+                    Log.Warning("Voided expired pre-auth for trip {TripId} (expired at {ExpiresAt})",
+                        payment.TripId, payment.PreauthExpiresAt);
+                }
+            }
+            return count;
+        }
+
+        // --- Raw Paymob calls (legacy auth token + acceptance endpoints) ---
+
+        private async Task<string> AuthenticateAsync()
+        {
+            if (_cachedAuthToken != null && DateTime.UtcNow < _authTokenExpiresAtUtc)
+            {
+                return _cachedAuthToken;
+            }
+            await _authLock.WaitAsync();
+            try
+            {
+                if (_cachedAuthToken != null && DateTime.UtcNow < _authTokenExpiresAtUtc)
+                {
+                    return _cachedAuthToken;
+                }
+                var apiKey = _configuration["Paymob:ApiKey"];
+                if (string.IsNullOrWhiteSpace(apiKey))
+                {
+                    throw new InvalidOperationException("Paymob:ApiKey is not configured");
+                }
+                using var cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(15000));
+                var resp = await _httpClient.PostAsJsonAsync($"{PaymobBaseUrl}/api/auth/tokens",
+                    new { api_key = apiKey }, cts.Token);
+                resp.EnsureSuccessStatusCode();
+                using var doc = JsonDocument.Parse(await resp.Content.ReadAsStringAsync(cts.Token));
+                var token = doc.RootElement.GetProperty("token").GetString();
+                _cachedAuthToken = token;
+                _authTokenExpiresAtUtc = DateTime.UtcNow.AddMinutes(55);
+                return token!;
+            }
+            finally
+            {
+                _authLock.Release();
+            }
+        }
+
+        private async Task<bool> CaptureTransactionAsync(string authToken, string transactionId, int amountCents)
+        {
+            using var cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(15000));
+            var resp = await _httpClient.PostAsJsonAsync($"{PaymobBaseUrl}/api/acceptance/capture",
+                new { auth_token = authToken, transaction_id = transactionId, amount_cents = amountCents }, cts.Token);
+            if (!resp.IsSuccessStatusCode)
+            {
+                Log.Error("Paymob capture returned {Status} for transaction {TransactionId}", resp.StatusCode, transactionId);
+                return false;
+            }
+            using var doc = JsonDocument.Parse(await resp.Content.ReadAsStringAsync(cts.Token));
+            // Capture echoes the transaction object; trust its "success" flag when present.
+            if (doc.RootElement.TryGetProperty("success", out var success))
+            {
+                return success.ValueKind == JsonValueKind.True ||
+                       (success.ValueKind == JsonValueKind.String && bool.TryParse(success.GetString(), out var b) && b);
+            }
+            return true;
+        }
+
+        private async Task<bool> VoidTransactionAsync(string authToken, string transactionId)
+        {
+            using var cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(15000));
+            var resp = await _httpClient.PostAsJsonAsync($"{PaymobBaseUrl}/api/acceptance/void_refund/void",
+                new { auth_token = authToken, transaction_id = transactionId }, cts.Token);
+            if (!resp.IsSuccessStatusCode)
+            {
+                Log.Error("Paymob void returned {Status} for transaction {TransactionId}", resp.StatusCode, transactionId);
+                return false;
+            }
+            using var doc = JsonDocument.Parse(await resp.Content.ReadAsStringAsync(cts.Token));
+            if (doc.RootElement.TryGetProperty("success", out var success))
+            {
+                return success.ValueKind == JsonValueKind.True ||
+                       (success.ValueKind == JsonValueKind.String && bool.TryParse(success.GetString(), out var b) && b);
+            }
+            return true;
+        }
+
+        // Best-effort admin alert for capture/void failures. Notifies all Admin-role users
+        // via the existing notification service; failures here are logged, never thrown.
+        private async Task AlertAdminsAsync(string title, string message)
+        {
+            try
+            {
+                var adminIds = await (from u in _context.Users
+                                      join ur in _context.UserRoles on u.Id equals ur.UserId
+                                      join r in _context.Roles on ur.RoleId equals r.Id
+                                      where r.Name == "Admin"
+                                      select u.Id).ToListAsync();
+                foreach (var adminId in adminIds)
+                {
+                    await _notificationService.SendNotificationToUserAsync(adminId, title, message,
+                        new Dictionary<string, string> { { "type", "payment_alert" } });
+                }
+            }
+            catch (Exception ex)
+            {
+                Log.Error(ex, "Failed sending admin payment-failure alert");
+            }
+        }
+
         public async Task<Response<string>> HandleTransactionWebhookAsync(PaymobWebhookDTO webhook /*PaymobTransactionDTO webhook*/,string hmacSecret)
         {
             try
@@ -163,10 +525,47 @@ namespace Masafet_Elseka.Infrastructure.Services.PaymentService
                     return Response<string>.Failure("عملية الدفع غير موجودة", 404);
                 }
 
-                payment.Status = webhook.Obj.Success ? PaymentStatus.Paid : PaymentStatus.Failed;
-                payment.Method= webhook.Obj.SourceData?.Type;
+                var obj = webhook.Obj;
+                payment.Method = obj.SourceData?.Type;
                 payment.UpdatedAt = DateTime.Now.ToEgyptTime();
-                payment.TransactionId = webhook.Obj.Id.ToString();
+                payment.TransactionId = obj.Id.ToString();
+
+                // Branch on the Paymob transaction type. is_voided / is_capture / is_auth
+                // drive the pre-auth lifecycle; anything else is a legacy immediate sale.
+                if (obj.IsVoided)
+                {
+                    payment.Status = PaymentStatus.Voided;
+                }
+                else if (obj.IsCapture)
+                {
+                    payment.Status = obj.Success ? PaymentStatus.Captured : PaymentStatus.CaptureFailed;
+                    if (obj.Success)
+                    {
+                        payment.CaptureTransactionId = obj.Id.ToString();
+                    }
+                    else
+                    {
+                        payment.FailureReason = "Capture failed at gateway";
+                    }
+                }
+                else if (obj.IsAuth)
+                {
+                    if (obj.Success)
+                    {
+                        payment.Status = PaymentStatus.PreAuthSuccess;
+                        payment.PreauthTransactionId = obj.Id.ToString();
+                        payment.PreauthExpiresAt ??= DateTime.Now.ToEgyptTime().AddDays(6);
+                    }
+                    else
+                    {
+                        payment.Status = PaymentStatus.PreAuthFailed;
+                        payment.FailureReason = "Card declined at pre-authorization";
+                    }
+                }
+                else
+                {
+                    payment.Status = obj.Success ? PaymentStatus.Paid : PaymentStatus.Failed;
+                }
 
                 await _context.SaveChangesAsync();
 
@@ -293,6 +692,53 @@ namespace Masafet_Elseka.Infrastructure.Services.PaymentService
             }
         }
 
+        // Driver-confirmed cash: marks the trip Paid (Cash) on behalf of the
+        // trip's client. Returns the client id in Data so the hub can notify
+        // the correct user group (the rider waiting on its completion screen).
+        public async Task<Response<string>> ConfirmCashPaymentByDriverAsync(string tripId)
+        {
+            try
+            {
+                var trip = await _context.Trips
+                    .Include(t => t.Payment)
+                    .Include(t => t.UserTrips)
+                    .FirstOrDefaultAsync(t => t.Id == tripId);
+                if (trip == null)
+                {
+                    return Response<string>.Failure("الرحلة غير موجودة", 404);
+                }
+                var clientId = trip.UserTrips
+                    .FirstOrDefault(ut => ut.Role == UserTripRole.Client)?.UserId;
+                if (string.IsNullOrEmpty(clientId))
+                {
+                    return Response<string>.Failure("لم يتم العثور على عميل لهذه الرحلة", 404);
+                }
+                if (trip.Payment.Any(p => p.Status == PaymentStatus.Paid))
+                {
+                    return Response<string>.Failure("تم دفع هذه الرحلة بالفعل", 400);
+                }
+                var payment = new Payment
+                {
+                    Amount = trip.Price,
+                    Currency = "EGP",
+                    Method = "Cash",
+                    Status = PaymentStatus.Paid,
+                    CreatedAt = DateTime.Now.ToEgyptTime(),
+                    UpdatedAt = DateTime.Now.ToEgyptTime(),
+                    UserId = clientId,
+                    TripId = tripId
+                };
+                _context.Payments.Add(payment);
+                await _context.SaveChangesAsync();
+                return Response<string>.Success(clientId, "تم تأكيد استلام الدفع نقدًا", 200);
+            }
+            catch (Exception ex)
+            {
+                Log.Error(ex, "PaymentService confirm cash payment error");
+                return Response<string>.Failure("حدث خطأ أثناء تأكيد الدفع نقدا", "حدث خطأ أثناء تأكيد الدفع نقدا", 500);
+            }
+        }
+
         //Helpers
         private string BuildTransactionConcatenatedString(PaymobTransactionDTO obj)
         {  
@@ -337,7 +783,13 @@ namespace Masafet_Elseka.Infrastructure.Services.PaymentService
             var response = new
             {
                 Status = status.ToString(),
-                Message = status == PaymentStatus.Paid ? "تم دفع الرحلة بنجاح" : "فشل في عملية الدفع"
+                Message = status switch
+                {
+                    PaymentStatus.Paid or PaymentStatus.Captured => "تم دفع الرحلة بنجاح",
+                    PaymentStatus.PreAuthSuccess => "تم حجز مبلغ الرحلة بنجاح، يمكن بدء الرحلة",
+                    PaymentStatus.PreAuthFailed => "تم رفض البطاقة، يرجى استخدام بطاقة أخرى أو الدفع نقداً",
+                    _ => "فشل في عملية الدفع"
+                }
             };
 
             await _tripHub.Clients.Group(HubGroups.User(userId))
@@ -348,7 +800,33 @@ namespace Masafet_Elseka.Infrastructure.Services.PaymentService
                     .SendAsync(HubEvents.TripPaymentUpdated, response);
             }
 
-            if (status == PaymentStatus.Paid)
+            // Push notifications: confirm the online payment to both sides. Only on actual
+            // money movement (Paid / Captured) — a pre-auth hold isn't a charge yet.
+            if (status is PaymentStatus.Paid or PaymentStatus.Captured)
+            {
+                try
+                {
+                    await _notificationService.SendNotificationToUserAsync(
+                        userId,
+                        "تم الدفع 🎉",
+                        "تم استلام دفعتك عبر فيزا بنجاح. شكرًا لاختيارك V-Go!",
+                        new Dictionary<string, string> { { "type", "payment_done" } });
+                    if (!string.IsNullOrEmpty(driverId))
+                    {
+                        await _notificationService.SendNotificationToUserAsync(
+                            driverId,
+                            "تم تأكيد الدفع",
+                            "أكمل العميل الدفع عبر فيزا بنجاح.",
+                            new Dictionary<string, string> { { "type", "payment_done" } });
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Log.Error(ex, "Failed sending payment-done push notifications");
+                }
+            }
+
+            if (status is PaymentStatus.Paid or PaymentStatus.Captured or PaymentStatus.PreAuthSuccess)
             {
                 var currentTrip = await _tripService.GetCurrentTrip(userId, UserTripRole.Client);
                 if (currentTrip.IsSuccess && currentTrip.Data != null)

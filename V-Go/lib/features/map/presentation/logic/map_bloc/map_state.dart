@@ -28,6 +28,8 @@ class MapState extends Equatable {
   final BitmapDescriptor? timeMarkerIcon;
   final List<LocationModel> fakeScooterLocations;
   final bool showFakeScooters;
+  // Live captain location during an active trip (null otherwise).
+  final LocationModel? driverLocation;
 
   const MapState({
     this.currentLocation,
@@ -52,6 +54,7 @@ class MapState extends Equatable {
     this.timeMarkerIcon,
     this.fakeScooterLocations = const [],
     this.showFakeScooters = false,
+    this.driverLocation,
   });
 
   MapState copyWith({
@@ -77,6 +80,8 @@ class MapState extends Equatable {
     BitmapDescriptor? timeMarkerIcon,
     List<LocationModel>? fakeScooterLocations,
     bool? showFakeScooters,
+    LocationModel? driverLocation,
+    bool clearDriverLocation = false,
   }) {
     return MapState(
       currentLocation: currentLocation ?? this.currentLocation,
@@ -103,6 +108,8 @@ class MapState extends Equatable {
       timeMarkerIcon: timeMarkerIcon ?? this.timeMarkerIcon,
       fakeScooterLocations: fakeScooterLocations ?? this.fakeScooterLocations,
       showFakeScooters: showFakeScooters ?? this.showFakeScooters,
+      driverLocation:
+          clearDriverLocation ? null : (driverLocation ?? this.driverLocation),
     );
   }
 
@@ -127,5 +134,6 @@ class MapState extends Equatable {
     remainingTime,
     fakeScooterLocations,
     showFakeScooters,
+    driverLocation,
   ];
 }

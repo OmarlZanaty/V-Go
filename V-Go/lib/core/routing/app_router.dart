@@ -13,9 +13,13 @@ import '../../features/admin/presentation/views/all_users_view.dart';
 import '../../features/admin/presentation/views/update_user_view.dart';
 import '../../features/admin/presentation/views/user_details_view.dart';
 import '../../features/auth/presentation/logic/cubit/auth_cubit.dart';
+import '../../features/auth/presentation/logic/phone_auth_cubit/phone_auth_cubit.dart';
 import '../../features/auth/presentation/views/account_type_view.dart';
 import '../../features/auth/presentation/views/change_password_view.dart';
 import '../../features/auth/presentation/views/login_view.dart';
+import '../../features/auth/presentation/views/phone_login_view.dart';
+import '../../features/auth/presentation/views/phone_signup_view.dart';
+import '../../features/auth/presentation/views/google_complete_profile_view.dart';
 import '../../features/auth/presentation/views/otp_view.dart';
 import '../../features/auth/presentation/views/register_view.dart';
 import '../../features/auth/presentation/views/reset_password_view.dart';
@@ -68,6 +72,33 @@ class AppRouter {
           builder: (_) => BlocProvider(
             create: (context) => AuthCubit(getIt()),
             child: const LoginView(),
+          ),
+        );
+      case Routes.phoneLoginViewRoute:
+        return MaterialPageRoute(
+          builder: (_) => BlocProvider(
+            create: (context) => PhoneAuthCubit(getIt()),
+            child: const PhoneLoginView(),
+          ),
+        );
+      case Routes.phoneSignupViewRoute:
+        final phone = settings.arguments as String? ?? '';
+        return MaterialPageRoute(
+          builder: (_) => BlocProvider(
+            create: (context) => PhoneAuthCubit(getIt()),
+            child: PhoneSignupView(phone: phone),
+          ),
+        );
+      case Routes.googleCompleteProfileViewRoute:
+        final args = settings.arguments as Map<String, dynamic>? ?? {};
+        return MaterialPageRoute(
+          builder: (_) => BlocProvider(
+            create: (context) => AuthCubit(getIt()),
+            child: GoogleCompleteProfileView(
+              idToken: args['idToken'] as String? ?? '',
+              name: args['name'] as String? ?? '',
+              photo: args['photo'] as String? ?? '',
+            ),
           ),
         );
       case Routes.registerViewRoute:
@@ -362,7 +393,12 @@ class AppRouter {
           builder: (_) => DriverAndScooterDetailsView(user: user),
         );
       case Routes.accountTypeViewRoute:
-        return MaterialPageRoute(builder: (_) => const AccountTypeView());
+        return MaterialPageRoute(
+          builder: (_) => BlocProvider(
+            create: (_) => AuthCubit(getIt()),
+            child: const AccountTypeView(),
+          ),
+        );
       case Routes.customPaymentWebViewRoute:
         final url = settings.arguments as String;
         return MaterialPageRoute(

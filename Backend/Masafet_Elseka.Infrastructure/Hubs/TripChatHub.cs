@@ -1,5 +1,7 @@
 ﻿using Masafet_Elseka.Application.Interfaces.IChatService;
 using Masafet_Elseka.Application.Interfaces.IMessageService;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.SignalR;
 using System;
 using System.Collections.Generic;
@@ -9,6 +11,7 @@ using System.Threading.Tasks;
 
 namespace Masafet_Elseka.Infrastructure.Hubs
 {
+    [Authorize(AuthenticationSchemes = JwtBearerDefaults.AuthenticationScheme)]
     public class TripChatHub : Hub
     {
         private readonly IChatService _chatService;

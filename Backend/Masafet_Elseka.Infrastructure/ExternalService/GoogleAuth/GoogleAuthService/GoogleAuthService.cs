@@ -108,7 +108,6 @@ namespace Masafet_Elseka.Infrastructure.ExternalService.GoogleAuth.GoogleAuthSer
             }
             catch (Exception ex)
             {
-                //Console.WriteLine($"Token verification failed: {ex.Message}");
                 return null;
             }
         }
@@ -176,7 +175,6 @@ namespace Masafet_Elseka.Infrastructure.ExternalService.GoogleAuth.GoogleAuthSer
 
                 var redirectUri = _configuration["GoogleAuth:redirect_uri_mobile"];
 
-                //Console.WriteLine($"[Mobile Auth] Exchanging code with redirect_uri: {redirectUri}");
 
                 var values = new Dictionary<string, string>
                 {
@@ -191,7 +189,6 @@ namespace Masafet_Elseka.Infrastructure.ExternalService.GoogleAuth.GoogleAuthSer
                 var response = await client.PostAsync("https://oauth2.googleapis.com/token", content);
                 var responseString = await response.Content.ReadAsStringAsync();
 
-                //Console.WriteLine($"[Mobile Auth] Google Response: {responseString}");
 
                 if (!response.IsSuccessStatusCode)
                 {
@@ -211,13 +208,11 @@ namespace Masafet_Elseka.Infrastructure.ExternalService.GoogleAuth.GoogleAuthSer
                         400);
                 }
 
-                //Console.WriteLine($"[Mobile Auth] ID Token received, proceeding with login...");
 
                 return await GoogleLogin(tokenResponse.IdToken);
             }
             catch (Exception ex)
             {
-                //Console.WriteLine($"[Mobile Auth] Exception: {ex.Message}");
                 return Response<LoginResponseDTO>.Failure(
                     new LoginResponseDTO(),
                     $"Mobile login failed: {ex.Message}",

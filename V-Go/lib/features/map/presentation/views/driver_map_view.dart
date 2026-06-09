@@ -453,7 +453,7 @@ class _DriverMapViewState extends State<DriverMapView> {
                 return Stack(
                   children: [
                     GoogleMap(
-                      trafficEnabled: true,
+                      trafficEnabled: false,
                       myLocationEnabled: true,
                       myLocationButtonEnabled: false,
                       padding: const EdgeInsets.only(top: 30),

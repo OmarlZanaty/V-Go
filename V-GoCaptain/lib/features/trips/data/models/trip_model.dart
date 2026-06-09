@@ -1,4 +1,4 @@
-/// A trip as returned by the backend (Trip/tripByUserId, Trip/cuurentTrips).
+/// A trip as returned by the backend (Trip/tripByUserId, Trip/currentTrips).
 class TripModel {
   final String tripId;
   final TripPlace from;
@@ -11,6 +11,7 @@ class TripModel {
   final String clientPhone;
   final String? clientImage;
   final DateTime? createdAt;
+  final String paymentMethod;
 
   TripModel({
     required this.tripId,
@@ -24,6 +25,7 @@ class TripModel {
     required this.clientPhone,
     this.clientImage,
     this.createdAt,
+    this.paymentMethod = 'Cash',
   });
 
   bool get isCompleted => status == 'Completed';
@@ -46,6 +48,7 @@ class TripModel {
       clientPhone: j['userPhone']?.toString() ?? '',
       clientImage: j['userProfileImage']?.toString(),
       createdAt: DateTime.tryParse(j['createdAt']?.toString() ?? ''),
+      paymentMethod: j['paymentMethod']?.toString() ?? 'Cash',
     );
   }
 }

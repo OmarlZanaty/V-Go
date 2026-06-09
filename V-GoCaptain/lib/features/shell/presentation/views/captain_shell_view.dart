@@ -40,6 +40,7 @@ class _CaptainShellViewState extends State<CaptainShellView> {
           create: (_) => CaptainHomeCubit(
             getIt<RealtimeService>(),
             getIt<LocationService>(),
+            getIt<TripRepo>(),
           ),
         ),
         BlocProvider(

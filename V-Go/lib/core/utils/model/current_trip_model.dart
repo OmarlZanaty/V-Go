@@ -20,6 +20,7 @@ class CurrentTripModel {
   final num? driverRate;
   final DateTime createdAt;
   final bool isPaid;
+  final String paymentMethod;
 
   CurrentTripModel({
     required this.tripId,
@@ -41,6 +42,7 @@ class CurrentTripModel {
     this.clientRate = 0.0,
     this.driverRate = 0.0,
     this.isPaid = false,
+    this.paymentMethod = 'Cash',
   });
 
   factory CurrentTripModel.fromJson(Map<String, dynamic> json) =>
@@ -64,5 +66,6 @@ class CurrentTripModel {
         scooterLicense: json['scooterLicense'],
         createdAt: DateTime.parse(json['createdAt']),
         isPaid: json['isPaid'],
+        paymentMethod: (json['paymentMethod'] ?? 'Cash') as String,
       );
 }

@@ -15,7 +15,7 @@ class NavigationHandler {
 
   void goToLoginView() {
     navigatorKey.currentState?.pushNamedAndRemoveUntil(
-      Routes.loginViewRoute,
+      Routes.phoneLoginViewRoute,
       (route) => false,
     );
   }

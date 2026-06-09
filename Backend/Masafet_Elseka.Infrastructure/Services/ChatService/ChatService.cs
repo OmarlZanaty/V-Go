@@ -78,7 +78,7 @@ namespace Masafet_Elseka.Infrastructure.Services.ChatService
             }
             catch (Exception ex)
             {
-                return Response<IEnumerable<DispatcherChatDTO>>.Failure($"حدث خطأ اثناء جلب المحادثات: {ex.Message}", 500);
+                return Response<IEnumerable<DispatcherChatDTO>>.Failure($"حدث خطأ اثناء جلب المحادثات", 500);
             }
         }
 
@@ -102,7 +102,7 @@ namespace Masafet_Elseka.Infrastructure.Services.ChatService
             }
             catch (Exception ex)
             {
-                return Response<ChatDTO>.Failure($"حدث خطأ اثناء جلب المحادثات: {ex.Message}", 500);
+                return Response<ChatDTO>.Failure($"حدث خطأ اثناء جلب المحادثات", 500);
             }
         }
 
@@ -169,7 +169,7 @@ namespace Masafet_Elseka.Infrastructure.Services.ChatService
             }
             catch (Exception ex)
             {
-                return Response<Chat>.Failure($"حدث خطأ اثناء انشاء المحادثة: {ex.Message}", 500);
+                return Response<Chat>.Failure($"حدث خطأ اثناء انشاء المحادثة", 500);
             }
         }
 
@@ -223,7 +223,7 @@ namespace Masafet_Elseka.Infrastructure.Services.ChatService
             }
             catch (Exception ex)
             {
-                return Response<string>.Failure($"حدث خطأ اثناء انشاء محادثة الرحلة: {ex.Message}", 500);
+                return Response<string>.Failure($"حدث خطأ اثناء انشاء محادثة الرحلة", 500);
             }
         }
 
@@ -253,7 +253,7 @@ namespace Masafet_Elseka.Infrastructure.Services.ChatService
             }
             catch (Exception ex)
             {
-                return Response<ChatDTO>.Failure($"حدث خطأ اثناء جلب المحادثة: {ex.Message}", 500);
+                return Response<ChatDTO>.Failure($"حدث خطأ اثناء جلب المحادثة", 500);
             }
         }
 
@@ -295,7 +295,7 @@ namespace Masafet_Elseka.Infrastructure.Services.ChatService
             catch (Exception ex)
             {
                 await transaction.RollbackAsync();
-                return Response<ChatClosingDTO>.Failure($"حدث خطأ اثناء إغلاق المحادثة: {ex.Message}", 500);
+                return Response<ChatClosingDTO>.Failure($"حدث خطأ اثناء إغلاق المحادثة", 500);
             }
         }
 

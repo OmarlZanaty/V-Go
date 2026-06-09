@@ -82,7 +82,7 @@ namespace Masafet_Elseka.Infrastructure.Services.DispatcherService
             }
             catch (Exception ex)
             {
-                return ex.Message;
+                return "حدث خطأ غير متوقع، يرجى المحاولة لاحقًا";
             }
         }
 

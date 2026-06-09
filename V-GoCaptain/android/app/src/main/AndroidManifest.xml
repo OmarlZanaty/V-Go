@@ -3,11 +3,19 @@
     <uses-permission android:name="android.permission.INTERNET"/>
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/>
+    <!-- Push notifications (Android 13+) -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
 
     <application
         android:label="V-Go Captain"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
+        <!-- Google Maps SDK key (required for map tiles to render). -->
+        <meta-data android:name="com.google.android.geo.API_KEY"
+              android:value="AIzaSyDuYk1u_kcwBe_cDa6QnqHk7-RC2cPlzGE"/>
+        <!-- FCM: route background/terminated notifications to the high-priority channel. -->
+        <meta-data android:name="com.google.firebase.messaging.default_notification_channel_id"
+              android:value="trip_offers"/>
         <activity
             android:name=".MainActivity"
             android:exported="true"

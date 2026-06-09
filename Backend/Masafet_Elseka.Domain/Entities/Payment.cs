@@ -20,6 +20,15 @@ namespace Masafet_Elseka.Domain.Entities
         public string? OrderId { get; set; }
         public string? TransactionId { get; set; }
 
+        // Visa pre-authorization fields. Set as the Auth & Capture flow progresses;
+        // null for cash and legacy immediate-sale payments.
+        public string? PreauthTransactionId { get; set; }
+        public string? CaptureTransactionId { get; set; }
+        public string? FailureReason { get; set; }
+        // When the Paymob hold expires (createdAt + 6 days). The expiry cron voids
+        // any still-held pre-auth past this time so we never leave funds frozen.
+        public DateTime? PreauthExpiresAt { get; set; }
+
         public string UserId { get; set; }
         public string TripId { get; set; }
 

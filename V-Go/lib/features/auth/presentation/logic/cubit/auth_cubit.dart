@@ -2,16 +2,15 @@ import 'dart:async';
 
 import 'package:equatable/equatable.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:google_sign_in/google_sign_in.dart';
 
 import '../../../../../core/api/dio_factory.dart';
 import '../../../../../core/cache/cache_helper.dart';
 import '../../../../../core/errors/exception.dart';
 import '../../../../../core/helpers/app_type.dart';
-import '../../../../../core/helpers/custom_url_launcher.dart';
-import '../../../../../core/helpers/navigation_handler.dart';
 import '../../../../../core/utils/app_constants.dart';
-import '../../../data/model/check_state_response_model.dart';
 import '../../../data/model/login_response_model.dart';
+import '../../../data/model/phone_login_response_model.dart';
 import '../../../data/model/register_request_model.dart';
 import '../../../data/model/reset_password_request_model.dart';
 import '../../../data/repo/auth_repo.dart';
@@ -48,41 +47,92 @@ class AuthCubit extends Cubit<AuthState> {
   Future<void> googleLogin() async {
     emit(state.copyWith(status: AuthStatus.loginWithGoogleLoading));
     try {
-      final loginResp = await _authRepo.googleLogin();
+      const webClientId =
+          '792221536894-jqrpntom44mkat6kfn1lj916g5lp79a0.apps.googleusercontent.com';
+      final googleSignIn = GoogleSignIn(serverClientId: webClientId);
 
-      await customUrlLauncher(
-        NavigationHandler.navigatorKey.currentContext,
-        loginResp.authUrl,
+      // Sign out first so the account picker always appears.
+      await googleSignIn.signOut();
+      final account = await googleSignIn.signIn();
+      if (account == null) {
+        // User cancelled the picker.
+        if (isClosed) return;
+        emit(state.copyWith(status: AuthStatus.initial));
+        return;
+      }
+
+      final auth = await account.authentication;
+      final idToken = auth.idToken;
+      if (idToken == null) {
+        if (isClosed) return;
+        emit(state.copyWith(
+          status: AuthStatus.loginWithGoogleFailure,
+          errorMessage: 'فشل الحصول على رمز Google.',
+        ));
+        return;
+      }
+
+      final fcmToken =
+          (await CacheHelper.getSecuredString(AppConstants.fcmToken)) ?? '';
+      final result = await _authRepo.googleTokenLogin(
+        idToken: idToken,
+        fcmToken: fcmToken,
+        deviceType: 'Android',
       );
-      emit(state.copyWith(status: AuthStatus.initial));
-      final timer = Timer.periodic(const Duration(seconds: 2), (t) async {
-        final result = await _authRepo.checkState(state: loginResp.state);
-        if (!isClosed && result.status == 'completed') {
-          t.cancel();
-          await _cacheUserDataFromGoogle(result);
-          emit(state.copyWith(status: AuthStatus.loginWithGoogleSuccess));
-        } else if (!isClosed && result.status == 'failed') {
-          t.cancel();
-          emit(
-            state.copyWith(
-              status: AuthStatus.loginWithGoogleFailure,
-              errorMessage: 'حدث خطا اثناء تسجيل الدخول',
-            ),
-          );
-        }
-      });
 
-      Future.delayed(const Duration(minutes: 5), () {
-        if (timer.isActive) timer.cancel();
-      });
+      if (isClosed) return;
+      if (result.isNewUser) {
+        // New account — collect the required profile (name + phone) before creating it.
+        emit(state.copyWith(
+          status: AuthStatus.loginWithGoogleNewUser,
+          googleIdToken: idToken,
+          googleName: result.name ?? account.displayName ?? '',
+          googlePhoto: result.profilePicture ?? account.photoUrl ?? '',
+        ));
+      } else {
+        await _cacheUserDataFromGoogle(result);
+        emit(state.copyWith(status: AuthStatus.loginWithGoogleSuccess));
+      }
     } catch (e) {
       if (isClosed) return;
-      emit(
-        state.copyWith(
-          status: AuthStatus.loginWithGoogleFailure,
-          errorMessage: ServerFailure.fromError(e).errMessage,
-        ),
+      emit(state.copyWith(
+        status: AuthStatus.loginWithGoogleFailure,
+        errorMessage: ServerFailure.fromError(e).errMessage,
+      ));
+    }
+  }
+
+  /// Completes a new Google account after the user fills the required profile
+  /// (full name + phone; photo optional, defaults to the Google photo).
+  Future<void> completeGoogleProfile({
+    required String idToken,
+    required String fullName,
+    required String phone,
+    String? gender,
+    String? profilePicture,
+  }) async {
+    emit(state.copyWith(status: AuthStatus.loginWithGoogleLoading));
+    try {
+      final fcmToken =
+          (await CacheHelper.getSecuredString(AppConstants.fcmToken)) ?? '';
+      final result = await _authRepo.googleTokenLogin(
+        idToken: idToken,
+        fullName: fullName,
+        phone: phone,
+        gender: gender,
+        profilePicture: profilePicture,
+        fcmToken: fcmToken,
+        deviceType: 'Android',
       );
+      if (isClosed) return;
+      await _cacheUserDataFromGoogle(result);
+      emit(state.copyWith(status: AuthStatus.loginWithGoogleSuccess));
+    } catch (e) {
+      if (isClosed) return;
+      emit(state.copyWith(
+        status: AuthStatus.loginWithGoogleFailure,
+        errorMessage: ServerFailure.fromError(e).errMessage,
+      ));
     }
   }
 
@@ -127,7 +177,7 @@ class AuthCubit extends Cubit<AuthState> {
   Future<void> otpVerification(String otp, String email, String type) async {
     emit(state.copyWith(status: AuthStatus.otpVerificationLoading));
     try {
-      await _authRepo.verifyOtp(email, otp, type);
+      await _authRepo.verifyEmailOtp(email, otp, type);
       emit(
         state.copyWith(
           status: AuthStatus.otpVerificationSuccess,
@@ -265,24 +315,23 @@ class AuthCubit extends Cubit<AuthState> {
   }
 
   Future<void> _cacheUserDataFromGoogle(
-    CheckStateResponseModel response,
+    PhoneLoginResponseModel response,
   ) async {
+    final userId = response.userId ?? '';
+    final token = response.token ?? '';
+    final refresh = response.refreshToken ?? '';
+    final role = response.role ?? '';
+    final gender = response.gender ?? '';
     await Future.wait(<Future<void>>[
-      CacheHelper.setSecuredString(AppConstants.userId, response.user!.userId),
-      CacheHelper.setSecuredString(AppConstants.token, response.user!.token),
-      CacheHelper.setSecuredString(
-        AppConstants.refreshToken,
-        response.user!.refreshToken,
-      ),
-      CacheHelper.setData(key: AppConstants.role, value: response.user!.roles),
-      CacheHelper.setData(
-        key: AppConstants.gender,
-        value: response.user!.gender,
-      ),
+      CacheHelper.setSecuredString(AppConstants.userId, userId),
+      CacheHelper.setSecuredString(AppConstants.token, token),
+      CacheHelper.setSecuredString(AppConstants.refreshToken, refresh),
+      CacheHelper.setData(key: AppConstants.role, value: role),
+      CacheHelper.setData(key: AppConstants.gender, value: gender),
     ]);
-    AppConstants.kUserId = response.user!.userId;
-    AppConstants.kRole = response.user!.roles;
-    AppConstants.kToken = response.user!.token;
-    DioFactory.setTokenIntoHeaderAfterLogin(response.user!.token);
+    AppConstants.kUserId = userId;
+    AppConstants.kRole = role;
+    AppConstants.kToken = token;
+    DioFactory.setTokenIntoHeaderAfterLogin(token);
   }
 }

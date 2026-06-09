@@ -10,5 +10,6 @@ namespace Masafet_Elseka.Application.DTOs.Trip
     {
         public string CLientId { get; set; }
         public string DriverId { get; set; }
+        public string PaymentMethod { get; set; } = "Cash";
     }
 }

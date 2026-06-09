@@ -103,3 +103,15 @@ class UpdateRemainingTime extends MapEvent {
 class GenerateFakeScooters extends MapEvent {}
 
 class ClearFakeScooters extends MapEvent {}
+
+/// Live captain location pushed from the server during an active trip. [target]
+/// is the point the captain is heading to (pickup before the ride starts,
+/// destination after) so the bloc can redraw the captain's live route.
+class UpdateDriverLocation extends MapEvent {
+  final LocationModel driverLocation;
+  final LocationModel? target;
+  UpdateDriverLocation({required this.driverLocation, this.target});
+}
+
+/// Clear the captain marker + live route (trip ended/cancelled).
+class ClearDriverLocation extends MapEvent {}

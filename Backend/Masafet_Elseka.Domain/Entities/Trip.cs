@@ -25,7 +25,12 @@ namespace Masafet_Elseka.Domain.Entities
         public DateTime? EndTime { get; set; }
         public TripStatus Status { get; set; }
 
-        [Timestamp] 
+        // Payment method chosen by the client at request time: "Cash" or "Visa".
+        // Drives the cash-vs-visa flow (cash = captain confirms at end; visa =
+        // client pays online once the ride starts).
+        public string PaymentMethod { get; set; } = "Cash";
+
+        [Timestamp]
         public byte[] RowVersion { get; set; }
 
         public virtual Chat? Chat { get; set; }

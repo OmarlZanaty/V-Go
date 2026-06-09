@@ -4,10 +4,12 @@ import 'package:flutter_spinkit/flutter_spinkit.dart';
 
 import '../../../../core/api/api_service.dart';
 import '../../../../core/api/end_points.dart';
+import '../../../../core/cache/cache_helper.dart';
 import '../../../../core/di/di.dart';
 import '../../../../core/errors/exception.dart';
 import '../../../../core/theming/app_colors.dart';
 import '../../../../core/theming/app_style.dart';
+import '../../../../core/utils/app_constants.dart';
 
 class NotificationsView extends StatefulWidget {
   const NotificationsView({super.key});
@@ -51,10 +53,14 @@ class _NotificationsViewState extends State<NotificationsView> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
+        automaticallyImplyLeading: false,
         title: Text('الإشعارات',
             style: AppStyle.title.copyWith(color: AppColors.black)),
       ),
-      body: _loading
+      body: CacheHelper.getBool(AppConstants.notificationsMuted)
+          ? _empty(Icons.notifications_off_outlined,
+              'الإشعارات مُوقفة. يمكنك تفعيلها من الإعدادات.')
+          : _loading
           ? const Center(
               child: SpinKitThreeBounce(color: AppColors.primary, size: 32))
           : _error != null

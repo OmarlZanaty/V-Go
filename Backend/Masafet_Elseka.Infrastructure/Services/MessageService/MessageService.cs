@@ -101,7 +101,7 @@ namespace Masafet_Elseka.Infrastructure.Services.MessageService
             catch (Exception ex)
             {
                 await transaction.RollbackAsync();
-                return Response<MessageDTO>.Failure($"حدث خطأ أثناء إرسال الرسالة: {ex.Message}", 500);
+                return Response<MessageDTO>.Failure($"حدث خطأ أثناء إرسال الرسالة", 500);
             }
         }
 
@@ -155,7 +155,7 @@ namespace Masafet_Elseka.Infrastructure.Services.MessageService
             }
             catch (Exception ex)
             {
-                return Response<ICollection<MessageDTO>>.Failure($"حدث خطأ أثناء جلب الرسائل: {ex.Message}", 500);
+                return Response<ICollection<MessageDTO>>.Failure($"حدث خطأ أثناء جلب الرسائل", 500);
             }
         }
 
@@ -205,7 +205,7 @@ namespace Masafet_Elseka.Infrastructure.Services.MessageService
             catch (Exception ex)
             {
                 await transaction.RollbackAsync();
-                return Response<MessageDTO>.Failure($"حدث خطأ أثناء إرسال الرسالة: {ex.Message}", 500);
+                return Response<MessageDTO>.Failure($"حدث خطأ أثناء إرسال الرسالة", 500);
             }
         }
 
@@ -260,7 +260,7 @@ namespace Masafet_Elseka.Infrastructure.Services.MessageService
             }
             catch (Exception ex)
             {
-                return Response<List<MessageDTO>>.Failure($"حدث خطأ أثناء جلب الرسائل: {ex.Message}", 500);
+                return Response<List<MessageDTO>>.Failure($"حدث خطأ أثناء جلب الرسائل", 500);
             }
         }
     }

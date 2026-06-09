@@ -63,7 +63,6 @@ public class AuthStateService : IAuthStateService
         catch (Exception ex)
         {
             authState.Status = "failed";
-            //Console.WriteLine($"Error in CompleteState: {ex.Message}");
             return false;
         }
     }

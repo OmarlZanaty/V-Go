@@ -222,7 +222,7 @@ namespace Masafet_Elseka.Infrastructure.Services.NotificationService
             }
             catch (Exception ex)
             {
-                return Response<PaginationPagedResponse<NotificationDTO>>.Failure($"حدث خطأ غير متوقع: {ex.Message}", 500);
+                return Response<PaginationPagedResponse<NotificationDTO>>.Failure($"حدث خطأ غير متوقع", 500);
             }
         }
     }

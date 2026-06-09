@@ -25,4 +25,19 @@ class TripRepoImpl implements TripRepo {
         .map((e) => TripModel.fromJson(Map<String, dynamic>.from(e)))
         .toList();
   }
+
+  @override
+  Future<List<TripModel>> getPendingTrips() async {
+    final response = await _apiServices.get(EndPoint.allPendingTrips);
+    final list = response is List
+        ? response
+        : (response is Map
+            ? (response['items'] ?? response['data'] ?? response['Data'] ?? [])
+            : []);
+    return (list as List)
+        .whereType<Map>()
+        .map((e) => TripModel.fromJson(Map<String, dynamic>.from(e)))
+        .where((t) => t.status == 'Pending')
+        .toList();
+  }
 }

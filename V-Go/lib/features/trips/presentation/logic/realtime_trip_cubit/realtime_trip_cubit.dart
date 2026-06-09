@@ -1,6 +1,8 @@
+import 'dart:async';
 import 'dart:developer';
 
 import 'package:equatable/equatable.dart';
+import 'package:flutter/widgets.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
 import '../../../../../core/errors/exception.dart';
@@ -16,10 +18,22 @@ import '../../../data/model/trip_request_model.dart';
 
 part 'realtime_trip_state.dart';
 
-class RealTimeTripCubit extends Cubit<RealTimeTripState> {
+class RealTimeTripCubit extends Cubit<RealTimeTripState>
+    with WidgetsBindingObserver {
   final TripService _tripService;
+  bool _lifecycleObserved = false;
 
   RealTimeTripCubit(this._tripService) : super(const RealTimeTripState());
+
+  /// When the app returns to the foreground, re-pull the current trip — covers
+  /// the case where events were missed while backgrounded but the socket never
+  /// fully dropped (so onreconnected wouldn't fire).
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      unawaited(_tripService.requestCurrentTrip());
+    }
+  }
 
   Future<void> connect() async {
     emit(state.copyWith(status: RealTimeTripStatus.connecting));
@@ -27,6 +41,15 @@ class RealTimeTripCubit extends Cubit<RealTimeTripState> {
       await _tripService.connect();
       emit(state.copyWith(status: RealTimeTripStatus.connected));
       _initTripListeners();
+      // Recover trip state on every (re)connect so the UI never gets stuck on a
+      // stale "searching" screen after missing a live event while disconnected.
+      _tripService.onReconnected =
+          () => unawaited(_tripService.requestCurrentTrip());
+      unawaited(_tripService.requestCurrentTrip());
+      if (!_lifecycleObserved) {
+        WidgetsBinding.instance.addObserver(this);
+        _lifecycleObserved = true;
+      }
     } catch (e) {
       if (isClosed) return;
       emit(
@@ -222,6 +245,24 @@ class RealTimeTripCubit extends Cubit<RealTimeTripState> {
     _listenForTripTakenByAnotherDriver();
     _listenForTripPaymentUpdated();
     _listenForTripCancelledForClient();
+    _listenForReceiveDriverLocation();
+  }
+
+  void _listenForReceiveDriverLocation() {
+    _tripService.receiveDriverLocation = (data) {
+      if (data.isNullOrEmpty()) return;
+      final map = data![0] as Map<String, dynamic>;
+      final lat = (map['lat'] ?? map['Lat']) as num?;
+      final lng = (map['lng'] ?? map['Lng']) as num?;
+      if (lat == null || lng == null) return;
+      emit(
+        state.copyWith(
+          status: RealTimeTripStatus.driverLocationReceived,
+          driverLat: lat.toDouble(),
+          driverLng: lng.toDouble(),
+        ),
+      );
+    };
   }
 
   void _listenForTripApprovedForClient() {
@@ -295,6 +336,10 @@ class RealTimeTripCubit extends Cubit<RealTimeTripState> {
         state.copyWith(
           status: RealTimeTripStatus.currentTripReceived,
           currentTrip: currentTrip,
+          // Keep state.tripId in sync with the recovered trip so cancel/pay
+          // target the right trip after a reconnect/resume (otherwise a
+          // recovered pending ride cancels with an empty id → 404 → stuck).
+          tripId: currentTrip.tripId,
           tripStatus: currentTrip.tripStatus,
           paymentStatusModel: PaymentStatusModel(
             paymentMessage: '',
@@ -492,6 +537,7 @@ class RealTimeTripCubit extends Cubit<RealTimeTripState> {
 
   @override
   Future<void> close() {
+    if (_lifecycleObserved) WidgetsBinding.instance.removeObserver(this);
     _tripService.dispose();
     return super.close();
   }

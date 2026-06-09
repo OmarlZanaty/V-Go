@@ -19,7 +19,9 @@ namespace Masafet_Elseka.Application.DTOs.Trip
         public double EndLng { get; set; }
         public string? StartAddress { get; set; }
         public string? EndAddress { get; set; }
-        public double Distance { get; set; } 
+        public double Distance { get; set; }
         public string UserId { get; set; }
+        // "Cash" or "Visa" — chosen by the client before searching for a captain.
+        public string? PaymentMethod { get; set; }
     }
 }

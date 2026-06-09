@@ -18,6 +18,10 @@ namespace Masafet_Elseka.Application.Interfaces.ITripService
         public Task<Response<PaginationPagedResponse<TripDetailsDTO>>> GetByUserId(string userId, PaginationRequest pagination, CancellationToken ct = default);
         public Task<Response<TripDetailsDTO>> GetCurrentTrip(string userId, UserTripRole role);
         public Task<Response<List<TripDetailsDTO>>> GetCurrentTrips(string userId);
+        // Lightweight lookup: the client id of the driver's current active trip
+        // (Accepted/Arrived/InProgress), or empty. Used to relay live driver
+        // location to the rider during a trip.
+        public Task<string> GetActiveTripClientIdAsync(string driverId);
         public Task SetTripToCache(TripResponseDTO trip);
         public Task UpdateTripStateInCache(string tripId, TripStatus newStatus);
         public Task<List<TripResponseDTO>> GetAllTripsFromCache();

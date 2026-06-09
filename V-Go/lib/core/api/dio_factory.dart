@@ -7,6 +7,7 @@ import '../errors/exception.dart';
 import '../helpers/navigation_handler.dart';
 import '../utils/app_constants.dart';
 import 'end_points.dart';
+import 'retry_interceptor.dart';
 
 class DioFactory {
   DioFactory._();
@@ -54,12 +55,12 @@ class DioFactory {
           requestHeader: true,
           responseHeader: true,
         ),
+      RetryInterceptor(dio!),
       _createAuthInterceptor(),
     ];
     dio?.interceptors.addAll(interceptors);
   }
 
-  static int retryCount = 0;
   static Interceptor _createAuthInterceptor() {
     return InterceptorsWrapper(
       onRequest: (options, handler) async {
@@ -68,15 +69,21 @@ class DioFactory {
         return handler.next(options);
       },
       onError: (DioException error, handler) async {
-        if (error.response?.statusCode == 401 &&
-            retryCount < 1 &&
-            await _tokenService.getRefreshToken() != '') {
-          retryCount++;
+        final is401 = error.response?.statusCode == 401;
+        // Per-request guard: prevents an infinite refresh loop for a single
+        // request while still allowing a fresh refresh on every future expiry.
+        // (Previously a single static `retryCount` was incremented once and
+        // never reset, so auto-refresh worked only once per app lifetime.)
+        final alreadyRetried = error.requestOptions.extra['retried'] == true;
+        final hasRefreshToken = await _tokenService.getRefreshToken() != '';
+
+        if (is401 && !alreadyRetried && hasRefreshToken) {
           try {
             await _tokenService.refreshToken();
             final accessToken = await _tokenService.getAccessToken();
             error.requestOptions.headers['Authorization'] =
                 'Bearer $accessToken';
+            error.requestOptions.extra['retried'] = true;
             final clonedRequest = await dio!.fetch(error.requestOptions);
             return handler.resolve(clonedRequest);
           } catch (e) {
@@ -84,9 +91,15 @@ class DioFactory {
             NavigationHandler.instance.goToLoginView();
             return handler.next(error);
           }
-        } else {
-          return handler.next(error);
         }
+
+        // A 401 that we already retried with a fresh token (or can't refresh)
+        // means the session is dead — redirect to login instead of failing silently.
+        if (is401 && alreadyRetried) {
+          await _tokenService.clearTokens();
+          NavigationHandler.instance.goToLoginView();
+        }
+        return handler.next(error);
       },
     );
   }

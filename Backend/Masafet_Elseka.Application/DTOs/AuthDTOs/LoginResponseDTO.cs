@@ -12,6 +12,10 @@ namespace Masafet_Elseka.Application.DTOs.AuthDTOs
         public string Name { get; set; }
         public string Gender { get; set; }
         public bool IsAuthenticated { get; set; }
+        // Phone-login: true when the verified phone has no account yet, so the
+        // app should continue to sign-up (Phone carries the verified number).
+        public bool IsNewUser { get; set; }
+        public string? Phone { get; set; }
         public string? ProfilePicture { get; set; }= string.Empty;
         public string? NationalId { get; set; } = string.Empty;
         public string? License { get; set; } = string.Empty;

@@ -77,7 +77,6 @@ namespace Masafet_Elseka.Application.Common
             _cacheService.SetData($"OTP_Register_{email}", otpData, TimeSpan.FromMinutes(10));
 
             var data = _cacheService.GetData<OtpCacheModel>($"OTP_Register_{email}");
-            //Console.WriteLine($"OTP: {data.Otp}, Email: {data.Email}, Expires At: {data.ExpirationTime}");
 
             MailRequestDTO mail = new()
             {

@@ -169,6 +169,7 @@ builder.Services.AddSignalR(options =>
 #region Hosted Services
 
 builder.Services.AddHostedService<DriverStatusSyncService>();
+builder.Services.AddHostedService<PreAuthExpiryService>();
 
 #endregion
 
@@ -272,7 +273,7 @@ builder.Services.AddAuthentication(options =>
 //   3. Application Default Credentials (Cloud Run service account in the same GCP project)
 var rootPath = builder.Environment.ContentRootPath;
 var firebasePath = Environment.GetEnvironmentVariable("FIREBASE_CREDENTIALS_PATH")
-    ?? Path.Combine(rootPath, "appdata", "secrets", "v-go-f6d46-firebase-adminsdk-fbsvc-ab74bd572b.json");
+    ?? Path.Combine(rootPath, "appdata", "secrets", "v-go-46d8c-firebase-adminsdk-fbsvc-bbf1f90567.json");
 
 GoogleCredential firebaseCredential = System.IO.File.Exists(firebasePath)
     ? GoogleCredential.FromFile(firebasePath)
@@ -323,25 +324,25 @@ builder.Services.AddCors(options =>
 {
     options.AddPolicy("Default", policy =>
     {
-        policy.WithOrigins("https://vgo-eg.com", "https://www.vgo-eg.com", 
-                "http://127.0.0.1:5500", "http://localhost:5173", "https://v-go-two.vercel.app")
+        // Production origins only; localhost is added in Development.
+        var origins = new List<string>
+        {
+            "https://vgo-eg.com",
+            "https://www.vgo-eg.com",
+            "https://v-go-two.vercel.app",
+        };
+        if (builder.Environment.IsDevelopment())
+        {
+            origins.Add("http://127.0.0.1:5500");
+            origins.Add("http://localhost:5173");
+        }
+
+        policy.WithOrigins(origins.ToArray())
               .AllowAnyHeader()
               .AllowAnyMethod()
               .AllowCredentials();
     });
 });
-
-// builder.Services.AddCors(options =>
-// {
-//     options.AddPolicy("Default", policy =>
-//     {
-//         policy
-//             .WithOrigins("https://vgo-eg.com")
-//             .AllowAnyHeader()
-//             .AllowAnyMethod()
-//             .AllowCredentials();
-//     });
-// });
 
 #endregion
 
@@ -381,11 +382,12 @@ using (var scope = app.Services.CreateScope())
 
 #region Middleware
 
-//if (app.Environment.IsDevelopment())
-//{
-app.UseSwagger();
-app.UseSwaggerUI();
-//}
+// Swagger is exposed only in Development — never on production.
+if (app.Environment.IsDevelopment())
+{
+    app.UseSwagger();
+    app.UseSwaggerUI();
+}
 // Add this BEFORE UseAuthentication / UseAuthorization
 app.UseForwardedHeaders(new ForwardedHeadersOptions
 {

@@ -37,6 +37,7 @@ enum RealTimeTripStatus {
   clientArrivedTripReceived,
   currentTripReceived,
   tripPaymentUpdatedReceived,
+  driverLocationReceived,
   payTripInCashLoading,
   payTripInCashSuccess,
   payTripInCashFailure,
@@ -55,6 +56,9 @@ class RealTimeTripState extends Equatable {
   final List<CurrentTripModel> currentTripList;
   final double tripPrice;
   final PaymentStatusModel? paymentStatusModel;
+  // Live captain location during an active trip.
+  final double? driverLat;
+  final double? driverLng;
 
   const RealTimeTripState({
     this.status = RealTimeTripStatus.initial,
@@ -68,6 +72,8 @@ class RealTimeTripState extends Equatable {
     this.currentTrip,
     this.tripPrice = 0.0,
     this.paymentStatusModel,
+    this.driverLat,
+    this.driverLng,
   });
 
   RealTimeTripState copyWith({
@@ -83,6 +89,8 @@ class RealTimeTripState extends Equatable {
     bool? resetCurrentTrip,
     double? tripPrice,
     PaymentStatusModel? paymentStatusModel,
+    double? driverLat,
+    double? driverLng,
   }) {
     return RealTimeTripState(
       status: status ?? this.status,
@@ -100,6 +108,8 @@ class RealTimeTripState extends Equatable {
       currentTripList: currentTripList ?? this.currentTripList,
       tripPrice: tripPrice ?? this.tripPrice,
       paymentStatusModel: paymentStatusModel ?? this.paymentStatusModel,
+      driverLat: driverLat ?? this.driverLat,
+      driverLng: driverLng ?? this.driverLng,
     );
   }
 
@@ -116,5 +126,7 @@ class RealTimeTripState extends Equatable {
     currentTrip,
     tripPrice,
     paymentStatusModel,
+    driverLat,
+    driverLng,
   ];
 }

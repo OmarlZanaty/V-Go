@@ -33,6 +33,7 @@ import '../logic/map_bloc/map_bloc.dart';
 import '../logic/map_bloc/map_event.dart';
 import '../logic/map_bloc/map_state.dart';
 import '../widgets/arrived_driver_section.dart';
+import '../widgets/payment_options_section.dart';
 import '../widgets/driver_data_widget.dart';
 import '../widgets/start_trip_section.dart';
 import '../widgets/trip_duration_widget.dart';
@@ -65,6 +66,8 @@ class _ClientMapViewState extends State<ClientMapView> {
   GoogleMapController? controller;
   int status = 0;
   double rating = 0.0;
+  // Payment method chosen on the confirm screen, before searching: 'Cash'/'Visa'.
+  String _selectedPaymentMethod = 'Cash';
   bool _isLocationPermissionChecking = true;
   bool _isLocationPermissionGranted = false;
 
@@ -243,6 +246,24 @@ class _ClientMapViewState extends State<ClientMapView> {
       );
     }
 
+    // Live captain marker during an active trip.
+    if (state.driverLocation != null) {
+      markers.add(
+        Marker(
+          markerId: const MarkerId('captain'),
+          position: LatLng(
+            state.driverLocation!.latitude,
+            state.driverLocation!.longitude,
+          ),
+          infoWindow: const InfoWindow(title: 'الكابتن'),
+          icon:
+              _fakeScooterIcon ??
+              BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueAzure),
+          anchor: const Offset(0.5, 0.5),
+        ),
+      );
+    }
+
     final tripStatus = context.read<RealTimeTripCubit>().state.tripStatus;
     if (status != 0 && status != 1 && tripStatus == 'Pending') {
       for (var i = 0; i < state.fakeScooterLocations.length; i++) {
@@ -274,6 +295,21 @@ class _ClientMapViewState extends State<ClientMapView> {
           startCap: Cap.roundCap,
           endCap: Cap.roundCap,
           zIndex: 2,
+        ),
+      );
+    }
+
+    // Live captain route (captain → pickup, then captain → destination).
+    if (state.routeDriverToPickup.isNotEmpty) {
+      set.add(
+        Polyline(
+          polylineId: const PolylineId('driverRoute'),
+          points: state.routeDriverToPickup,
+          color: Colors.blueAccent,
+          width: 5,
+          startCap: Cap.roundCap,
+          endCap: Cap.roundCap,
+          zIndex: 3,
         ),
       );
     }
@@ -417,13 +453,40 @@ class _ClientMapViewState extends State<ClientMapView> {
                     ? const CustomLoadingWidget()
                     : Stack(
                         children: [
+                          // Forward live captain location → MapBloc to move the
+                          // marker + redraw the captain's route. Target is the
+                          // destination once the ride is in progress, else pickup.
+                          BlocListener<RealTimeTripCubit, RealTimeTripState>(
+                            listenWhen: (p, c) =>
+                                c.status.isDriverLocationReceived,
+                            listener: (context, tripState) {
+                              if (tripState.driverLat == null ||
+                                  tripState.driverLng == null) {
+                                return;
+                              }
+                              final mapBloc = context.read<MapBloc>();
+                              final target = tripState.tripStatus == 'InProgress'
+                                  ? mapBloc.state.toLocation
+                                  : mapBloc.state.fromLocation;
+                              mapBloc.add(
+                                UpdateDriverLocation(
+                                  driverLocation: LocationModel(
+                                    latitude: tripState.driverLat!,
+                                    longitude: tripState.driverLng!,
+                                  ),
+                                  target: target,
+                                ),
+                              );
+                            },
+                            child: const SizedBox.shrink(),
+                          ),
                           GoogleMap(
                             cameraTargetBounds: CameraTargetBounds(egyptBounds),
                             minMaxZoomPreference: const MinMaxZoomPreference(
                               6,
                               18,
                             ),
-                            trafficEnabled: true,
+                            trafficEnabled: false,
                             myLocationEnabled: true,
                             padding: const EdgeInsets.only(top: 30),
                             myLocationButtonEnabled: false,
@@ -545,6 +608,19 @@ class _ClientMapViewState extends State<ClientMapView> {
           listener: (context, tripState) {
             final mapBloc = context.read<MapBloc>();
 
+            // Recover the trip screen after an app restart / leaving the map:
+            // when the server re-sends our current trip, restore the route and
+            // switch out of the search view so the user can continue/end/pay it.
+            if (tripState.status.isCurrentTripReceived &&
+                tripState.currentTrip != null) {
+              final ct = tripState.currentTrip!;
+              const active = ['Pending', 'Accepted', 'Arrived', 'InProgress', 'Completed'];
+              if (active.contains(ct.tripStatus)) {
+                mapBloc.add(SetTripForClient(trip: ct));
+                if (status != 2) setState(() => status = 2);
+              }
+            }
+
             // لما الرحلة تبدأ (InProgress) نبدأ تتبع ETA إذا في toLocation
             if (tripState.tripStatus == 'InProgress') {
               final dest = mapBloc.state.toLocation;
@@ -559,6 +635,7 @@ class _ClientMapViewState extends State<ClientMapView> {
             if (tripState.tripStatus == 'Completed' ||
                 tripState.tripStatus == 'Canceled') {
               mapBloc.stopEtaTracking();
+              mapBloc.add(ClearDriverLocation());
             }
             log(
               'Generating fake scooters & status: $status --- ${tripState.tripStatus}',
@@ -935,7 +1012,29 @@ class _ClientMapViewState extends State<ClientMapView> {
                           ),
                         ),
 
-                        verticalSpace(20),
+                        verticalSpace(16),
+                        Text('وسيلة الدفع', style: AppStyle.styleMedium14),
+                        verticalSpace(8),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: _payMethodChip(
+                                'Cash',
+                                'نقدي',
+                                Icons.payments_outlined,
+                              ),
+                            ),
+                            horizontalSpace(8),
+                            Expanded(
+                              child: _payMethodChip(
+                                'Visa',
+                                'فيزا',
+                                Icons.credit_card,
+                              ),
+                            ),
+                          ],
+                        ),
+                        verticalSpace(14),
                         Row(
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
@@ -1002,6 +1101,8 @@ class _ClientMapViewState extends State<ClientMapView> {
                                                         'غير محدد',
                                                     distance:
                                                         state.distanceKm ?? 0.0,
+                                                    paymentMethod:
+                                                        _selectedPaymentMethod,
                                                   );
                                               context
                                                   .read<RealTimeTripCubit>()
@@ -1147,10 +1248,48 @@ class _ClientMapViewState extends State<ClientMapView> {
     );
   }
 
+  Widget _payMethodChip(String value, String label, IconData icon) {
+    final selected = _selectedPaymentMethod == value;
+    return InkWell(
+      onTap: () => setState(() => _selectedPaymentMethod = value),
+      borderRadius: BorderRadius.circular(12),
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 10),
+        decoration: BoxDecoration(
+          color: selected ? AppColors.primary : AppColors.darkGrey,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: selected ? AppColors.primary : AppColors.lightWhite,
+          ),
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              icon,
+              size: 20,
+              color: selected ? AppColors.black : AppColors.white,
+            ),
+            horizontalSpace(6),
+            Text(
+              label,
+              style: AppStyle.styleMedium14.copyWith(
+                color: selected ? AppColors.black : AppColors.white,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget endTripWidgetSection(
     RealTimeTripState tripState,
     BuildContext context,
   ) {
+    // The trip can't be finished (rated/closed) until payment is settled —
+    // cash is confirmed by the captain, visa via the online checkout.
+    final isPaid = tripState.paymentStatusModel?.paymentStatus == 'Paid';
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(10),
@@ -1187,58 +1326,77 @@ class _ClientMapViewState extends State<ClientMapView> {
           ),
           verticalSpace(12),
           driverDataWidget(currentTrip: widget.currentTrip, context: context),
-          verticalSpace(10),
-          Align(
-            child: RatingBarSection(
-              isDriver: false,
-              onRatingUpdate: (value) {
-                setState(() {
-                  rating = value;
-                });
-              },
-            ),
+          // If the ride completed before the client paid, this is the only place
+          // left to settle it — otherwise the trip stays "awaiting payment"
+          // forever. Auto-hides once paymentStatus == 'Paid'.
+          // Payment area — shows until paid, then auto-hides.
+          paymentOptionsSection(
+            context,
+            tripState,
+            currentTrip: tripState.currentTrip ?? widget.currentTrip,
           ),
-          verticalSpace(14),
-          Align(
-            child: BlocConsumer<RatingCubit, RatingState>(
-              listener: (context, ratingState) {
-                if (ratingState.status.isSendRatingSuccess) {
-                  successToast(
-                    context,
-                    'عملية ناجحة',
-                    'تم ارسال التقييم بنجاح',
-                  );
-                  context.pop();
-                } else if (ratingState.status.isSendRatingFailure) {
-                  errorToast(context, 'حدث خطا', ratingState.errMessage);
-                }
-              },
-              builder: (context, ratingState) {
-                return ratingState.status.isSendRatingLoading
-                    ? const CustomLoadingWidget()
-                    : CustomButton(
-                        text: 'ارسال التقييم',
-                        height: 50,
-                        width: 0.45.sw,
-                        onPressed: () {
-                          context.read<RatingCubit>().sendRating(
-                            SendRatingModel(
-                              score: rating.ceil(),
-                              tripId:
-                                  widget.currentTrip?.tripId ??
-                                  tripState.tripApprovedForClient!.tripId,
-                              fromUserId: AppConstants.kUserId,
-                              toUserId:
-                                  widget.currentTrip?.driverId ??
-                                  tripState.tripApprovedForClient!.driverId,
-                            ),
-                          );
-                        },
-                      );
-              },
+          if (!isPaid) ...[
+            verticalSpace(10),
+            Text(
+              'لا يمكن إنهاء الرحلة قبل إتمام الدفع.\nالدفع نقداً يؤكده السائق.',
+              textAlign: TextAlign.center,
+              style: AppStyle.styleMedium12.copyWith(color: AppColors.primary),
             ),
-          ),
-          verticalSpace(5),
+            verticalSpace(5),
+          ] else ...[
+            verticalSpace(10),
+            Align(
+              child: RatingBarSection(
+                isDriver: false,
+                onRatingUpdate: (value) {
+                  setState(() {
+                    rating = value;
+                  });
+                },
+              ),
+            ),
+            verticalSpace(14),
+            Align(
+              child: BlocConsumer<RatingCubit, RatingState>(
+                listener: (context, ratingState) {
+                  if (ratingState.status.isSendRatingSuccess) {
+                    successToast(
+                      context,
+                      'عملية ناجحة',
+                      'تم ارسال التقييم بنجاح',
+                    );
+                    context.pop();
+                  } else if (ratingState.status.isSendRatingFailure) {
+                    errorToast(context, 'حدث خطا', ratingState.errMessage);
+                  }
+                },
+                builder: (context, ratingState) {
+                  return ratingState.status.isSendRatingLoading
+                      ? const CustomLoadingWidget()
+                      : CustomButton(
+                          text: 'ارسال التقييم',
+                          height: 50,
+                          width: 0.45.sw,
+                          onPressed: () {
+                            context.read<RatingCubit>().sendRating(
+                              SendRatingModel(
+                                score: rating.ceil(),
+                                tripId:
+                                    widget.currentTrip?.tripId ??
+                                    tripState.tripApprovedForClient!.tripId,
+                                fromUserId: AppConstants.kUserId,
+                                toUserId:
+                                    widget.currentTrip?.driverId ??
+                                    tripState.tripApprovedForClient!.driverId,
+                              ),
+                            );
+                          },
+                        );
+                },
+              ),
+            ),
+            verticalSpace(5),
+          ],
         ],
       ),
     );
@@ -1299,7 +1457,11 @@ class _ClientMapViewState extends State<ClientMapView> {
         state.status.isTripStartedForClientReceived ||
         state.status.isTripApprovedForClientReceived ||
         state.status.isTripEndedForClientReceived ||
-        state.status.isClientArrivedTripReceived;
+        state.status.isClientArrivedTripReceived ||
+        // Rebuild the completion screen when payment settles so the lock lifts,
+        // and on re-sync so a recovered trip renders correctly.
+        state.status.isTripPaymentUpdated ||
+        state.status.isCurrentTripReceived;
   }
 }
 

@@ -10,6 +10,7 @@ enum AuthStatus {
   loginWithGoogleLoading,
   loginWithGoogleSuccess,
   loginWithGoogleFailure,
+  loginWithGoogleNewUser,
 
   forgotPasswordLoading,
   forgotPasswordSuccess,
@@ -47,6 +48,9 @@ class AuthState extends Equatable {
     this.otp = '',
     this.errorMessage = '',
     this.message = '',
+    this.googleIdToken = '',
+    this.googleName = '',
+    this.googlePhoto = '',
   });
 
   final AuthStatus status;
@@ -54,6 +58,10 @@ class AuthState extends Equatable {
   final String otp;
   final String errorMessage;
   final String message;
+  // Carried between the first Google sign-in and the complete-profile step.
+  final String googleIdToken;
+  final String googleName;
+  final String googlePhoto;
 
   AuthState copyWith({
     AuthStatus? status,
@@ -61,6 +69,9 @@ class AuthState extends Equatable {
     String? otp,
     String? errorMessage,
     String? message,
+    String? googleIdToken,
+    String? googleName,
+    String? googlePhoto,
   }) {
     return AuthState(
       status: status ?? this.status,
@@ -68,9 +79,13 @@ class AuthState extends Equatable {
       otp: otp ?? this.otp,
       errorMessage: errorMessage ?? this.errorMessage,
       message: message ?? this.message,
+      googleIdToken: googleIdToken ?? this.googleIdToken,
+      googleName: googleName ?? this.googleName,
+      googlePhoto: googlePhoto ?? this.googlePhoto,
     );
   }
 
   @override
-  List<Object?> get props => [status, email, otp, errorMessage, message];
+  List<Object?> get props =>
+      [status, email, otp, errorMessage, message, googleIdToken, googleName, googlePhoto];
 }

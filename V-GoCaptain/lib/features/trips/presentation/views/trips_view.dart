@@ -16,6 +16,7 @@ class TripsView extends StatelessWidget {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
+        automaticallyImplyLeading: false,
         title: Text('رحلاتي',
             style: AppStyle.title.copyWith(color: AppColors.black)),
       ),

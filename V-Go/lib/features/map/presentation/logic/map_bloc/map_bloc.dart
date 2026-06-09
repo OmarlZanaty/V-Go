@@ -49,6 +49,8 @@ class MapBloc extends Bloc<MapEvent, MapState> {
     });
     on<GenerateFakeScooters>(_onGenerateFakeScooters);
     on<ClearFakeScooters>(_onClearFakeScooters);
+    on<UpdateDriverLocation>(_onUpdateDriverLocation);
+    on<ClearDriverLocation>(_onClearDriverLocation);
 
     _locationSubscription = mapRepo.getLocationStream().listen(
       (location) {
@@ -253,6 +255,43 @@ class MapBloc extends Bloc<MapEvent, MapState> {
 
   void _onClearFakeScooters(ClearFakeScooters event, Emitter<MapState> emit) {
     emit(state.copyWith(showFakeScooters: false, fakeScooterLocations: []));
+  }
+
+  // --- live captain tracking ---
+  DateTime? _lastDriverRouteCalcAt;
+
+  Future<void> _onUpdateDriverLocation(
+    UpdateDriverLocation event,
+    Emitter<MapState> emit,
+  ) async {
+    // Move the captain marker immediately on every update.
+    emit(state.copyWith(driverLocation: event.driverLocation));
+
+    // Recalculate the captain's live route to its target, throttled so we don't
+    // spam the Routes API on every GPS tick.
+    final target = event.target;
+    if (target == null) return;
+    final now = DateTime.now();
+    if (_lastDriverRouteCalcAt != null &&
+        now.difference(_lastDriverRouteCalcAt!) < const Duration(seconds: 4)) {
+      return;
+    }
+    _lastDriverRouteCalcAt = now;
+    try {
+      final r = await mapRepo.getRoute(event.driverLocation, target);
+      if (isClosed) return;
+      emit(state.copyWith(routeDriverToPickup: r.points));
+    } catch (e) {
+      log('driver route calc failed: $e');
+    }
+  }
+
+  void _onClearDriverLocation(
+    ClearDriverLocation event,
+    Emitter<MapState> emit,
+  ) {
+    _lastDriverRouteCalcAt = null;
+    emit(state.copyWith(clearDriverLocation: true, routeDriverToPickup: []));
   }
 
   List<LocationModel> _generateFakeScootersList(LocationModel center) {

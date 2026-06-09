@@ -43,12 +43,10 @@ namespace Masafet_Elseka.Infrastructure.ExternalService.FirebaseNotificationServ
             catch (FirebaseMessagingException ex)
             {
                 _logger.LogError(ex, "Firebase error sending to device {DeviceToken}", deviceToken);
-                //Console.WriteLine($"{ex.Message},  Firebase error sending to device ", deviceToken);
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Unexpected error sending to device", deviceToken);
-                //Console.WriteLine($"{ex.Message},  Unexpected error sending to device ", deviceToken);
             }
         }
 

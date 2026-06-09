@@ -53,7 +53,7 @@ namespace Masafet_Elseka.Infrastructure.Services.ExpenseService
             catch (Exception ex)
             {
                 await transaction.RollbackAsync();
-                return Response<object>.Failure("حدث خطأ أثناء إضافة المصروف", 500, new List<string> { ex.Message });
+                return Response<object>.Failure("حدث خطأ أثناء إضافة المصروف", 500, new List<string> { "حدث خطأ غير متوقع، يرجى المحاولة لاحقًا" });
             }
         }
 
@@ -103,7 +103,7 @@ namespace Masafet_Elseka.Infrastructure.Services.ExpenseService
             }
             catch (Exception ex)
             {
-                return Response<ExpenseResponseDTO>.Failure(new ExpenseResponseDTO(), "حدث خطأ أثناء جلب المصروفات", 500, new List<string> { ex.Message });
+                return Response<ExpenseResponseDTO>.Failure(new ExpenseResponseDTO(), "حدث خطأ أثناء جلب المصروفات", 500, new List<string> { "حدث خطأ غير متوقع، يرجى المحاولة لاحقًا" });
             }
         }
 
@@ -122,7 +122,7 @@ namespace Masafet_Elseka.Infrastructure.Services.ExpenseService
             }
             catch (Exception ex)
             {
-                return Response<string>.Failure("حدث خطأ أثناء حذف المصروف", 500, new List<string> { ex.Message });
+                return Response<string>.Failure("حدث خطأ أثناء حذف المصروف", 500, new List<string> { "حدث خطأ غير متوقع، يرجى المحاولة لاحقًا" });
             }
         }
 

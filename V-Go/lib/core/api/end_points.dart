@@ -6,6 +6,8 @@ abstract class EndPoint {
 
   // Auth Endpoints
   static const String login = 'Auth/login';
+  static const String phoneLogin = 'Auth/phone-login';       // Firebase phone auth
+  static const String phoneRegister = 'Auth/phone-register'; // Firebase phone auth
   static const String register = 'Auth/register';
   static const String logout = 'Auth/logout';
   static const String confirmOtp = 'Auth/confirmOtp';
@@ -16,6 +18,7 @@ abstract class EndPoint {
   static const String changePassword = 'Auth/changePassword';
   static const String googleLogin = 'Auth/mobile/google-login';
   static String checkState(String state) => 'Auth/mobile/check-auth/$state';
+  static const String googleLoginToken = 'Auth/google-login-token';
 
   // User Endpoints
   static const String allUsers = 'User/allUsers';
@@ -32,7 +35,7 @@ abstract class EndPoint {
   // Trip Endpoints
   static const String allTrips = 'Trip/GetAllTripsByStatus';
   static const String allPendingTrips = 'Trip/GetAllPendingTrips';
-  static const String getCurrentTrips = 'Trip/cuurentTrips';
+  static const String getCurrentTrips = 'Trip/currentTrips';
   static String getTripsByUserId(String userId) => 'Trip/tripByUserId/$userId';
   static String getTripById(String tripId) => 'Trip/GetTripById/$tripId';
 
@@ -61,4 +64,8 @@ abstract class EndPoint {
 
   // Payment Endpoints
   static const String createPaymentIntent = 'Payment/createIntent';
+  // Visa pre-authorization (Auth & Capture): creates a hold instead of an immediate
+  // sale. Returns the same unified-checkout payload as createIntent. Capture/void
+  // happen server-side on ride completion/cancellation.
+  static const String initiatePreAuth = 'Payment/initiate-preauth';
 }

@@ -88,7 +88,7 @@ namespace Masafet_Elseka.Presentation.Controllers
         }
 
 
-        [HttpGet("cuurentTrip")]
+        [HttpGet("currentTrip")]
         public async Task<IActionResult> GetCurrentTrip(string userId, UserTripRole role)
         {
             userId = ResolveUserId(userId);
@@ -100,7 +100,7 @@ namespace Masafet_Elseka.Presentation.Controllers
             return StatusCode(response.StatusCode, response.Message);
         }
 
-        [HttpGet("cuurentTrips")]
+        [HttpGet("currentTrips")]
         public async Task<IActionResult> GetCurrentTrips(string userId)
         {
             userId = ResolveUserId(userId);
@@ -124,6 +124,10 @@ namespace Masafet_Elseka.Presentation.Controllers
 
         }
         
+        // Drivers end trips via the (authenticated) TripHub, which verifies the
+        // caller is the assigned driver. This HTTP route is staff-only to prevent
+        // any logged-in user from ending an arbitrary trip by id (IDOR).
+        [Authorize(Roles = "Admin, Dispatcher")]
         [HttpPut("endtrip")]
         public async Task<IActionResult> EndTrip(string tripId)
         {

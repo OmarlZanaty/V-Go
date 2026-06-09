@@ -19,11 +19,14 @@ using Masafet_Elseka.Domain.Enums;
 using Masafet_Elseka.Infrastructure.Data;
 using Masafet_Elseka.Infrastructure.Hubs.HubHelper;
 using Masafet_Elseka.Infrastructure.UOW;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using Serilog;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -33,6 +36,7 @@ using System.Threading.Tasks;
 
 namespace Masafet_Elseka.Infrastructure.Hubs
 {
+    [Authorize(AuthenticationSchemes = JwtBearerDefaults.AuthenticationScheme)]
     public class TripHub : Hub
     {
         private readonly ITripService _tripService;
@@ -185,8 +189,10 @@ namespace Masafet_Elseka.Infrastructure.Hubs
                 }
                 try
                 {
-                    // Fire CurrentTrip 
-                    _ = SendCurrentTripInScope(trip.ClientId ?? request.UserId, UserTripRole.Client);
+                    // Await so failures are actually observed/logged. With the previous
+                    // fire-and-forget (_ = ...), exceptions thrown after the first await were
+                    // discarded and the surrounding catch never ran.
+                    await SendCurrentTripInScope(trip.ClientId ?? request.UserId, UserTripRole.Client);
                 }
                 catch (Exception ex)
                 {
@@ -197,7 +203,7 @@ namespace Masafet_Elseka.Infrastructure.Hubs
             }
             catch (Exception ex)
             {
-                return Response<TripResponseDTO>.Failure(new TripResponseDTO(), ex.Message, 500);
+                return Response<TripResponseDTO>.Failure(new TripResponseDTO(), "حدث خطأ غير متوقع، يرجى المحاولة لاحقًا", 500);
             }
         }
 
@@ -269,7 +275,7 @@ namespace Masafet_Elseka.Infrastructure.Hubs
             catch (Exception ex)
             {
              await transaction.RollbackAsync();
-                return Response<string>.Failure("حدث خطأ أثناء محاولة قبول الرحلة", ex.Message, 500);
+                return Response<string>.Failure("حدث خطأ أثناء محاولة قبول الرحلة", "حدث خطأ غير متوقع، يرجى المحاولة لاحقًا", 500);
             }
         }
         public async Task SendCurrentTrip(string userId, UserTripRole role)
@@ -361,7 +367,6 @@ namespace Masafet_Elseka.Infrastructure.Hubs
                     return Response<object>.Failure(result.Message, result.StatusCode, result.Errors);
                 }
                 var clientId= result.Data.CLientId;
-                //Console.WriteLine($"ClientId: {result.Data.CLientId}, TripId: {tripId}, DriverId: {driverId}");
                 await NotifyClientTripArrived(result.Data.CLientId, tripId);
                 await NotifyDriverTripArrived(driverId, tripId);
                 await _tripService.UpdateTripStateInCache(tripId, TripStatus.Arrived);
@@ -369,7 +374,7 @@ namespace Masafet_Elseka.Infrastructure.Hubs
             }
             catch (Exception ex)
             {
-                return Response<object>.Failure("حدث خطأ أثناء محاولة بدء الرحلة", ex.Message, 500);
+                return Response<object>.Failure("حدث خطأ أثناء محاولة بدء الرحلة", "حدث خطأ غير متوقع، يرجى المحاولة لاحقًا", 500);
             }
         }
 
@@ -394,11 +399,36 @@ namespace Masafet_Elseka.Infrastructure.Hubs
                 await NotifyClientTripStarted(result.Data.CLientId, tripId);
                 await NotifyDriverTripStarted(driverId, tripId);
                 await _tripService.UpdateTripStateInCache(tripId, TripStatus.InProgress);
+
+                // Visa trips: the client pays online once the ride starts. Prompt
+                // the client to pay and tell the captain payment is pending.
+                if (string.Equals(result.Data.PaymentMethod, "Visa", StringComparison.OrdinalIgnoreCase))
+                {
+                    var data = new Dictionary<string, string>
+                    {
+                        { "type", "visa_payment_due" },
+                        { "tripId", tripId },
+                    };
+                    await _notificationService.SendNotificationToUserAsync(
+                        result.Data.CLientId,
+                        "إتمام الدفع",
+                        "بدأت رحلتك — يرجى إتمام الدفع عبر فيزا.",
+                        data);
+                    await _notificationService.SendNotificationToUserAsync(
+                        driverId,
+                        "بانتظار دفع العميل",
+                        "دفع العميل عبر فيزا قيد الانتظار، يرجى تذكيره بإتمام الدفع.",
+                        new Dictionary<string, string>
+                        {
+                            { "type", "visa_payment_pending" },
+                            { "tripId", tripId },
+                        });
+                }
                 return Response<object>.Success(result.Data, result.Message, result.StatusCode);
             }
             catch (Exception ex)
             {
-                return Response<object>.Failure("حدث خطأ أثناء محاولة بدء الرحلة", ex.Message, 500);
+                return Response<object>.Failure("حدث خطأ أثناء محاولة بدء الرحلة", "حدث خطأ غير متوقع، يرجى المحاولة لاحقًا", 500);
             }
         }
 
@@ -423,11 +453,17 @@ namespace Masafet_Elseka.Infrastructure.Hubs
                 await NotifyClientTripEnded(result.Data.CLientId, tripId);
                 await NotifyDriverTripEnded(driverId, tripId);
                 await _tripService.UpdateTripStateInCache(tripId, TripStatus.Completed);
+
+                // Visa pre-auth: capture the held amount now the ride is complete.
+                // No-op for cash / non-pre-auth trips (returns without charging).
+                try { await _paymentService.CaptureRidePaymentAsync(tripId); }
+                catch (Exception capEx) { Log.Error(capEx, "Capture after EndTrip failed for trip {TripId}", tripId); }
+
                 return Response<object>.Success(result.Data, result.Message, result.StatusCode);
             }
             catch (Exception ex)
             {
-                return Response<object>.Failure("حدث خطأ أثناء محاولة إنهاء الرحلة", ex.Message, 500);
+                return Response<object>.Failure("حدث خطأ أثناء محاولة إنهاء الرحلة", "حدث خطأ غير متوقع، يرجى المحاولة لاحقًا", 500);
             }
         }
 
@@ -441,22 +477,31 @@ namespace Masafet_Elseka.Infrastructure.Hubs
                     return Response<string>.Failure("الرحلة غير موجودة أو ليست في حالة انتظار", 404);
                 }
                 trip.Status = TripStatus.Rejected;
-                var userTrip = await _context.UserTrips.FirstOrDefaultAsync(t => t.TripId == tripId);
-                userTrip.IsApproved = false;
-                await _unitOfWork.SaveAsync();
-                await Clients.Group($"User_{userTrip.UserId}").SendAsync("TripRejected", new
+                // May be null if the trip is rejected moments after creation, before the
+                // client UserTrip link is persisted — guard against a NullReferenceException.
+                var userTrip = await _context.UserTrips
+                    .FirstOrDefaultAsync(t => t.TripId == tripId && t.Role == UserTripRole.Client);
+                if (userTrip != null)
                 {
-                    TripId = trip.Id,
-                    UserId = userTrip.UserId,
-                    Status = trip.Status,
-                    UpdatedAt = DateTime.Now.ToEgyptTime()
-                });
+                    userTrip.IsApproved = false;
+                }
+                await _unitOfWork.SaveAsync();
+                if (userTrip != null)
+                {
+                    await Clients.Group($"User_{userTrip.UserId}").SendAsync("TripRejected", new
+                    {
+                        TripId = trip.Id,
+                        UserId = userTrip.UserId,
+                        Status = trip.Status,
+                        UpdatedAt = DateTime.Now.ToEgyptTime()
+                    });
+                }
                 await _tripService.UpdateTripStateInCache(trip.Id, TripStatus.Rejected);
                 return Response<string>.Success("تم رفض الرحلة بنجاح", "تم رفض الرحلة بنجاح", 200);
             }
             catch (Exception ex)
             {
-                return Response<string>.Failure("حدث خطأ أثناء محاولة رفض الرحلة", ex.Message, 500);
+                return Response<string>.Failure("حدث خطأ أثناء محاولة رفض الرحلة", "حدث خطأ غير متوقع، يرجى المحاولة لاحقًا", 500);
             }
         }
 
@@ -480,11 +525,16 @@ namespace Masafet_Elseka.Infrastructure.Hubs
                 await NotifyAdminTripCancelled(tripId, userId);
                 await NotifyClientTripCancelled(tripId, userId);
                 await _tripService.UpdateTripStateInCache(tripId, TripStatus.Canceled);
+
+                // Visa pre-auth: release the hold on cancellation (no-op otherwise).
+                try { await _paymentService.VoidRidePaymentAsync(tripId); }
+                catch (Exception voidEx) { Log.Error(voidEx, "Void after CancelTrip failed for trip {TripId}", tripId); }
+
                 return Response<object>.Success(result.Message, result.Message, 200);
             }
             catch (Exception ex)
             {
-                return Response<object>.Failure("حدث خطأ أثناء محاولة إلغاء طلب الرحلة", ex.Message, 500);
+                return Response<object>.Failure("حدث خطأ أثناء محاولة إلغاء طلب الرحلة", "حدث خطأ غير متوقع، يرجى المحاولة لاحقًا", 500);
             }
         }
 
@@ -500,12 +550,39 @@ namespace Masafet_Elseka.Infrastructure.Hubs
                     return;
                 }
                 await NotifyPaymentForDriverAndClient(userId!, driverId);
-                _ = SendCurrentTripInScope(userId!, UserTripRole.Client);
+                await SendCurrentTripInScope(userId!, UserTripRole.Client);
                 return;
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error in PayTripInCash for trip {TripId}", tripId);
+            }
+        }
+
+        // Driver presses "payment received" for a cash trip. Marks the trip paid
+        // and notifies both the rider (so its locked completion screen unlocks)
+        // and the driver.
+        public async Task<Response<object>> ConfirmCashPayment(string tripId)
+        {
+            try
+            {
+                var driverId = Context.User?.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+                if (string.IsNullOrEmpty(tripId))
+                    return Response<object>.Failure("معرف الرحلة غير صالح", 400);
+
+                var result = await _paymentService.ConfirmCashPaymentByDriverAsync(tripId);
+                if (!result.IsSuccess)
+                    return Response<object>.Failure(result.Message, result.StatusCode, result.Errors);
+
+                var clientId = result.Data; // returned by the service
+                await NotifyPaymentForDriverAndClient(clientId!, driverId!);
+                await SendCurrentTripInScope(clientId!, UserTripRole.Client);
+                return Response<object>.Success(result.Message, result.Message, 200);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error in ConfirmCashPayment for trip {TripId}", tripId);
+                return Response<object>.Failure("حدث خطأ أثناء تأكيد الدفع", "حدث خطأ غير متوقع، يرجى المحاولة لاحقًا", 500);
             }
         }
 
@@ -518,7 +595,6 @@ namespace Masafet_Elseka.Infrastructure.Hubs
             var drivers = await _driverService.GetAvailableDriversFromCache(client.Gender);
             var availableDrivers = new List<DriverStatusDTO>();
 
-            //Console.WriteLine($"\nAvailable Drivers Count: {drivers.Data?.Count ?? 0}\n");
             if (!drivers.IsSuccess || drivers.Data == null || !drivers.Data.Any())
                 return;
 
@@ -553,6 +629,7 @@ namespace Masafet_Elseka.Infrastructure.Hubs
                 },
                 Price = trip.Price,
                 CreatedAt = trip.CreatedAt,
+                PaymentMethod = string.Equals(request.PaymentMethod, "Visa", StringComparison.OrdinalIgnoreCase) ? "Visa" : "Cash",
                 Client = new ClientTripDataDTO
                 {
                     ClientId = client.Id,
@@ -668,6 +745,9 @@ namespace Masafet_Elseka.Infrastructure.Hubs
         #region Arrived Events
         private async Task NotifyClientTripArrived(string clientId, string tripId)
         {
+            await _notificationService.SendNotificationToUserAsync(clientId,
+                "وصل الكابتن", "وصل الكابتن إلى نقطة الانطلاق، يرجى الاستعداد.");
+
             await Clients.Group(HubGroups.User(clientId))
                 .SendAsync(HubEvents.ClientArrivedTrip, new
                 {
@@ -692,6 +772,9 @@ namespace Masafet_Elseka.Infrastructure.Hubs
         #region Start Trip Events
         private async Task NotifyClientTripStarted(string clientId, string tripId)
         {
+            await _notificationService.SendNotificationToUserAsync(clientId,
+                "بدأت رحلتك", "انطلقت رحلتك إلى وجهتك. رحلة سعيدة!");
+
             await Clients.Group(HubGroups.User(clientId))
                 .SendAsync(HubEvents.TripStartedForClient, new
                 {
@@ -716,6 +799,9 @@ namespace Masafet_Elseka.Infrastructure.Hubs
         #region End Trip Events
         private async Task NotifyClientTripEnded(string clientId, string tripId)
         {
+            await _notificationService.SendNotificationToUserAsync(clientId,
+                "انتهت رحلتك", "وصلت إلى وجهتك بأمان. شكرًا لاختيارك V-Go! 🎉");
+
             await Clients.Group(HubGroups.User(clientId))
                 .SendAsync(HubEvents.TripEndedForClient, new
                 {

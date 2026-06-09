@@ -69,17 +69,14 @@ Widget paymentOptionsSection(
                     Expanded(
                       child: InkWell(
                         onTap: () {
-                          if (currentTrip != null) {
-                            context.read<RealTimeTripCubit>().payTripInCash(
-                              currentTrip.tripId,
-                              currentTrip.driverId ?? '',
-                            );
-                          } else {
-                            context.read<RealTimeTripCubit>().payTripInCash(
-                              tripState.tripId,
-                              tripState.tripApprovedForClient?.driverId ?? '',
-                            );
-                          }
+                          // Cash is confirmed by the captain (not self-served).
+                          // Guide the rider; the trip unlocks when the driver
+                          // presses "payment received".
+                          successToast(
+                            context,
+                            'الدفع نقداً',
+                            'سلّم المبلغ للسائق وسيؤكد الاستلام لإنهاء الرحلة',
+                          );
                         },
                         borderRadius: const BorderRadius.all(
                           Radius.circular(12),
