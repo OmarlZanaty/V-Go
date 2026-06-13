@@ -7,8 +7,11 @@ abstract class EndPoint {
 
   // Auth
   static const String login = 'Auth/login';
-  static const String phoneLogin = 'Auth/phone-login-driver';         // Firebase phone auth
-  static const String phoneRegisterDriver = 'Auth/phone-register-driver'; // Firebase phone auth
+  static const String phoneLogin = 'Auth/phone-login-driver';         // phone + password
+  static const String phoneRegisterDriver = 'Auth/phone-register-driver'; // phone + password
+  static const String phoneExists = 'Auth/phone-exists';              // new-vs-returning check
+  static const String phoneResetPassword =
+      'Auth/phone-reset-password';                                     // forgot password (OTP)
   static const String register = 'Auth/register';
   static const String logout = 'Auth/logout';
   static const String confirmOtp = 'Auth/confirmOtp';

@@ -20,6 +20,8 @@ class PhoneDriverSignupView extends StatefulWidget {
 }
 
 class _PhoneDriverSignupViewState extends State<PhoneDriverSignupView> {
+  final _password = TextEditingController();
+  final _confirm = TextEditingController();
   final _name = TextEditingController();
   final _email = TextEditingController();
   final _nationalId = TextEditingController();
@@ -28,8 +30,14 @@ class _PhoneDriverSignupViewState extends State<PhoneDriverSignupView> {
   String _gender = 'Male';
   int _scooterType = 0; // 0 = Gasoline, 1 = Electric
 
+  // Google sign-ups have no phone in state and use Google as the credential, so
+  // they skip the password fields.
+  bool get _isGoogle => widget.phone.isEmpty;
+
   @override
   void dispose() {
+    _password.dispose();
+    _confirm.dispose();
     _name.dispose();
     _email.dispose();
     _nationalId.dispose();
@@ -49,8 +57,16 @@ class _PhoneDriverSignupViewState extends State<PhoneDriverSignupView> {
     );
   }
 
-  void _submit(PhoneAuthCubit cubit, String statePhone) {
+  void _submit(PhoneAuthCubit cubit) {
     FocusManager.instance.primaryFocus?.unfocus();
+    if (!_isGoogle) {
+      if (_password.text.length < 6) {
+        return _toast('كلمة المرور يجب ألا تقل عن 6 أحرف.');
+      }
+      if (_password.text != _confirm.text) {
+        return _toast('كلمتا المرور غير متطابقتين.');
+      }
+    }
     if (_name.text.trim().length < 2) return _toast('يرجى إدخال الاسم.');
     if (_scooterType == 0 && _scooterLicense.text.trim().isEmpty) {
       return _toast('يرجى إدخال رخصة السكوتر (بنزين).');
@@ -61,8 +77,8 @@ class _PhoneDriverSignupViewState extends State<PhoneDriverSignupView> {
     final driverLicense = _driverLicense.text.trim().isEmpty ? null : _driverLicense.text.trim();
     final scooterLicense = _scooterLicense.text.trim().isEmpty ? null : _scooterLicense.text.trim();
 
-    if (statePhone.isEmpty) {
-      // Came from Google sign-in (no phone number stored in state).
+    if (_isGoogle) {
+      // Came from Google sign-in (no phone number, no password).
       cubit.registerDriverWithGoogle(
         fullName: fullName,
         email: email,
@@ -74,6 +90,7 @@ class _PhoneDriverSignupViewState extends State<PhoneDriverSignupView> {
       );
     } else {
       cubit.registerDriver(
+        password: _password.text,
         fullName: fullName,
         email: email,
         gender: _gender,
@@ -97,19 +114,32 @@ class _PhoneDriverSignupViewState extends State<PhoneDriverSignupView> {
                 Routes.captainHomeViewRoute,
                 (route) => false,
               );
-            } else if (state.status == PhoneAuthStatus.verifyFailure) {
+            } else if (state.status == PhoneAuthStatus.failure) {
               _toast(state.errorMessage);
             }
           },
           builder: (context, state) {
-            final busy = state.status == PhoneAuthStatus.verifying;
+            final busy = state.status == PhoneAuthStatus.authenticating;
             return SingleChildScrollView(
               padding: EdgeInsets.symmetric(horizontal: 24.w, vertical: 20.h),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  Text('رقم الهاتف: ${widget.phone}', style: AppStyle.hint),
+                  Text(
+                    _isGoogle
+                        ? 'إكمال بيانات الكابتن'
+                        : 'رقم الهاتف: ${widget.phone}',
+                    style: AppStyle.hint,
+                  ),
                   SizedBox(height: 16.h),
+                  if (!_isGoogle) ...[
+                    _field(_password, 'كلمة المرور', Icons.lock_outline,
+                        obscure: true),
+                    SizedBox(height: 12.h),
+                    _field(_confirm, 'تأكيد كلمة المرور', Icons.lock_outline,
+                        obscure: true),
+                    SizedBox(height: 12.h),
+                  ],
                   _field(_name, 'الاسم بالكامل', Icons.person_outline),
                   SizedBox(height: 12.h),
                   _field(_email, 'البريد الإلكتروني (اختياري)',
@@ -172,7 +202,7 @@ class _PhoneDriverSignupViewState extends State<PhoneDriverSignupView> {
                       ),
                       onPressed: busy
                           ? null
-                          : () => _submit(context.read<PhoneAuthCubit>(), state.phone),
+                          : () => _submit(context.read<PhoneAuthCubit>()),
                       child: busy
                           ? const SpinKitThreeBounce(
                               color: AppColors.black, size: 22)
@@ -189,10 +219,11 @@ class _PhoneDriverSignupViewState extends State<PhoneDriverSignupView> {
   }
 
   Widget _field(TextEditingController c, String hint, IconData icon,
-      {TextInputType? keyboard}) {
+      {TextInputType? keyboard, bool obscure = false}) {
     return TextField(
       controller: c,
       keyboardType: keyboard,
+      obscureText: obscure,
       style: AppStyle.body,
       decoration: _decoration(hint, icon),
     );

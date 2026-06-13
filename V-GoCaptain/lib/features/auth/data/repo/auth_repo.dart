@@ -11,14 +11,19 @@ abstract class AuthRepo {
     required String deviceType,
   });
 
+  /// True if a captain account already exists for this phone.
+  Future<bool> checkPhoneExists(String phone);
+
   Future<PhoneLoginResponseModel> phoneLogin({
-    required String idToken,
+    required String phone,
+    required String password,
     required String fcmToken,
     required String deviceType,
   });
 
   Future<PhoneLoginResponseModel> phoneRegisterDriver({
-    required String idToken,
+    required String phone,
+    required String password,
     required String fullName,
     String? email,
     String? gender,
@@ -28,6 +33,12 @@ abstract class AuthRepo {
     String? scooterLicense,
     required String fcmToken,
     required String deviceType,
+  });
+
+  /// Forgot password: phone ownership proven by a Firebase OTP id token.
+  Future<void> phoneResetPassword({
+    required String idToken,
+    required String newPassword,
   });
 
 

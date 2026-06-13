@@ -35,9 +35,16 @@ class MapRepo {
 
   Future<List<PlaceSuggestionModel>> getPlaceSuggestions(
     String query,
-    String sessionToken,
-  ) async {
-    return await mapService.getPlaceSuggestions(query, sessionToken);
+    String sessionToken, {
+    double? originLat,
+    double? originLng,
+  }) async {
+    return await mapService.getPlaceSuggestions(
+      query,
+      sessionToken,
+      originLat: originLat,
+      originLng: originLng,
+    );
   }
 
   Future<LocationModel> getPlaceLocation(String placeId) async {

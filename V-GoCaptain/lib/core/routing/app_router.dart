@@ -60,9 +60,14 @@ class AppRouter {
         return _page(_phoneAuth(const PhoneLoginView()));
 
       case Routes.phoneDriverSignupViewRoute:
-        return _page(_phoneAuth(
-          PhoneDriverSignupView(phone: args?['phone'] as String? ?? ''),
-        ));
+        final signupView =
+            PhoneDriverSignupView(phone: args?['phone'] as String? ?? '');
+        final existingCubit = args?['cubit'] as PhoneAuthCubit?;
+        // Reuse the source screen's cubit so the phone number and (for Google
+        // sign-up) the Google ID token stored in state are preserved.
+        return _page(existingCubit != null
+            ? BlocProvider.value(value: existingCubit, child: signupView)
+            : _phoneAuth(signupView));
 
       case Routes.registerViewRoute:
         return _page(_auth(const RegisterView()));

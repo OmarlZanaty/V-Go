@@ -29,22 +29,30 @@ class MapService {
 
   Future<List<PlaceSuggestionModel>> getPlaceSuggestions(
     String query,
-    String sessionToken,
-  ) async {
+    String sessionToken, {
+    double? originLat,
+    double? originLng,
+  }) async {
     try {
       final response = await dio.post(
         _placesAutocompleteUrl,
         options: Options(
           headers: {
             'X-Goog-Api-Key': _apiKey,
+            // distanceMeters is returned only when `origin` is supplied; we use
+            // it to sort the results closest-first.
             'X-Goog-FieldMask':
-                'suggestions.placePrediction.placeId,suggestions.placePrediction.text.text',
+                'suggestions.placePrediction.placeId,suggestions.placePrediction.text.text,suggestions.placePrediction.distanceMeters',
           },
         ),
         data: {
           'input': query,
           'languageCode': 'ar',
           'sessionToken': sessionToken,
+          // Origin = the user's current location, so Google computes the geodesic
+          // distance to each suggestion (returned as distanceMeters).
+          if (originLat != null && originLng != null)
+            'origin': {'latitude': originLat, 'longitude': originLng},
           'locationRestriction': {
             'rectangle': {
               // أقصى جنوب غرب (SW)
@@ -58,11 +66,26 @@ class MapService {
 
       if (response.statusCode == 200) {
         final suggestions = response.data['suggestions'] as List;
-        return suggestions
+        // Keep only place predictions (query predictions have no placeId).
+        final places = suggestions
+            .map((s) => s['placePrediction'])
+            .where((p) => p != null && p['placeId'] != null)
+            .toList();
+        // Closest first: sort by distanceMeters when present (origin supplied).
+        // Entries without a distance go last, preserving Google's relevance order.
+        places.sort((a, b) {
+          final da = a['distanceMeters'] as int?;
+          final db = b['distanceMeters'] as int?;
+          if (da == null && db == null) return 0;
+          if (da == null) return 1;
+          if (db == null) return -1;
+          return da.compareTo(db);
+        });
+        return places
             .map(
-              (suggestion) => PlaceSuggestionModel(
-                placeId: suggestion['placePrediction']['placeId'],
-                description: suggestion['placePrediction']['text']['text'],
+              (p) => PlaceSuggestionModel(
+                placeId: p['placeId'],
+                description: p['text']['text'],
               ),
             )
             .toList();

@@ -8,6 +8,7 @@ import 'package:toastification/toastification.dart';
 
 import '../../../../core/theming/app_colors.dart';
 import '../../../../core/theming/app_style.dart';
+import '../../../../core/utils/app_constants.dart';
 import '../logic/cubit/captain_home_cubit.dart';
 import '../widgets/active_trip_panel.dart';
 import '../widgets/incoming_trip_card.dart';
@@ -120,9 +121,67 @@ class _CaptainMapState extends State<_CaptainMap> {
     return p == null ? null : LatLng(p.latitude, p.longitude);
   }
 
+  Future<void> _animateTo(LatLng target) async {
+    if (!_controller.isCompleted) return;
+    final controller = await _controller.future;
+    controller.animateCamera(CameraUpdate.newLatLng(target));
+  }
+
+  /// While serving a trip, the captain heads to the pickup first, then to the
+  /// destination once the ride is in progress.
+  LatLng? get _target {
+    final trip = widget.state.activeTrip;
+    if (trip == null) return null;
+    final p = widget.state.stage == TripStage.inProgress ? trip.end : trip.start;
+    return LatLng(p.lat, p.lng);
+  }
+
+  Set<Marker> _markers() {
+    final trip = widget.state.activeTrip;
+    if (trip == null) return const {};
+    return {
+      Marker(
+        markerId: const MarkerId('pickup'),
+        position: LatLng(trip.start.lat, trip.start.lng),
+        infoWindow: const InfoWindow(title: 'موقع العميل'),
+        icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueGreen),
+      ),
+      Marker(
+        markerId: const MarkerId('destination'),
+        position: LatLng(trip.end.lat, trip.end.lng),
+        infoWindow: const InfoWindow(title: 'الوجهة'),
+        icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueOrange),
+      ),
+    };
+  }
+
+  /// A straight guide line from the captain to the current target. (Turn-by-turn
+  /// routing is handed off to Google Maps via the navigation button.)
+  Set<Polyline> _polylines() {
+    final from = _latLng;
+    final to = _target;
+    if (from == null || to == null) return const {};
+    return {
+      Polyline(
+        polylineId: const PolylineId('route'),
+        points: [from, to],
+        color: AppColors.primary,
+        width: 5,
+      ),
+    };
+  }
+
   @override
   void didUpdateWidget(covariant _CaptainMap old) {
     super.didUpdateWidget(old);
+    _maybeFollow(old);
+    _maybeFrameTrip(old);
+  }
+
+  void _maybeFollow(_CaptainMap old) {
+    // Don't yank the camera back to the captain while a trip is on screen — the
+    // trip framing (below) owns the camera then.
+    if (widget.state.hasActiveTrip) return;
     final pos = widget.state.position;
     final oldPos = old.state.position;
     final moved = pos != null &&
@@ -132,10 +191,30 @@ class _CaptainMapState extends State<_CaptainMap> {
     if (moved) _animateTo(LatLng(pos.latitude, pos.longitude));
   }
 
-  Future<void> _animateTo(LatLng target) async {
+  /// When a trip starts or advances to a new target, frame the captain and the
+  /// target together so the route is visible at a glance.
+  void _maybeFrameTrip(_CaptainMap old) {
+    final target = _target;
+    final from = _latLng;
+    if (target == null || from == null) return;
+    final stageChanged = old.state.stage != widget.state.stage;
+    final tripChanged = old.state.activeTrip?.tripId != widget.state.activeTrip?.tripId;
+    if (!stageChanged && !tripChanged) return;
+    _frameBounds(from, target);
+  }
+
+  Future<void> _frameBounds(LatLng a, LatLng b) async {
     if (!_controller.isCompleted) return;
     final controller = await _controller.future;
-    controller.animateCamera(CameraUpdate.newLatLng(target));
+    final bounds = LatLngBounds(
+      southwest: LatLng(
+          a.latitude < b.latitude ? a.latitude : b.latitude,
+          a.longitude < b.longitude ? a.longitude : b.longitude),
+      northeast: LatLng(
+          a.latitude > b.latitude ? a.latitude : b.latitude,
+          a.longitude > b.longitude ? a.longitude : b.longitude),
+    );
+    controller.animateCamera(CameraUpdate.newLatLngBounds(bounds, 80));
   }
 
   @override
@@ -146,6 +225,8 @@ class _CaptainMapState extends State<_CaptainMap> {
         target: _latLng ?? _fallback,
         zoom: hasFix ? 15.5 : 12,
       ),
+      markers: _markers(),
+      polylines: _polylines(),
       // Blue dot only once we have a fix (which means permission is granted).
       myLocationEnabled: hasFix,
       myLocationButtonEnabled: false,

@@ -285,21 +285,9 @@ class _ClientMapViewState extends State<ClientMapView> {
   Set<Polyline> _buildPolylines(MapState state) {
     final Set<Polyline> set = {};
 
-    if (state.routePoints.isNotEmpty) {
-      set.add(
-        Polyline(
-          polylineId: const PolylineId('route'),
-          points: state.routePoints,
-          color: AppColors.primary,
-          width: 4,
-          startCap: Cap.roundCap,
-          endCap: Cap.roundCap,
-          zIndex: 2,
-        ),
-      );
-    }
-
-    // Live captain route (captain → pickup, then captain → destination).
+    // Show a single line. Prefer the live captain route (captain → pickup, then
+    // captain → destination) once it exists; otherwise the planned trip route.
+    // Drawing both at once made two overlapping lines appear on the map.
     if (state.routeDriverToPickup.isNotEmpty) {
       set.add(
         Polyline(
@@ -310,6 +298,18 @@ class _ClientMapViewState extends State<ClientMapView> {
           startCap: Cap.roundCap,
           endCap: Cap.roundCap,
           zIndex: 3,
+        ),
+      );
+    } else if (state.routePoints.isNotEmpty) {
+      set.add(
+        Polyline(
+          polylineId: const PolylineId('route'),
+          points: state.routePoints,
+          color: AppColors.primary,
+          width: 4,
+          startCap: Cap.roundCap,
+          endCap: Cap.roundCap,
+          zIndex: 2,
         ),
       );
     }
@@ -1283,6 +1283,48 @@ class _ClientMapViewState extends State<ClientMapView> {
     );
   }
 
+  /// Big, clear fare display shown when the trip ends, so the client sees
+  /// exactly how much to pay.
+  Widget _tripPriceBanner(RealTimeTripState tripState) {
+    final price = tripState.tripPrice > 0
+        ? tripState.tripPrice
+        : (widget.currentTrip?.price ?? 0);
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 16),
+      decoration: BoxDecoration(
+        color: AppColors.primary.withValues(alpha: 0.15),
+        borderRadius: const BorderRadius.all(Radius.circular(16)),
+        border: Border.all(color: AppColors.primary, width: 1.5),
+      ),
+      child: Column(
+        children: [
+          Text(
+            'إجمالي الرحلة',
+            style: AppStyle.styleMedium12.copyWith(color: AppColors.white),
+          ),
+          verticalSpace(4),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            crossAxisAlignment: CrossAxisAlignment.baseline,
+            textBaseline: TextBaseline.alphabetic,
+            children: [
+              Text(
+                '${price.ceil()}',
+                style: AppStyle.styleBold38.copyWith(color: AppColors.primary),
+              ),
+              horizontalSpace(6),
+              Text(
+                'ج.م',
+                style: AppStyle.styleBold20.copyWith(color: AppColors.primary),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget endTripWidgetSection(
     RealTimeTripState tripState,
     BuildContext context,
@@ -1324,6 +1366,8 @@ class _ClientMapViewState extends State<ClientMapView> {
               style: AppStyle.styleMedium12.copyWith(color: AppColors.white),
             ),
           ),
+          verticalSpace(12),
+          _tripPriceBanner(tripState),
           verticalSpace(12),
           driverDataWidget(currentTrip: widget.currentTrip, context: context),
           // If the ride completed before the client paid, this is the only place

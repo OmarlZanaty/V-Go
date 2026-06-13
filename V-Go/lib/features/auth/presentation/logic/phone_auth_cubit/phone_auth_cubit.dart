@@ -13,8 +13,9 @@ import '../../../data/repo/auth_repo.dart';
 
 part 'phone_auth_state.dart';
 
-/// Rider phone OTP auth — Firebase phone authentication. The verified Firebase
-/// ID token is exchanged with the backend (`phone-login` / `phone-register`).
+/// Rider auth: phone number + password. After the phone is entered we check
+/// whether it's already registered (-> enter password) or new (-> set password
+/// + profile). Firebase OTP is kept ONLY for forgot-password.
 class PhoneAuthCubit extends Cubit<PhoneAuthState> {
   PhoneAuthCubit(this._authRepo) : super(const PhoneAuthState());
 
@@ -22,6 +23,7 @@ class PhoneAuthCubit extends Cubit<PhoneAuthState> {
   final FirebaseAuth _auth = FirebaseAuth.instance;
   String? _verificationId;
   int? _resendToken;
+  String? _resetIdToken; // Firebase id token captured during forgot-password
   Timer? _cooldownTimer;
 
   @override
@@ -30,7 +32,92 @@ class PhoneAuthCubit extends Cubit<PhoneAuthState> {
     return super.close();
   }
 
-  Future<void> sendCode(String rawPhone) async {
+  /// Back to the phone-entry step (e.g. user taps back from the password step).
+  void reset() => emit(PhoneAuthState(phone: state.phone));
+
+  // ---------------- phone + password sign-in ----------------
+
+  /// Step 1: after the phone field, check whether the number is registered.
+  Future<void> checkPhone(String rawPhone) async {
+    final phone = _toE164(rawPhone);
+    emit(state.copyWith(
+        status: PhoneAuthStatus.checkingPhone, phone: phone, clearError: true));
+    try {
+      final exists = await _authRepo.checkPhoneExists(phone);
+      if (isClosed) return;
+      emit(state.copyWith(
+        status: exists ? PhoneAuthStatus.existingUser : PhoneAuthStatus.newUser,
+      ));
+    } catch (e) {
+      if (isClosed) return;
+      emit(state.copyWith(
+        status: PhoneAuthStatus.failure,
+        errorMessage: ServerFailure.fromError(e).errMessage,
+      ));
+    }
+  }
+
+  /// Returning user: phone (from state) + password.
+  Future<void> login(String password) async {
+    emit(state.copyWith(
+        status: PhoneAuthStatus.authenticating, clearError: true));
+    try {
+      final fcmToken =
+          (await CacheHelper.getSecuredString(AppConstants.fcmToken)) ?? '';
+      final result = await _authRepo.phoneLogin(
+        phone: state.phone,
+        password: password,
+        fcmToken: fcmToken,
+        deviceType: 'Android',
+      );
+      if (isClosed) return;
+      await _cacheSession(result);
+      emit(state.copyWith(status: PhoneAuthStatus.loginSuccess));
+    } catch (e) {
+      if (isClosed) return;
+      emit(state.copyWith(
+        status: PhoneAuthStatus.failure,
+        errorMessage: ServerFailure.fromError(e).errMessage,
+      ));
+    }
+  }
+
+  /// New user: phone (from state) + the password they just set + profile data.
+  Future<void> register({
+    required String password,
+    required String fullName,
+    String? email,
+    String? gender,
+  }) async {
+    emit(state.copyWith(
+        status: PhoneAuthStatus.authenticating, clearError: true));
+    try {
+      final fcmToken =
+          (await CacheHelper.getSecuredString(AppConstants.fcmToken)) ?? '';
+      final result = await _authRepo.phoneRegister(
+        phone: state.phone,
+        password: password,
+        fullName: fullName,
+        email: email,
+        gender: gender,
+        fcmToken: fcmToken,
+        deviceType: 'Android',
+      );
+      if (isClosed) return;
+      await _cacheSession(result);
+      emit(state.copyWith(status: PhoneAuthStatus.loginSuccess));
+    } catch (e) {
+      if (isClosed) return;
+      emit(state.copyWith(
+        status: PhoneAuthStatus.failure,
+        errorMessage: ServerFailure.fromError(e).errMessage,
+      ));
+    }
+  }
+
+  // ---------------- forgot password (Firebase OTP) ----------------
+
+  Future<void> sendResetCode(String rawPhone) async {
     final phone = _toE164(rawPhone);
     emit(state.copyWith(
       status: PhoneAuthStatus.sendingCode,
@@ -44,13 +131,12 @@ class PhoneAuthCubit extends Cubit<PhoneAuthState> {
         forceResendingToken: _resendToken,
         timeout: const Duration(seconds: 60),
         verificationCompleted: (credential) async {
-          // Android auto-retrieval — sign in automatically.
-          await _signInAndLogin(credential);
+          await _captureResetToken(credential);
         },
         verificationFailed: (e) {
           if (isClosed) return;
           emit(state.copyWith(
-            status: PhoneAuthStatus.codeSendFailure,
+            status: PhoneAuthStatus.failure,
             errorMessage: _firebaseMsg(e),
           ));
         },
@@ -68,107 +154,80 @@ class PhoneAuthCubit extends Cubit<PhoneAuthState> {
     } catch (e) {
       if (isClosed) return;
       emit(state.copyWith(
-        status: PhoneAuthStatus.codeSendFailure,
+        status: PhoneAuthStatus.failure,
         errorMessage: _firebaseMsg(e),
       ));
     }
   }
 
-  Future<void> verifyCode(String code) async {
+  Future<void> verifyResetCode(String code) async {
     final vid = _verificationId;
     if (vid == null) {
       emit(state.copyWith(
-        status: PhoneAuthStatus.verifyFailure,
+        status: PhoneAuthStatus.failure,
         errorMessage: 'لم يتم إرسال رمز التحقق بعد.',
       ));
       return;
     }
-    emit(state.copyWith(status: PhoneAuthStatus.verifying, clearError: true));
+    emit(state.copyWith(status: PhoneAuthStatus.verifyingCode, clearError: true));
     try {
       final credential = PhoneAuthProvider.credential(
         verificationId: vid,
         smsCode: code,
       );
-      await _signInAndLogin(credential);
+      await _captureResetToken(credential);
     } catch (e) {
       if (isClosed) return;
       emit(state.copyWith(
-        status: PhoneAuthStatus.verifyFailure,
+        status: PhoneAuthStatus.failure,
         errorMessage: _firebaseMsg(e),
       ));
     }
   }
 
-  /// Signs in with the Firebase credential, then exchanges the ID token with the
-  /// backend. New (unregistered) phones are routed to the sign-up screen.
-  Future<void> _signInAndLogin(PhoneAuthCredential credential) async {
+  Future<void> _captureResetToken(PhoneAuthCredential credential) async {
     final userCred = await _auth.signInWithCredential(credential);
     final idToken = await userCred.user?.getIdToken();
     if (idToken == null) {
       if (isClosed) return;
       emit(state.copyWith(
-        status: PhoneAuthStatus.verifyFailure,
+        status: PhoneAuthStatus.failure,
         errorMessage: 'فشل الحصول على رمز التحقق.',
       ));
       return;
     }
-    final fcmToken =
-        (await CacheHelper.getSecuredString(AppConstants.fcmToken)) ?? '';
-    final result = await _authRepo.phoneLogin(
-      idToken: idToken,
-      fcmToken: fcmToken,
-      deviceType: 'Android',
-    );
+    _resetIdToken = idToken;
     if (isClosed) return;
-    if (result.isNewUser) {
-      emit(state.copyWith(
-        status: PhoneAuthStatus.newUser,
-        phone: result.phone ?? state.phone,
-      ));
-    } else {
-      await _cacheSession(result);
-      emit(state.copyWith(status: PhoneAuthStatus.loginSuccess));
-    }
+    emit(state.copyWith(status: PhoneAuthStatus.codeVerified));
   }
 
-  /// Called from PhoneSignupView after the user fills name/email/gender to
-  /// complete registration of a newly verified phone.
-  Future<void> registerWithPhone({
-    required String fullName,
-    String? email,
-    String? gender,
-  }) async {
-    emit(state.copyWith(status: PhoneAuthStatus.verifying, clearError: true));
+  Future<void> submitNewPassword(String newPassword) async {
+    final idToken = _resetIdToken;
+    if (idToken == null) {
+      emit(state.copyWith(
+        status: PhoneAuthStatus.failure,
+        errorMessage: 'انتهت الجلسة، أعد المحاولة.',
+      ));
+      return;
+    }
+    emit(state.copyWith(status: PhoneAuthStatus.resetting, clearError: true));
     try {
-      final idToken = await _auth.currentUser?.getIdToken();
-      if (idToken == null) {
-        emit(state.copyWith(
-          status: PhoneAuthStatus.verifyFailure,
-          errorMessage: 'انتهت الجلسة، يرجى إعادة المحاولة.',
-        ));
-        return;
-      }
-      final fcmToken =
-          (await CacheHelper.getSecuredString(AppConstants.fcmToken)) ?? '';
-      final result = await _authRepo.phoneRegister(
+      await _authRepo.phoneResetPassword(
         idToken: idToken,
-        fullName: fullName,
-        email: email,
-        gender: gender,
-        fcmToken: fcmToken,
-        deviceType: 'Android',
+        newPassword: newPassword,
       );
       if (isClosed) return;
-      await _cacheSession(result);
-      emit(state.copyWith(status: PhoneAuthStatus.loginSuccess));
+      emit(state.copyWith(status: PhoneAuthStatus.resetSuccess));
     } catch (e) {
       if (isClosed) return;
       emit(state.copyWith(
-        status: PhoneAuthStatus.verifyFailure,
+        status: PhoneAuthStatus.failure,
         errorMessage: ServerFailure.fromError(e).errMessage,
       ));
     }
   }
+
+  // ---------------- helpers ----------------
 
   void _startCooldown([int seconds = 30]) {
     _cooldownTimer?.cancel();

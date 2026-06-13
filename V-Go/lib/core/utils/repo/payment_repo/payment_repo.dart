@@ -11,7 +11,7 @@ class PaymentRepo {
     required PaymentRequestModel model,
   }) async {
     final response = await _apiServices.post(
-      EndPoint.initiatePreAuth,
+      EndPoint.createPaymentIntent,
       data: model.toJson(),
     );
     return PaymentResponseModel.fromJson(response);

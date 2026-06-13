@@ -60,6 +60,7 @@ dependencies:
   # Location & maps (driver core)
   geolocator: ^14.0.2
   google_maps_flutter: ^2.12.3
+  url_launcher: ^6.3.1          # launch Google Maps turn-by-turn navigation
 
   # Realtime (shared backend SignalR hubs)
   signalr_netcore: ^1.4.3

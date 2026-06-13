@@ -12,18 +12,28 @@ abstract class AuthRepo {
     required String fcmToken,
     required String deviceType,
   });
+  /// Returns true if an account already exists for this phone (drives the
+  /// set-password vs enter-password branch).
+  Future<bool> checkPhoneExists(String phone);
   Future<PhoneLoginResponseModel> phoneLogin({
-    required String idToken,
+    required String phone,
+    required String password,
     required String fcmToken,
     required String deviceType,
   });
   Future<PhoneLoginResponseModel> phoneRegister({
-    required String idToken,
+    required String phone,
+    required String password,
     required String fullName,
     String? email,
     String? gender,
     required String fcmToken,
     required String deviceType,
+  });
+  /// Forgot password: phone ownership proven by a Firebase OTP id token.
+  Future<void> phoneResetPassword({
+    required String idToken,
+    required String newPassword,
   });
   Future<GoogleLoginResponseModel> googleLogin();
   Future<PhoneLoginResponseModel> googleTokenLogin({

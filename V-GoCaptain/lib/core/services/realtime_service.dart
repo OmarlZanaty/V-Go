@@ -122,12 +122,52 @@ class RealtimeService {
     ]);
   }
 
+  /// Invokes a trip-hub method, but first makes sure the socket is actually
+  /// connected. SignalR drops happen routinely on mobile (network blips, server
+  /// idle timeouts); without this guard a tap during a brief reconnect throws
+  /// "connection is not in the Connected state" and the captain sees an error
+  /// even though nothing is really wrong.
+  Future<Object?> _invokeTrip(String method, {List<Object>? args}) async {
+    final hub = _tripHub;
+    if (hub == null) {
+      throw StateError('Trip hub is not initialised');
+    }
+    await _ensureConnected(hub);
+    return hub.invoke(method, args: args);
+  }
+
+  /// Waits briefly for an in-flight auto-reconnect to finish; if the hub is
+  /// fully disconnected, starts it again. Gives up after ~6s so the caller's
+  /// error handling still runs.
+  Future<void> _ensureConnected(HubConnection hub) async {
+    if (hub.state == HubConnectionState.Connected) return;
+    const step = Duration(milliseconds: 300);
+    for (var waited = Duration.zero;
+        waited < const Duration(seconds: 6);
+        waited += step) {
+      if (hub.state == HubConnectionState.Connected) return;
+      if (hub.state == HubConnectionState.Disconnected) {
+        try {
+          await hub.start();
+          _connected = true;
+          return;
+        } catch (_) {
+          // Fall through and keep waiting/retrying within the budget.
+        }
+      }
+      await Future.delayed(step);
+    }
+    if (hub.state != HubConnectionState.Connected) {
+      throw StateError('Trip hub not connected');
+    }
+  }
+
   Future<void> acceptTrip({
     required String tripId,
     required double lat,
     required double lng,
   }) async {
-    await _tripHub?.invoke('ApproveAndAssignDriverToTrip', args: [
+    await _invokeTrip('ApproveAndAssignDriverToTrip', args: [
       tripId,
       AppConstants.kUserId,
       lat.toString(),
@@ -136,25 +176,25 @@ class RealtimeService {
   }
 
   Future<void> rejectTrip(String tripId) async {
-    await _tripHub?.invoke('RejectTrip', args: [tripId]);
+    await _invokeTrip('RejectTrip', args: [tripId]);
   }
 
   Future<void> arrived(String tripId) async {
-    await _tripHub?.invoke('Arrived', args: [tripId, AppConstants.kUserId]);
+    await _invokeTrip('Arrived', args: [tripId, AppConstants.kUserId]);
   }
 
   Future<void> startTrip(String tripId) async {
-    await _tripHub?.invoke('StartTrip', args: [tripId, AppConstants.kUserId]);
+    await _invokeTrip('StartTrip', args: [tripId, AppConstants.kUserId]);
   }
 
   Future<void> endTrip(String tripId) async {
-    await _tripHub?.invoke('EndTrip', args: [tripId, AppConstants.kUserId]);
+    await _invokeTrip('EndTrip', args: [tripId, AppConstants.kUserId]);
   }
 
   /// Driver confirms they received the cash for this trip → backend marks it
   /// paid and unlocks the rider's completion screen.
   Future<void> confirmCashPayment(String tripId) async {
-    await _tripHub?.invoke('ConfirmCashPayment', args: [tripId]);
+    await _invokeTrip('ConfirmCashPayment', args: [tripId]);
   }
 
   Future<void> disconnect() async {

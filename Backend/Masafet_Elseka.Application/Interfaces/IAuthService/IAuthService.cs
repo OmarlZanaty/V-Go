@@ -18,6 +18,11 @@ namespace Masafet_Elseka.Application.Interfaces.IAuthService
         public Task<Response<LoginResponseDTO>> RegisterWithPhoneAsync(PhoneRegisterDTO model);
         public Task<Response<LoginResponseDTO>> LoginDriverWithPhoneAsync(PhoneLoginDTO model);
         public Task<Response<LoginResponseDTO>> RegisterDriverWithPhoneAsync(PhoneRegisterDriverDTO model);
+        // Phone + password helpers: check if a phone is already registered (drives the
+        // "set password" vs "enter password" branch), and reset a forgotten password
+        // after an OTP check.
+        public Task<Response<bool>> CheckPhoneExistsAsync(string phone);
+        public Task<Response<string>> ResetPhonePasswordAsync(PhoneResetPasswordDTO model);
         // Google Sign-In (native token flow)
         public Task<Response<LoginResponseDTO>> GoogleTokenLoginAsync(GoogleTokenLoginDTO model);
         public Task<Response<LoginResponseDTO>> GoogleTokenDriverAsync(GoogleTokenDriverDTO model);

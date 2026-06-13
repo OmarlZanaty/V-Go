@@ -2,28 +2,33 @@ part of 'phone_auth_cubit.dart';
 
 enum PhoneAuthStatus {
   initial,
+  // phone + password sign-in
+  checkingPhone,
+  existingUser, // phone registered -> ask for password (login)
+  newUser, // phone not registered -> set password + profile
+  authenticating, // login or register in flight
+  loginSuccess,
+  failure,
+  // forgot password (Firebase OTP) flow
   sendingCode,
   codeSent,
-  codeSendFailure,
-  verifying,
-  loginSuccess,
-  newUser,
-  verifyFailure,
+  verifyingCode,
+  codeVerified, // OTP verified -> set a new password
+  resetting,
+  resetSuccess,
 }
 
 class PhoneAuthState extends Equatable {
   final PhoneAuthStatus status;
   final String phone;
   final String errorMessage;
-  final int cooldownSeconds; // resend cooldown countdown
-  final String lastCode;     // kept so signup screen can re-use the verified code
+  final int cooldownSeconds; // resend cooldown countdown (reset flow)
 
   const PhoneAuthState({
     this.status = PhoneAuthStatus.initial,
     this.phone = '',
     this.errorMessage = '',
     this.cooldownSeconds = 0,
-    this.lastCode = '',
   });
 
   PhoneAuthState copyWith({
@@ -32,17 +37,15 @@ class PhoneAuthState extends Equatable {
     String? errorMessage,
     bool clearError = false,
     int? cooldownSeconds,
-    String? lastCode,
   }) {
     return PhoneAuthState(
       status: status ?? this.status,
       phone: phone ?? this.phone,
       errorMessage: clearError ? '' : (errorMessage ?? this.errorMessage),
       cooldownSeconds: cooldownSeconds ?? this.cooldownSeconds,
-      lastCode: lastCode ?? this.lastCode,
     );
   }
 
   @override
-  List<Object?> get props => [status, phone, errorMessage, cooldownSeconds, lastCode];
+  List<Object?> get props => [status, phone, errorMessage, cooldownSeconds];
 }

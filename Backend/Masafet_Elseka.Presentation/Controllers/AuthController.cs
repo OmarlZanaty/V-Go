@@ -169,6 +169,36 @@ namespace Masafet_Elseka.Presentation.Controllers
             return StatusCode(result.StatusCode, result.Message);
         }
 
+        // Phone-first sign-in: the app calls this after the phone field to decide
+        // between "set password" (new) and "enter password" (returning).
+        [HttpGet("phone-exists")]
+        public async Task<IActionResult> PhoneExists([FromQuery] string phone)
+        {
+            var result = await _authService.CheckPhoneExistsAsync(phone);
+            if (result.IsSuccess)
+            {
+                return StatusCode(result.StatusCode, new { exists = result.Data, message = result.Message });
+            }
+            return StatusCode(result.StatusCode, result.Message);
+        }
+
+        // Forgot password for phone accounts (OTP kept only for this path).
+        [HttpPost("phone-reset-password")]
+        public async Task<IActionResult> PhoneResetPassword([FromBody] PhoneResetPasswordDTO model)
+        {
+            if (model == null)
+            {
+                return BadRequest("نموذج البيانات غير صالح");
+            }
+
+            var result = await _authService.ResetPhonePasswordAsync(model);
+            if (result.IsSuccess)
+            {
+                return StatusCode(result.StatusCode, new { message = result.Message });
+            }
+            return StatusCode(result.StatusCode, result.Message);
+        }
+
         [HttpPost("newrefreshtoken")]
         public async Task<IActionResult> NewRefreshToken(string token)
         {

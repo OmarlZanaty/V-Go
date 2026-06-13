@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
+import 'package:google_fonts/google_fonts.dart';
+import 'package:toastification/toastification.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../../../core/theming/app_colors.dart';
 import '../../../../core/theming/app_style.dart';
@@ -42,6 +45,31 @@ class ActiveTripPanel extends StatelessWidget {
             ],
           ),
         ),
+        SizedBox(height: 12.h),
+        _priceBanner(),
+        SizedBox(height: 12.h),
+        SizedBox(
+          height: 48.h,
+          child: OutlinedButton.icon(
+            style: OutlinedButton.styleFrom(
+              // Solid dark fill so the yellow label is legible over the map.
+              backgroundColor: AppColors.darkGrey,
+              foregroundColor: AppColors.primary,
+              side: const BorderSide(color: AppColors.primary),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(14.r),
+              ),
+            ),
+            onPressed: () => _openNavigation(context, state),
+            icon: Icon(Icons.navigation_outlined, size: 20.r),
+            label: Text(
+              state.stage == TripStage.inProgress
+                  ? 'الملاحة إلى الوجهة'
+                  : 'الملاحة إلى العميل',
+              style: AppStyle.body.copyWith(color: AppColors.primary),
+            ),
+          ),
+        ),
         const Spacer(),
         SizedBox(
           height: 54.h,
@@ -63,12 +91,64 @@ class ActiveTripPanel extends StatelessWidget {
     );
   }
 
+  /// Big, clear fare display. Emphasised once the ride ends so the captain
+  /// sees exactly how much to collect.
+  Widget _priceBanner() {
+    final price = state.activeTrip?.price ?? 0;
+    final isCompleted = state.stage == TripStage.completed;
+    return Container(
+      width: double.infinity,
+      padding: EdgeInsets.symmetric(vertical: isCompleted ? 16.h : 12.h),
+      decoration: BoxDecoration(
+        color: AppColors.primary.withValues(alpha: isCompleted ? 0.20 : 0.12),
+        borderRadius: BorderRadius.circular(16.r),
+        border: Border.all(color: AppColors.primary, width: 1.5),
+      ),
+      child: Column(
+        children: [
+          Text(
+            isCompleted ? 'المبلغ المطلوب' : 'قيمة الرحلة',
+            style: AppStyle.hint.copyWith(color: AppColors.white),
+          ),
+          SizedBox(height: 4.h),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            crossAxisAlignment: CrossAxisAlignment.baseline,
+            textBaseline: TextBaseline.alphabetic,
+            children: [
+              Text(
+                '${price.ceil()}',
+                style: GoogleFonts.cairo(
+                  fontSize: isCompleted ? 40.sp : 28.sp,
+                  fontWeight: FontWeight.bold,
+                  color: AppColors.primary,
+                ),
+              ),
+              SizedBox(width: 6.w),
+              Text(
+                'ج.م',
+                style: GoogleFonts.cairo(
+                  fontSize: isCompleted ? 20.sp : 16.sp,
+                  fontWeight: FontWeight.bold,
+                  color: AppColors.primary,
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _stageHeader() {
     return Container(
       padding: EdgeInsets.symmetric(vertical: 12.h, horizontal: 16.w),
       decoration: BoxDecoration(
-        color: AppColors.primary.withValues(alpha: 0.15),
+        // Solid dark background so the status stays readable over the light map
+        // (the old translucent yellow blended into the map and was invisible).
+        color: AppColors.darkGrey,
         borderRadius: BorderRadius.circular(14.r),
+        border: Border.all(color: AppColors.primary, width: 1.5),
       ),
       child: Row(
         children: [
@@ -127,6 +207,38 @@ class ActiveTripPanel extends StatelessWidget {
           : 'تأكيد استلام الدفع';
     }
     return _actionLabel(state.stage);
+  }
+
+  /// Opens turn-by-turn navigation in Google Maps to the current target — the
+  /// client's pickup before the ride starts, the destination once it's running.
+  Future<void> _openNavigation(
+      BuildContext context, CaptainHomeState state) async {
+    final trip = state.activeTrip;
+    if (trip == null) return;
+    final target = state.stage == TripStage.inProgress ? trip.end : trip.start;
+
+    // Prefer the Google Maps navigation intent; fall back to a maps URL.
+    final navUri = Uri.parse('google.navigation:q=${target.lat},${target.lng}&mode=d');
+    final webUri = Uri.parse(
+        'https://www.google.com/maps/dir/?api=1&destination=${target.lat},${target.lng}&travelmode=driving');
+
+    var launched = false;
+    if (await canLaunchUrl(navUri)) {
+      launched = await launchUrl(navUri, mode: LaunchMode.externalApplication);
+    }
+    if (!launched) {
+      launched = await launchUrl(webUri, mode: LaunchMode.externalApplication);
+    }
+    if (!launched && context.mounted) {
+      toastification.show(
+        context: context,
+        type: ToastificationType.error,
+        style: ToastificationStyle.fillColored,
+        title: Text('تعذّر فتح تطبيق الخرائط', style: AppStyle.body),
+        autoCloseDuration: const Duration(seconds: 3),
+        alignment: Alignment.bottomCenter,
+      );
+    }
   }
 
   Widget _row(IconData icon, String text, {Color color = AppColors.grey}) {

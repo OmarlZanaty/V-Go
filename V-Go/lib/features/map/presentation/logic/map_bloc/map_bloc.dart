@@ -20,6 +20,10 @@ class MapBloc extends Bloc<MapEvent, MapState> {
   DateTime? _lastRouteCalcAt;
   final Duration _minRouteInterval = const Duration(seconds: 3);
 
+  // Ensures we kick off the background location load (for closest-first search)
+  // at most once, instead of awaiting GPS on every keystroke (which froze search).
+  bool _searchOriginRequested = false;
+
   MapBloc({required this.mapRepo}) : super(const MapState()) {
     on<LoadInitialLocation>(_onLoadInitialLocation);
     on<SearchLocation>(
@@ -102,9 +106,21 @@ class MapBloc extends Bloc<MapEvent, MapState> {
         emit(state.copyWith(placeSuggestions: []));
         return;
       }
+      // Sort results by distance so the nearest places appear first, using the
+      // current location (fall back to the chosen pickup point). NEVER await GPS
+      // here — SearchLocation runs sequentially (asyncExpand), so a slow GPS call
+      // freezes autocomplete. If we have no origin yet, kick off the location load
+      // ONCE in the background (concurrent event) so later keystrokes can sort.
+      final origin = state.currentLocation ?? state.fromLocation;
+      if (origin == null && !_searchOriginRequested) {
+        _searchOriginRequested = true;
+        add(LoadInitialLocation());
+      }
       final suggestions = await mapRepo.getPlaceSuggestions(
         event.query,
         event.sessionToken,
+        originLat: origin?.latitude,
+        originLng: origin?.longitude,
       );
       emit(state.copyWith(placeSuggestions: suggestions));
     } catch (e) {

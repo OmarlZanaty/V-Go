@@ -34,15 +34,26 @@ class AuthRepoImpl implements AuthRepo {
   }
 
   @override
+  Future<bool> checkPhoneExists(String phone) async {
+    final response = await _apiServices.get(
+      EndPoint.phoneExists,
+      queryParameters: {'phone': phone},
+    );
+    return response['exists'] == true;
+  }
+
+  @override
   Future<PhoneLoginResponseModel> phoneLogin({
-    required String idToken,
+    required String phone,
+    required String password,
     required String fcmToken,
     required String deviceType,
   }) async {
     final response = await _apiServices.post(
       EndPoint.phoneLogin,
       data: {
-        'idToken': idToken,
+        'phone': phone,
+        'password': password,
         'fcmToken': fcmToken,
         'deviceType': deviceType,
       },
@@ -52,7 +63,8 @@ class AuthRepoImpl implements AuthRepo {
 
   @override
   Future<PhoneLoginResponseModel> phoneRegister({
-    required String idToken,
+    required String phone,
+    required String password,
     required String fullName,
     String? email,
     String? gender,
@@ -62,7 +74,8 @@ class AuthRepoImpl implements AuthRepo {
     final response = await _apiServices.post(
       EndPoint.phoneRegister,
       data: {
-        'idToken': idToken,
+        'phone': phone,
+        'password': password,
         'fullName': fullName,
         'email': email,
         'gender': gender,
@@ -71,6 +84,20 @@ class AuthRepoImpl implements AuthRepo {
       },
     );
     return PhoneLoginResponseModel.fromJson(response['data']);
+  }
+
+  @override
+  Future<void> phoneResetPassword({
+    required String idToken,
+    required String newPassword,
+  }) async {
+    await _apiServices.post(
+      EndPoint.phoneResetPassword,
+      data: {
+        'idToken': idToken,
+        'newPassword': newPassword,
+      },
+    );
   }
 
 

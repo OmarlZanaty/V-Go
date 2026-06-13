@@ -250,34 +250,13 @@ namespace Masafet_Elseka.Infrastructure.Services.AuthService
         {
             try
             {
-                if (string.IsNullOrWhiteSpace(model?.IdToken))
-                    return Response<LoginResponseDTO>.Failure("رمز التحقق مفقود", 400);
+                if (string.IsNullOrWhiteSpace(model?.Phone) || string.IsNullOrWhiteSpace(model.Password))
+                    return Response<LoginResponseDTO>.Failure("رقم الهاتف وكلمة المرور مطلوبان", 400);
 
-                FirebaseToken decoded;
-                try
-                {
-                    decoded = await FirebaseAuth.DefaultInstance.VerifyIdTokenAsync(model.IdToken);
-                }
-                catch
-                {
-                    return Response<LoginResponseDTO>.Failure("رمز التحقق غير صالح أو منتهي الصلاحية، حاول مجددًا.", 401);
-                }
-
-                var phone = decoded.Claims.TryGetValue("phone_number", out var p) ? p?.ToString() : null;
-                if (string.IsNullOrWhiteSpace(phone))
-                    return Response<LoginResponseDTO>.Failure("تعذّر قراءة رقم الهاتف من رمز التحقق", 400);
-
+                var phone = NormalizePhone(model.Phone);
                 var user = await _userManager.Users.FirstOrDefaultAsync(u => u.PhoneNumber == phone);
                 if (user == null)
-                {
-                    // Verified phone with no account yet → continue to sign-up.
-                    return Response<LoginResponseDTO>.Success(new LoginResponseDTO
-                    {
-                        IsAuthenticated = false,
-                        IsNewUser = true,
-                        Phone = phone,
-                    }, "مستخدم جديد، يرجى إكمال التسجيل", 200);
-                }
+                    return Response<LoginResponseDTO>.Failure("لا يوجد حساب بهذا الرقم، يرجى إنشاء حساب جديد", 404);
 
                 // Captain accounts cannot sign in to the rider app.
                 if (await _userManager.IsInRoleAsync(user, "Driver"))
@@ -285,6 +264,9 @@ namespace Masafet_Elseka.Infrastructure.Services.AuthService
 
                 if (user.IsBlocked)
                     return Response<LoginResponseDTO>.Failure("تم تعطيل حسابك، يُرجى التواصل مع الدعم", 403);
+
+                if (!await _userManager.CheckPasswordAsync(user, model.Password))
+                    return Response<LoginResponseDTO>.Failure("رقم الهاتف أو كلمة المرور غير صحيحة", 401);
 
                 if (!string.IsNullOrEmpty(model.FCMToken))
                     await _notificationService.RegisterDeviceAsync(user.Id, model.FCMToken, model.DeviceType);
@@ -327,34 +309,13 @@ namespace Masafet_Elseka.Infrastructure.Services.AuthService
         {
             try
             {
-                if (string.IsNullOrWhiteSpace(model?.IdToken))
-                    return Response<LoginResponseDTO>.Failure("رمز التحقق مفقود", 400);
+                if (string.IsNullOrWhiteSpace(model?.Phone) || string.IsNullOrWhiteSpace(model.Password))
+                    return Response<LoginResponseDTO>.Failure("رقم الهاتف وكلمة المرور مطلوبان", 400);
 
-                FirebaseToken decoded;
-                try
-                {
-                    decoded = await FirebaseAuth.DefaultInstance.VerifyIdTokenAsync(model.IdToken);
-                }
-                catch
-                {
-                    return Response<LoginResponseDTO>.Failure("رمز التحقق غير صالح أو منتهي الصلاحية، حاول مجددًا.", 401);
-                }
-
-                var phone = decoded.Claims.TryGetValue("phone_number", out var p) ? p?.ToString() : null;
-                if (string.IsNullOrWhiteSpace(phone))
-                    return Response<LoginResponseDTO>.Failure("تعذّر قراءة رقم الهاتف من رمز التحقق", 400);
-
+                var phone = NormalizePhone(model.Phone);
                 var user = await _userManager.Users.FirstOrDefaultAsync(u => u.PhoneNumber == phone);
                 if (user == null)
-                {
-                    // New phone → continue to captain sign-up.
-                    return Response<LoginResponseDTO>.Success(new LoginResponseDTO
-                    {
-                        IsAuthenticated = false,
-                        IsNewUser = true,
-                        Phone = phone,
-                    }, "كابتن جديد، يرجى إكمال التسجيل", 200);
-                }
+                    return Response<LoginResponseDTO>.Failure("لا يوجد حساب بهذا الرقم، يرجى إنشاء حساب جديد", 404);
 
                 if (user.IsBlocked)
                     return Response<LoginResponseDTO>.Failure("تم تعطيل حسابك، يُرجى التواصل مع الدعم", 403);
@@ -365,6 +326,9 @@ namespace Masafet_Elseka.Infrastructure.Services.AuthService
                     // Phone belongs to a rider (Client) account → cannot use the captain app.
                     return Response<LoginResponseDTO>.Failure(RiderOnCaptainMessage, 403);
                 }
+
+                if (!await _userManager.CheckPasswordAsync(user, model.Password))
+                    return Response<LoginResponseDTO>.Failure("رقم الهاتف أو كلمة المرور غير صحيحة", 401);
 
                 if (!string.IsNullOrEmpty(model.FCMToken))
                     await _notificationService.RegisterDeviceAsync(user.Id, model.FCMToken, model.DeviceType);
@@ -405,24 +369,12 @@ namespace Masafet_Elseka.Infrastructure.Services.AuthService
         {
             try
             {
-                if (string.IsNullOrWhiteSpace(model?.IdToken))
-                    return Response<LoginResponseDTO>.Failure("رمز التحقق مفقود", 400);
+                if (string.IsNullOrWhiteSpace(model?.Phone) || string.IsNullOrWhiteSpace(model.Password))
+                    return Response<LoginResponseDTO>.Failure("رقم الهاتف وكلمة المرور مطلوبان", 400);
                 if (string.IsNullOrWhiteSpace(model.FullName))
                     return Response<LoginResponseDTO>.Failure("الاسم مطلوب", 400);
 
-                FirebaseToken decoded;
-                try
-                {
-                    decoded = await FirebaseAuth.DefaultInstance.VerifyIdTokenAsync(model.IdToken);
-                }
-                catch
-                {
-                    return Response<LoginResponseDTO>.Failure("رمز التحقق غير صالح أو منتهي الصلاحية، حاول مجددًا.", 401);
-                }
-
-                var phone = decoded.Claims.TryGetValue("phone_number", out var p) ? p?.ToString() : null;
-                if (string.IsNullOrWhiteSpace(phone))
-                    return Response<LoginResponseDTO>.Failure("تعذّر قراءة رقم الهاتف من رمز التحقق", 400);
+                var phone = NormalizePhone(model.Phone);
 
                 var existing = await _userManager.Users.FirstOrDefaultAsync(u => u.PhoneNumber == phone);
                 if (existing != null)
@@ -439,7 +391,7 @@ namespace Masafet_Elseka.Infrastructure.Services.AuthService
                 {
                     UserName = phone,
                     PhoneNumber = phone,
-                    PhoneNumberConfirmed = true,
+                    PhoneNumberConfirmed = false,
                     FullName = model.FullName.Trim(),
                     Email = string.IsNullOrWhiteSpace(model.Email) ? null : model.Email.Trim(),
                     EmailConfirmed = true,
@@ -447,8 +399,7 @@ namespace Masafet_Elseka.Infrastructure.Services.AuthService
                     CreatedAt = DateTime.UtcNow,
                 };
 
-                // No password — phone OTP is the credential.
-                var createResult = await _userManager.CreateAsync(user);
+                var createResult = await _userManager.CreateAsync(user, model.Password);
                 if (!createResult.Succeeded)
                 {
                     var err = string.Join(" ", createResult.Errors.Select(e => e.Description));
@@ -498,8 +449,8 @@ namespace Masafet_Elseka.Infrastructure.Services.AuthService
         {
             try
             {
-                if (string.IsNullOrWhiteSpace(model?.IdToken))
-                    return Response<LoginResponseDTO>.Failure("رمز التحقق مفقود", 400);
+                if (string.IsNullOrWhiteSpace(model?.Phone) || string.IsNullOrWhiteSpace(model.Password))
+                    return Response<LoginResponseDTO>.Failure("رقم الهاتف وكلمة المرور مطلوبان", 400);
                 if (string.IsNullOrWhiteSpace(model.FullName))
                     return Response<LoginResponseDTO>.Failure("الاسم مطلوب", 400);
 
@@ -507,19 +458,7 @@ namespace Masafet_Elseka.Infrastructure.Services.AuthService
                 if (scooterType == ScooterType.Gasoline && string.IsNullOrWhiteSpace(model.ScooterLicense))
                     return Response<LoginResponseDTO>.Failure("يرجى إدخال رخصة السكوتر (بنزين)", 400);
 
-                FirebaseToken decoded;
-                try
-                {
-                    decoded = await FirebaseAuth.DefaultInstance.VerifyIdTokenAsync(model.IdToken);
-                }
-                catch
-                {
-                    return Response<LoginResponseDTO>.Failure("رمز التحقق غير صالح أو منتهي الصلاحية، حاول مجددًا.", 401);
-                }
-
-                var phone = decoded.Claims.TryGetValue("phone_number", out var p) ? p?.ToString() : null;
-                if (string.IsNullOrWhiteSpace(phone))
-                    return Response<LoginResponseDTO>.Failure("تعذّر قراءة رقم الهاتف من رمز التحقق", 400);
+                var phone = NormalizePhone(model.Phone);
 
                 var user = await _userManager.Users.FirstOrDefaultAsync(u => u.PhoneNumber == phone);
                 if (user != null)
@@ -547,7 +486,7 @@ namespace Masafet_Elseka.Infrastructure.Services.AuthService
                     {
                         UserName = phone,
                         PhoneNumber = phone,
-                        PhoneNumberConfirmed = true,
+                        PhoneNumberConfirmed = false,
                         FullName = model.FullName.Trim(),
                         Email = string.IsNullOrWhiteSpace(model.Email) ? null : model.Email.Trim(),
                         EmailConfirmed = true,
@@ -557,7 +496,7 @@ namespace Masafet_Elseka.Infrastructure.Services.AuthService
                         CreatedAt = DateTime.UtcNow,
                     };
 
-                    var createResult = await _userManager.CreateAsync(user);
+                    var createResult = await _userManager.CreateAsync(user, model.Password);
                     if (!createResult.Succeeded)
                     {
                         var err = string.Join(" ", createResult.Errors.Select(e => e.Description));
@@ -609,6 +548,83 @@ namespace Masafet_Elseka.Infrastructure.Services.AuthService
             {
                 Log.Error(ex, "Phone driver register error");
                 return Response<LoginResponseDTO>.Failure("حدث خطأ أثناء إنشاء الحساب، يرجى المحاولة لاحقًا.", 500);
+            }
+        }
+
+        // Drives the "set password" (new) vs "enter password" (returning) branch
+        // after the user types their phone number.
+        public async Task<Response<bool>> CheckPhoneExistsAsync(string phone)
+        {
+            try
+            {
+                if (string.IsNullOrWhiteSpace(phone))
+                    return Response<bool>.Failure("رقم الهاتف مطلوب", 400);
+
+                var normalized = NormalizePhone(phone);
+                var exists = await _userManager.Users.AnyAsync(u => u.PhoneNumber == normalized);
+                return Response<bool>.Success(exists, exists ? "الرقم مسجّل" : "رقم جديد", 200);
+            }
+            catch (Exception ex)
+            {
+                Log.Error(ex, "CheckPhoneExists error");
+                return Response<bool>.Failure("حدث خطأ، يرجى المحاولة لاحقًا.", 500);
+            }
+        }
+
+        // Forgot-password for phone accounts: the app verifies ownership with a
+        // Firebase Phone-Auth OTP (the only remaining OTP use), then we set the new
+        // password. Works whether or not the account already had a password.
+        public async Task<Response<string>> ResetPhonePasswordAsync(PhoneResetPasswordDTO model)
+        {
+            try
+            {
+                if (string.IsNullOrWhiteSpace(model?.IdToken))
+                    return Response<string>.Failure("رمز التحقق مفقود", 400);
+                if (string.IsNullOrWhiteSpace(model.NewPassword))
+                    return Response<string>.Failure("كلمة المرور الجديدة مطلوبة", 400);
+
+                FirebaseToken decoded;
+                try
+                {
+                    decoded = await FirebaseAuth.DefaultInstance.VerifyIdTokenAsync(model.IdToken);
+                }
+                catch
+                {
+                    return Response<string>.Failure("رمز التحقق غير صالح أو منتهي الصلاحية، حاول مجددًا.", 401);
+                }
+
+                var phone = decoded.Claims.TryGetValue("phone_number", out var p) ? p?.ToString() : null;
+                if (string.IsNullOrWhiteSpace(phone))
+                    return Response<string>.Failure("تعذّر قراءة رقم الهاتف من رمز التحقق", 400);
+
+                var user = await _userManager.Users.FirstOrDefaultAsync(u => u.PhoneNumber == phone);
+                if (user == null)
+                    return Response<string>.Failure("لا يوجد حساب بهذا الرقم", 404);
+
+                IdentityResult result;
+                if (await _userManager.HasPasswordAsync(user))
+                {
+                    var resetToken = await _userManager.GeneratePasswordResetTokenAsync(user);
+                    result = await _userManager.ResetPasswordAsync(user, resetToken, model.NewPassword);
+                }
+                else
+                {
+                    result = await _userManager.AddPasswordAsync(user, model.NewPassword);
+                }
+
+                if (!result.Succeeded)
+                {
+                    var err = string.Join(" ", result.Errors.Select(e => e.Description));
+                    return Response<string>.Failure(
+                        string.IsNullOrWhiteSpace(err) ? "تعذّر تعيين كلمة المرور" : err, 400);
+                }
+
+                return Response<string>.Success("تم تعيين كلمة المرور بنجاح", "تم تعيين كلمة المرور بنجاح", 200);
+            }
+            catch (Exception ex)
+            {
+                Log.Error(ex, "Phone reset password error");
+                return Response<string>.Failure("حدث خطأ، يرجى المحاولة لاحقًا.", 500);
             }
         }
 
