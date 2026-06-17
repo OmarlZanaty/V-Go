@@ -255,7 +255,11 @@ class PhoneAuthCubit extends Cubit<PhoneAuthState> {
     await CacheHelper.setSecuredString(AppConstants.token, token);
     await CacheHelper.setSecuredString(AppConstants.refreshToken, refresh);
     await CacheHelper.setSecuredString(AppConstants.userId, userId);
-    await CacheHelper.setSecuredString(AppConstants.role, role);
+    // Role is read back via SharedPreferences (getString) on startup by both
+    // main._initUserData and AppRouter.initialRoute, so it MUST be written with
+    // setData — writing it to secure storage left kRole empty on relaunch, which
+    // sent returning users to the login screen every time.
+    await CacheHelper.setData(key: AppConstants.role, value: role);
     AppConstants.kToken = token;
     AppConstants.kUserId = userId;
     AppConstants.kRole = role;

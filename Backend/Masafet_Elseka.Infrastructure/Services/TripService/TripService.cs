@@ -113,7 +113,7 @@ namespace Masafet_Elseka.Infrastructure.Services.TripService
             }
         }
 
-        public async Task<Response<string>> CancelTrip(string tripId,string userId)
+        public async Task<Response<string>> CancelTrip(string tripId, string userId, string? reason = null)
         {
             using var transaction = await _context.Database.BeginTransactionAsync();
             try
@@ -135,6 +135,7 @@ namespace Masafet_Elseka.Infrastructure.Services.TripService
                     return Response<string>.Failure("لا يمكن إلغاء الرحلة لأنها في حالة جارية أو مكتملة", 400);
                 }
                 trip.Status = TripStatus.Canceled;
+                trip.CancelReason = string.IsNullOrWhiteSpace(reason) ? null : reason.Trim();
                 await _context.SaveChangesAsync();
                 await transaction.CommitAsync();
                 return Response<string>.Success(userTrip.User.Gender, "تم إلغاء الرحلة بنجاح", 200);
@@ -167,6 +168,8 @@ namespace Masafet_Elseka.Infrastructure.Services.TripService
                     .Skip((pagination.PageNumber - 1) * pagination.PageSize)
                     .Take(pagination.PageSize)
                     .ToListAsync(ct);
+                var rates = await _ratingService.GetAverageRatesFor(
+                    trips.SelectMany(t => t.UserTrips).Select(ut => ut.UserId));
                 var tripDtos = trips.Select(trip =>
                 {
                     var passengerTrip = trip.UserTrips.FirstOrDefault(ut => ut.Role == UserTripRole.Client);
@@ -183,12 +186,12 @@ namespace Masafet_Elseka.Infrastructure.Services.TripService
                         UserName = passengerTrip?.User.FullName,
                         UserPhone = passengerTrip?.User.PhoneNumber,
                         UserProfileImage = passengerTrip?.User.ProfilePicture,
-                        Userrating = passengerTrip != null ? _ratingService.GetAverageRate(passengerTrip.UserId).Result : 0,
+                        Userrating = passengerTrip != null ? rates.GetValueOrDefault(passengerTrip.UserId) : 0,
                         DriverId = driverTrip != null ? driverTrip.User.Id : null,
                         DriverName = driverTrip != null ? driverTrip.User.FullName : "لم يتم تحديد سائق حتى الان",
                         DriverPhone = driverTrip != null ? driverTrip.User.PhoneNumber : "لم يتم تحديد سائق حتى الان",
                         DriverProfileImage = driverTrip?.User.ProfilePicture,
-                        DriverRating = driverTrip != null ? _ratingService.GetAverageRate(driverTrip.UserId).Result : 0,
+                        DriverRating = driverTrip != null ? rates.GetValueOrDefault(driverTrip.UserId) : 0,
                         Status = trip.Status.ToString(),
                         DistanceKm = trip.DistanceInKm,
                     };
@@ -258,7 +261,7 @@ namespace Masafet_Elseka.Infrastructure.Services.TripService
                     From = new LocationDTO { Lat = trip.StartLat, Lng = trip.StartLng, Address = trip.StartAddress },
                     To = new LocationDTO { Lat = trip.EndLat, Lng = trip.EndLng, Address = trip.EndAddress },
                     CreatedAt = trip.CreatedAt,
-                    IsPaid = trip.Payment.Any(p => p.Status == PaymentStatus.Paid),
+                    IsPaid = trip.Payment.Any(p => p.Status == PaymentStatus.Paid || p.Status == PaymentStatus.Captured),
                     PaymentMethod = trip.PaymentMethod,
 
                     UserId = passengerTrip?.User?.Id,
@@ -313,6 +316,8 @@ namespace Masafet_Elseka.Infrastructure.Services.TripService
                     return Response<List<TripDetailsDTO>>.Success(new List<TripDetailsDTO>(), "لا توجد رحلات حالية", 200);
                 }
 
+                var rates = await _ratingService.GetAverageRatesFor(
+                    trips.SelectMany(t => t.UserTrips).Select(ut => ut.UserId));
                 var tripDtos = trips.Select(trip =>
                 {
                     var passengerTrip = trip.UserTrips.FirstOrDefault(ut => ut.Role == UserTripRole.Client);
@@ -328,12 +333,12 @@ namespace Masafet_Elseka.Infrastructure.Services.TripService
                         UserName = passengerTrip?.User?.FullName,
                         UserProfileImage = passengerTrip?.User?.ProfilePicture,
                         UserPhone = passengerTrip?.User?.PhoneNumber,
-                        Userrating = passengerTrip != null ? _ratingService.GetAverageRate(passengerTrip.UserId).Result : 0,
+                        Userrating = passengerTrip != null ? rates.GetValueOrDefault(passengerTrip.UserId) : 0,
                         DriverId = driverTrip?.User?.Id ?? string.Empty,
                         DriverName = driverTrip?.User?.FullName ?? "لم يتم تحديد سائق حتى الان",
                         DriverPhone = driverTrip?.User?.PhoneNumber ?? "لم يتم تحديد سائق حتى الان",
                         DriverProfileImage = driverTrip?.User?.ProfilePicture,
-                        DriverRating = driverTrip != null ? _ratingService.GetAverageRate(driverTrip.UserId).Result : 0,
+                        DriverRating = driverTrip != null ? rates.GetValueOrDefault(driverTrip.UserId) : 0,
                         ScooterType = driverTrip?.User?.Scooter?.Type.ToString(),
                         ScooterLicense = driverTrip?.User?.Scooter?.License ?? "",
                         Status = trip.Status.ToString(),
@@ -489,6 +494,8 @@ namespace Masafet_Elseka.Infrastructure.Services.TripService
                         .Where(t => t.Status ==TripStatus.Pending)
                     .ToListAsync();
 
+                var rates = await _ratingService.GetAverageRatesFor(
+                    trips.SelectMany(t => t.UserTrips).Select(ut => ut.UserId));
                 var tripDtos = trips.Select(trip =>
                 {
                     var passengerTrip = trip.UserTrips.FirstOrDefault(ut => ut.Role == UserTripRole.Client);
@@ -498,8 +505,8 @@ namespace Masafet_Elseka.Infrastructure.Services.TripService
                     {
                         TripId = trip.Id,
                         Price = trip.Price,
-                        From = new LocationDTO { Lat = trip.StartLat, Lng = trip.StartLng },
-                        To = new LocationDTO { Lat = trip.EndLat, Lng = trip.EndLng },
+                        From = new LocationDTO { Lat = trip.StartLat, Lng = trip.StartLng, Address = trip.StartAddress },
+                        To = new LocationDTO { Lat = trip.EndLat, Lng = trip.EndLng, Address = trip.EndAddress },
                         CreatedAt = trip.CreatedAt,
                         UserId = passengerTrip?.User.Id,
                         UserName = passengerTrip?.User.FullName,
@@ -510,8 +517,8 @@ namespace Masafet_Elseka.Infrastructure.Services.TripService
                         Status = trip.Status.ToString(),
                         DistanceKm = trip.DistanceInKm,
                         PaymentMethod = trip.PaymentMethod,
-                        DriverRating= driverTrip != null ? _ratingService.GetAverageRate(driverTrip.UserId).Result : 0,
-                        Userrating= passengerTrip != null ? _ratingService.GetAverageRate(passengerTrip.UserId).Result : 0,
+                        DriverRating= driverTrip != null ? rates.GetValueOrDefault(driverTrip.UserId) : 0,
+                        Userrating= passengerTrip != null ? rates.GetValueOrDefault(passengerTrip.UserId) : 0,
                     };
                 }).ToList();
                 if (!tripDtos.Any())
@@ -545,8 +552,8 @@ namespace Masafet_Elseka.Infrastructure.Services.TripService
                 {
                     TripId = trip.Id,
                     Price = trip.Price,
-                    From = new LocationDTO { Lat = trip.StartLat, Lng = trip.StartLng },
-                    To = new LocationDTO { Lat = trip.EndLat, Lng = trip.EndLng },
+                    From = new LocationDTO { Lat = trip.StartLat, Lng = trip.StartLng, Address = trip.StartAddress },
+                    To = new LocationDTO { Lat = trip.EndLat, Lng = trip.EndLng, Address = trip.EndAddress },
                     CreatedAt = trip.CreatedAt,
                     UserId = passengerTrip?.User.Id,
                     UserName = passengerTrip?.User.FullName,
@@ -616,6 +623,8 @@ namespace Masafet_Elseka.Infrastructure.Services.TripService
                     .Take(pagination.PageSize)
                     .ToListAsync(ct);
 
+                var rates = await _ratingService.GetAverageRatesFor(
+                    userTrips.SelectMany(ut => ut.Trip.UserTrips).Select(x => x.UserId));
                 var tripDtos = userTrips.Select(ut =>
                 {
                     var trip = ut.Trip;
@@ -633,16 +642,16 @@ namespace Masafet_Elseka.Infrastructure.Services.TripService
                         UserId = passengerTrip?.User.Id,
                         UserName = passengerTrip?.User.FullName,
                         UserPhone = passengerTrip?.User.PhoneNumber,
-                        Userrating = passengerTrip != null ? _ratingService.GetAverageRate(passengerTrip.UserId).Result : 0,
+                        Userrating = passengerTrip != null ? rates.GetValueOrDefault(passengerTrip.UserId) : 0,
                         DriverId = driverTrip != null ? driverTrip.User.Id : "لم يتم تحديد سائق حتى الان",
                         DriverName = driverTrip != null ? driverTrip.User.FullName : "لم يتم تحديد سائق حتى الان",
                         DriverPhone = driverTrip != null ? driverTrip.User.PhoneNumber : "لم يتم تحديد سائق حتى الان",
-                        DriverRating = driverTrip != null ? _ratingService.GetAverageRate(driverTrip.UserId).Result : 0,
+                        DriverRating = driverTrip != null ? rates.GetValueOrDefault(driverTrip.UserId) : 0,
                         Status = trip.Status.ToString(),
                         DistanceKm = trip.DistanceInKm,
                         // Was never set → every trip showed "awaiting payment" in
                         // the captain's earnings regardless of actual status.
-                        IsPaid = trip.Payment.Any(p => p.Status == PaymentStatus.Paid),
+                        IsPaid = trip.Payment.Any(p => p.Status == PaymentStatus.Paid || p.Status == PaymentStatus.Captured),
                     };
                 }).ToList();
 

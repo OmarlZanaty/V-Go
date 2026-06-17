@@ -505,7 +505,7 @@ namespace Masafet_Elseka.Infrastructure.Hubs
             }
         }
 
-        public async Task<Response<object>> CancelTripRequest(string tripId, string userId)
+        public async Task<Response<object>> CancelTripRequest(string tripId, string userId, string? reason = null)
         {
             try
             {
@@ -513,7 +513,7 @@ namespace Masafet_Elseka.Infrastructure.Hubs
                     return Response<object>.Failure("معرف الرحلة أو معرف المستخدم غير صالح", 400);
 
                 var isAcceptedTrip = await IsAcceptedTrip(tripId);
-                var result = await _tripService.CancelTrip(tripId, userId);
+                var result = await _tripService.CancelTrip(tripId, userId, reason);
                 if (!result.IsSuccess)
                     return Response<object>.Failure(result.Message, result.StatusCode, result.Errors);
 
@@ -592,7 +592,9 @@ namespace Masafet_Elseka.Infrastructure.Hubs
         #region Notify Avilable Drivers Event
         private async Task NotifyAvailableDrivers(TripRequest request, TripResponseDTO trip, UserDTO client)
         {
-            var drivers = await _driverService.GetAvailableDriversFromCache(client.Gender);
+            // Notify ALL available nearby drivers regardless of gender — gender
+            // matching previously hid new-ride offers from opposite-gender captains.
+            var drivers = await _driverService.GetAvailableDriversFromCache();
             var availableDrivers = new List<DriverStatusDTO>();
 
             if (!drivers.IsSuccess || drivers.Data == null || !drivers.Data.Any())
@@ -601,7 +603,16 @@ namespace Masafet_Elseka.Infrastructure.Hubs
             _logger?.LogInformation("Drivers fetched from cache: {Count}", drivers.Data?.Count ?? 0);
             foreach (var d in drivers.Data)
             {
-                var distance = GeoHelper.CalculateDistance(request.StartLat, request.StartLng, d.Latitude ?? 0, d.Longitude ?? 0);
+                // Driver has no cached GPS fix yet (just went online): include them
+                // rather than dropping. Computing distance from (0,0) would push them
+                // ~4500km out, past the threshold, so they'd silently get no offers.
+                if (d.Latitude == null || d.Longitude == null)
+                {
+                    availableDrivers.Add(d);
+                    continue;
+                }
+                var distance = GeoHelper.CalculateDistance(
+                    request.StartLat, request.StartLng, d.Latitude.Value, d.Longitude.Value);
                 if (distance <= _distanceThresholdKm)
                 {
                     availableDrivers.Add(d);
@@ -679,6 +690,9 @@ namespace Masafet_Elseka.Infrastructure.Hubs
             await _notificationService.SendNotificationToUserAsync(clientId,
                 "تم قبول الرحلة", $"تم قبول رحلتك بواسطة السائق {driver.FullName}.");
 
+            // Awaited (was blocking .Result) so the hub thread isn't stalled.
+            var driverRate = await _ratingService.GetAverageRate(driver.Id);
+
             await Clients.Group(HubGroups.User(clientId))
                 .SendAsync(HubEvents.TripApprovedForClient, new
                 {
@@ -689,7 +703,7 @@ namespace Masafet_Elseka.Infrastructure.Hubs
                     DriverPhone = driver.PhoneNumber,
                     Status = trip.Status.ToString(),
                     UpdatedAt = DateTime.Now.ToEgyptTime(),
-                    DriverRate = _ratingService.GetAverageRate(driver.Id).Result,
+                    DriverRate = driverRate,
                     DriverRateCount = driver.RatingsReceived.Count,
                     ScooterType = driver.Scooter?.Type.ToString() ?? "",
                     ScooterLicense = driver.Scooter?.License ?? "",
@@ -722,7 +736,7 @@ namespace Masafet_Elseka.Infrastructure.Hubs
 
         private async Task NotifyOtherDriversTripTaken(string tripId, string assignedDriverId, string clientGender)
         {
-            var availableDrivers = await _driverService.GetAvailableDriversFromCache(clientGender);
+            var availableDrivers = await _driverService.GetAvailableDriversFromCache();
             if (availableDrivers.IsSuccess && availableDrivers.Data != null)
             {
                 foreach (var driver in availableDrivers.Data)
@@ -852,7 +866,7 @@ namespace Masafet_Elseka.Infrastructure.Hubs
 
         private async Task NotifyAvailableDriversTripCancelled(string tripId, string userId, string Gender)
         {
-            var availableDrivers = await _driverService.GetAvailableDriversFromCache(Gender);
+            var availableDrivers = await _driverService.GetAvailableDriversFromCache();
 
             if (availableDrivers.IsSuccess && availableDrivers.Data != null)
             {

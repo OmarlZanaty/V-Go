@@ -3,6 +3,7 @@ using FirebaseAdmin;
 using FluentValidation;
 using Google.Apis.Auth.OAuth2;
 using Hangfire;
+using Hangfire.SqlServer;
 using MailKit;
 using IMailService = Masafet_Elseka.Domain.ExternalInterfaces.IMailService;
 using MailService = Masafet_Elseka.Infrastructure.ExternalService.MailService.MailService;
@@ -104,8 +105,18 @@ builder.Services.AddValidatorsFromAssemblyContaining<ScooterValidator>();
 
 #region Database
 
+// Cap the EF connection pool PER INSTANCE so Cloud Run scale-out can't exhaust
+// Cloud SQL's connection limit. (max instances × pool must stay under the DB max.)
+var baseConn = (builder.Configuration.GetConnectionString("DefaultConnection") ?? string.Empty).TrimEnd(';');
+var efConn = baseConn.Contains("Max Pool Size", StringComparison.OrdinalIgnoreCase)
+    ? baseConn
+    : $"{baseConn};Max Pool Size=30;Min Pool Size=2;Connect Timeout=15";
+// Hangfire gets its OWN small, separate pool (distinct Application Name) so its
+// long-held lock/poll connections can't starve app requests.
+var hangfireConn = $"{baseConn};Application Name=VGoHangfire;Max Pool Size=10;Min Pool Size=1;Connect Timeout=15";
+
 builder.Services.AddDbContext<Context>(options =>
-    options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection")));
+    options.UseSqlServer(efConn));
 
 // ----- Test (development)
 //builder.Services.AddDbContext<Context>(options =>
@@ -116,15 +127,38 @@ builder.Services.AddDbContext<Context>(options =>
 #region Hangfire
 
 builder.Services.AddHangfire(config =>
-    config.UseSqlServerStorage(builder.Configuration.GetConnectionString("DefaultConnection")));
-builder.Services.AddHangfireServer();
+    config.UseSqlServerStorage(hangfireConn, new SqlServerStorageOptions
+    {
+        // Less aggressive polling + sliding locks = far fewer connections held,
+        // which is what exhausted the pool under load.
+        QueuePollInterval = TimeSpan.FromSeconds(30),
+        SlidingInvisibilityTimeout = TimeSpan.FromMinutes(5),
+        UseRecommendedIsolationLevel = true,
+        DisableGlobalLocks = true,
+    }));
+builder.Services.AddHangfireServer(options =>
+{
+    options.WorkerCount = 4;          // was the default (~20) — caps concurrent DB work
+    options.SchedulePollingInterval = TimeSpan.FromSeconds(30);
+});
 
 #endregion
 
 #region Identity
 
-builder.Services.AddIdentity<ApplicationUser, IdentityRole>()
+builder.Services.AddIdentity<ApplicationUser, IdentityRole>(options =>
+{
+    // Allow simple passwords (e.g. a 6-digit PIN); the apps enforce a 6-char
+    // minimum. Complexity rules off so phone users aren't blocked.
+    options.Password.RequiredLength = 6;
+    options.Password.RequireDigit = false;
+    options.Password.RequireLowercase = false;
+    options.Password.RequireUppercase = false;
+    options.Password.RequireNonAlphanumeric = false;
+    options.Password.RequiredUniqueChars = 1;
+})
     .AddEntityFrameworkStores<Context>()
+    .AddErrorDescriber<Masafet_Elseka.Presentation.Identity.ArabicIdentityErrorDescriber>()
     .AddDefaultTokenProviders();
 
 #endregion
@@ -293,13 +327,15 @@ builder.Services.AddRateLimiter(options =>
 {
     options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
 
-    // Strict limiter for auth/OTP endpoints: 5 requests / minute per client IP.
+    // Limiter for auth/OTP endpoints: 20 requests / minute per client IP.
+    // The phone+password flow makes ~2 calls per login (phone-exists + sign-in),
+    // so 20/min still blocks brute-forcing while not locking out normal use.
     options.AddPolicy("auth", httpContext =>
         RateLimitPartition.GetFixedWindowLimiter(
             partitionKey: httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown",
             factory: _ => new FixedWindowRateLimiterOptions
             {
-                PermitLimit = 5,
+                PermitLimit = 20,
                 Window = TimeSpan.FromMinutes(1),
                 QueueLimit = 0
             }));

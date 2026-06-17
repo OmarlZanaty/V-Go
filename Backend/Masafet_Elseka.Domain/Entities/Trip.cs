@@ -30,6 +30,9 @@ namespace Masafet_Elseka.Domain.Entities
         // client pays online once the ride starts).
         public string PaymentMethod { get; set; } = "Cash";
 
+        // Why the trip was cancelled (rider-supplied). Null unless cancelled.
+        public string? CancelReason { get; set; }
+
         [Timestamp]
         public byte[] RowVersion { get; set; }
 

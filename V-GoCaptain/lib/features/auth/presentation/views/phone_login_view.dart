@@ -1,19 +1,22 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-import 'package:flutter_screenutil/flutter_screenutil.dart';
-import 'package:flutter_spinkit/flutter_spinkit.dart';
-import 'package:toastification/toastification.dart';
 
+import '../../../../core/helpers/spacing.dart';
 import '../../../../core/routing/routes.dart';
 import '../../../../core/theming/app_colors.dart';
 import '../../../../core/theming/app_style.dart';
+import '../../../../core/utils/widgets/custom_app_bar.dart';
+import '../../../../core/utils/widgets/custom_button.dart';
+import '../../../../core/utils/widgets/custom_loading_widget.dart';
+import '../../../../core/utils/widgets/custom_text_field.dart';
+import '../../../../core/utils/widgets/custom_toastification.dart';
 import '../logic/phone_auth_cubit/phone_auth_cubit.dart';
 
 enum _AuthScreen { phone, password, resetCode, resetNewPassword }
 
 /// Captain sign-in: phone + password (Google kept). Phone -> we check if it's a
 /// registered captain (-> password) or new (-> driver sign-up). Forgot-password
-/// uses a one-time OTP, in place.
+/// uses a one-time OTP, in place. Styled to match the client app.
 class PhoneLoginView extends StatefulWidget {
   const PhoneLoginView({super.key});
 
@@ -38,17 +41,9 @@ class _PhoneLoginViewState extends State<PhoneLoginView> {
     super.dispose();
   }
 
-  void _toast(String msg, {bool error = true}) {
-    toastification.show(
-      context: context,
-      type: error ? ToastificationType.error : ToastificationType.success,
-      style: ToastificationStyle.fillColored,
-      title: Text(msg, style: AppStyle.body),
-      autoCloseDuration: const Duration(seconds: 4),
-      alignment: Alignment.bottomCenter,
-    );
-  }
-
+  // Which screen is shown. Advances only on "resting" statuses; transient ones
+  // (busy / failure / navigation) keep the current screen so a wrong password
+  // stays on the password step instead of bouncing back to phone entry.
   _AuthScreen? _screenFor(PhoneAuthStatus s) {
     switch (s) {
       case PhoneAuthStatus.initial:
@@ -70,10 +65,7 @@ class _PhoneLoginViewState extends State<PhoneLoginView> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        automaticallyImplyLeading: false,
-        title: const Text('تسجيل الدخول'),
-      ),
+      appBar: customAppBar(title: 'تسجيل الدخول'),
       body: SafeArea(
         child: BlocConsumer<PhoneAuthCubit, PhoneAuthState>(
           listener: (context, state) {
@@ -92,34 +84,22 @@ class _PhoneLoginViewState extends State<PhoneLoginView> {
                   },
                 );
               case PhoneAuthStatus.resetSuccess:
-                _toast('تم تعيين كلمة المرور، يمكنك تسجيل الدخول الآن.',
-                    error: false);
+                successToast(
+                  context,
+                  'تم',
+                  'تم تعيين كلمة المرور، يمكنك تسجيل الدخول الآن.',
+                );
                 context.read<PhoneAuthCubit>().reset();
               case PhoneAuthStatus.failure:
-                _toast(state.errorMessage);
+                errorToast(context, 'حدث خطأ', state.errorMessage);
               default:
                 break;
             }
           },
           builder: (context, state) {
-            final cubit = context.read<PhoneAuthCubit>();
-            final next = _screenFor(state.status);
-            if (next != null) _screen = next;
-
-            return SingleChildScrollView(
-              padding: EdgeInsets.symmetric(horizontal: 24.w, vertical: 24.h),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Image.asset(
-                    'assets/images/v-go-logo.png',
-                    height: 100.h,
-                    fit: BoxFit.contain,
-                  ),
-                  SizedBox(height: 24.h),
-                  ..._screenChildren(context, state, cubit),
-                ],
-              ),
+            return Padding(
+              padding: const EdgeInsets.all(16),
+              child: SingleChildScrollView(child: _body(context, state)),
             );
           },
         ),
@@ -127,213 +107,233 @@ class _PhoneLoginViewState extends State<PhoneLoginView> {
     );
   }
 
-  List<Widget> _screenChildren(
-      BuildContext context, PhoneAuthState state, PhoneAuthCubit cubit) {
-    switch (_screen) {
-      case _AuthScreen.password:
-        return _passwordChildren(state, cubit);
-      case _AuthScreen.resetCode:
-        return _resetCodeChildren(state, cubit);
-      case _AuthScreen.resetNewPassword:
-        return _newPasswordChildren(state, cubit);
-      case _AuthScreen.phone:
-        return _phoneChildren(state, cubit);
-    }
-  }
+  Widget _body(BuildContext context, PhoneAuthState state) {
+    final cubit = context.read<PhoneAuthCubit>();
+    final next = _screenFor(state.status);
+    if (next != null) _screen = next;
 
-  List<Widget> _phoneChildren(PhoneAuthState state, PhoneAuthCubit cubit) {
-    final busy = state.status == PhoneAuthStatus.checkingPhone ||
-        state.status == PhoneAuthStatus.authenticating;
-    return [
-      Text('أدخل رقم هاتفك للمتابعة.',
-          style: AppStyle.hint, textAlign: TextAlign.center),
-      SizedBox(height: 16.h),
-      TextField(
-        controller: _phoneController,
-        keyboardType: TextInputType.phone,
-        style: AppStyle.body,
-        decoration: _decoration('رقم الهاتف', Icons.phone_outlined),
-      ),
-      SizedBox(height: 24.h),
-      _button('التالي', busy, () {
-        final p = _phoneController.text.trim();
-        if (p.replaceAll(RegExp(r'[^0-9]'), '').length < 8) {
-          _toast('يرجى إدخال رقم هاتف صحيح.');
-          return;
-        }
-        cubit.checkPhone(p);
-      }),
-      SizedBox(height: 12.h),
-      Row(children: [
-        Expanded(child: Divider(color: AppColors.grey)),
-        Padding(
-          padding: EdgeInsets.symmetric(horizontal: 8.w),
-          child: Text('أو', style: AppStyle.hint),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        verticalSpace(8),
+        Image.asset(
+          'assets/images/v-go-logo.png',
+          height: 100,
+          fit: BoxFit.contain,
         ),
-        Expanded(child: Divider(color: AppColors.grey)),
-      ]),
-      SizedBox(height: 12.h),
-      SizedBox(
-        width: double.infinity,
-        height: 52.h,
-        child: OutlinedButton.icon(
-          onPressed: busy ? null : () => cubit.googleSignIn(),
-          style: OutlinedButton.styleFrom(
-            side: const BorderSide(color: AppColors.primary),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(14.r),
-            ),
-          ),
-          icon: busy
-              ? const SizedBox(
-                  width: 20,
-                  height: 20,
-                  child: CircularProgressIndicator(
-                      strokeWidth: 2, color: AppColors.primary),
-                )
-              : Image.asset('assets/images/google.png',
-                  width: 22.w, height: 22.h),
-          label: Text('تسجيل الدخول بـ Google',
-              style: AppStyle.body.copyWith(color: AppColors.primary)),
-        ),
-      ),
-    ];
-  }
-
-  List<Widget> _passwordChildren(PhoneAuthState state, PhoneAuthCubit cubit) {
-    final busy = state.status == PhoneAuthStatus.authenticating;
-    return [
-      Text('رقم الهاتف: ${state.phone}', style: AppStyle.hint),
-      SizedBox(height: 16.h),
-      TextField(
-        controller: _passwordController,
-        obscureText: true,
-        style: AppStyle.body,
-        decoration: _decoration('كلمة المرور', Icons.lock_outline),
-      ),
-      Align(
-        alignment: AlignmentDirectional.centerStart,
-        child: TextButton(
-          onPressed: busy ? null : () => cubit.sendResetCode(state.phone),
-          child: Text('نسيت كلمة المرور؟',
-              style: AppStyle.body.copyWith(color: AppColors.primary)),
-        ),
-      ),
-      SizedBox(height: 8.h),
-      _button('تسجيل الدخول', busy, () {
-        final pw = _passwordController.text;
-        if (pw.isEmpty) {
-          _toast('يرجى إدخال كلمة المرور.');
-          return;
-        }
-        cubit.login(pw);
-      }),
-      SizedBox(height: 8.h),
-      TextButton(
-        onPressed: busy ? null : cubit.reset,
-        child: Text('تغيير رقم الهاتف',
-            style: AppStyle.body.copyWith(color: AppColors.primary)),
-      ),
-    ];
-  }
-
-  List<Widget> _resetCodeChildren(PhoneAuthState state, PhoneAuthCubit cubit) {
-    final busy = state.status == PhoneAuthStatus.sendingCode ||
-        state.status == PhoneAuthStatus.verifyingCode;
-    final codeSent = state.status != PhoneAuthStatus.sendingCode;
-    return [
-      Text('أدخل الرمز المُرسل إلى ${state.phone} لإعادة تعيين كلمة المرور',
-          style: AppStyle.hint, textAlign: TextAlign.center),
-      SizedBox(height: 16.h),
-      TextField(
-        controller: _otpController,
-        keyboardType: TextInputType.number,
-        style: AppStyle.body,
-        decoration: _decoration('رمز التحقق', Icons.sms_outlined),
-      ),
-      SizedBox(height: 24.h),
-      _button('تأكيد الرمز', busy, () {
-        if (!codeSent) return;
-        final c = _otpController.text.trim();
-        if (c.length < 6) {
-          _toast('الرمز يجب أن يكون 6 أرقام.');
-          return;
-        }
-        cubit.verifyResetCode(c);
-      }),
-      SizedBox(height: 8.h),
-      state.cooldownSeconds > 0
-          ? Text('إعادة الإرسال بعد ${state.cooldownSeconds} ث',
-              textAlign: TextAlign.center, style: AppStyle.hint)
-          : TextButton(
-              onPressed: busy ? null : () => cubit.sendResetCode(state.phone),
-              child: Text('إعادة إرسال الرمز',
-                  style: AppStyle.body.copyWith(color: AppColors.primary)),
-            ),
-      TextButton(
-        onPressed: busy ? null : cubit.reset,
-        child: Text('إلغاء',
-            style: AppStyle.body.copyWith(color: AppColors.primary)),
-      ),
-    ];
-  }
-
-  List<Widget> _newPasswordChildren(PhoneAuthState state, PhoneAuthCubit cubit) {
-    final busy = state.status == PhoneAuthStatus.resetting;
-    return [
-      Text('أدخل كلمة المرور الجديدة.', style: AppStyle.hint),
-      SizedBox(height: 16.h),
-      TextField(
-        controller: _newPasswordController,
-        obscureText: true,
-        style: AppStyle.body,
-        decoration: _decoration('كلمة المرور الجديدة', Icons.lock_outline),
-      ),
-      SizedBox(height: 24.h),
-      _button('تعيين كلمة المرور', busy, () {
-        final pw = _newPasswordController.text;
-        if (pw.length < 6) {
-          _toast('كلمة المرور يجب ألا تقل عن 6 أحرف.');
-          return;
-        }
-        cubit.submitNewPassword(pw);
-      }),
-    ];
-  }
-
-  Widget _button(String text, bool busy, VoidCallback onTap) {
-    return SizedBox(
-      height: 52.h,
-      child: ElevatedButton(
-        style: ElevatedButton.styleFrom(
-          backgroundColor: AppColors.primary,
-          shape:
-              RoundedRectangleBorder(borderRadius: BorderRadius.circular(14.r)),
-        ),
-        onPressed: busy
-            ? null
-            : () {
-                FocusManager.instance.primaryFocus?.unfocus();
-                onTap();
-              },
-        child: busy
-            ? const SpinKitThreeBounce(color: AppColors.black, size: 22)
-            : Text(text, style: AppStyle.button),
-      ),
+        _step(context, state, cubit),
+      ],
     );
   }
 
-  InputDecoration _decoration(String hint, IconData icon) {
-    return InputDecoration(
-      hintText: hint,
-      hintStyle: AppStyle.hint,
-      prefixIcon: Icon(icon, color: AppColors.grey),
-      filled: true,
-      fillColor: AppColors.darkGrey,
-      border: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(14.r),
-        borderSide: BorderSide.none,
-      ),
+  Widget _step(
+      BuildContext context, PhoneAuthState state, PhoneAuthCubit cubit) {
+    switch (_screen) {
+      case _AuthScreen.password:
+        return _passwordStep(context, state, cubit);
+      case _AuthScreen.resetCode:
+        return _resetCodeStep(context, state, cubit);
+      case _AuthScreen.resetNewPassword:
+        return _newPasswordStep(context, state, cubit);
+      case _AuthScreen.phone:
+        return _phoneStep(context, state, cubit);
+    }
+  }
+
+  Widget _phoneStep(
+      BuildContext context, PhoneAuthState state, PhoneAuthCubit cubit) {
+    final busy = state.status == PhoneAuthStatus.checkingPhone ||
+        state.status == PhoneAuthStatus.authenticating;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        verticalSpace(24),
+        Text('أدخل رقم هاتفك للمتابعة.', style: AppStyle.styleMedium14),
+        verticalSpace(16),
+        CustomTextField(
+          labelText: 'رقم الهاتف',
+          controller: _phoneController,
+          keyboardType: TextInputType.phone,
+        ),
+        verticalSpace(24),
+        busy
+            ? const CustomLoadingWidget()
+            : CustomButton(
+                text: 'التالي',
+                onPressed: () {
+                  FocusManager.instance.primaryFocus?.unfocus();
+                  final p = _phoneController.text.trim();
+                  if (p.replaceAll(RegExp(r'[^0-9]'), '').length < 8) {
+                    errorToast(context, 'تنبيه', 'يرجى إدخال رقم هاتف صحيح.');
+                    return;
+                  }
+                  cubit.checkPhone(p);
+                },
+              ),
+        verticalSpace(16),
+        Row(children: [
+          const Expanded(child: Divider(color: AppColors.grey)),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 8),
+            child: Text('أو', style: AppStyle.styleMedium14),
+          ),
+          const Expanded(child: Divider(color: AppColors.grey)),
+        ]),
+        verticalSpace(16),
+        SizedBox(
+          height: 54,
+          child: OutlinedButton.icon(
+            onPressed: busy ? null : () => cubit.googleSignIn(),
+            style: OutlinedButton.styleFrom(
+              side: const BorderSide(color: AppColors.primary),
+              shape: const RoundedRectangleBorder(
+                borderRadius: BorderRadius.all(Radius.circular(50)),
+              ),
+            ),
+            icon: Image.asset('assets/images/google.png', width: 22, height: 22),
+            label: Text(
+              'تسجيل الدخول بـ Google',
+              style: AppStyle.styleMedium16.copyWith(color: AppColors.primary),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _passwordStep(
+      BuildContext context, PhoneAuthState state, PhoneAuthCubit cubit) {
+    final busy = state.status == PhoneAuthStatus.authenticating;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        verticalSpace(24),
+        Text('رقم الهاتف: ${state.phone}', style: AppStyle.styleMedium14),
+        verticalSpace(16),
+        CustomTextField(
+          labelText: 'كلمة المرور',
+          controller: _passwordController,
+          obscureText: true,
+        ),
+        verticalSpace(8),
+        Align(
+          alignment: AlignmentDirectional.centerStart,
+          child: TextButton(
+            onPressed: busy ? null : () => cubit.sendResetCode(state.phone),
+            child: const Text('نسيت كلمة المرور؟'),
+          ),
+        ),
+        verticalSpace(8),
+        busy
+            ? const CustomLoadingWidget()
+            : CustomButton(
+                text: 'تسجيل الدخول',
+                onPressed: () {
+                  FocusManager.instance.primaryFocus?.unfocus();
+                  final pw = _passwordController.text;
+                  if (pw.isEmpty) {
+                    errorToast(context, 'تنبيه', 'يرجى إدخال كلمة المرور.');
+                    return;
+                  }
+                  cubit.login(pw);
+                },
+              ),
+        verticalSpace(12),
+        TextButton(
+          onPressed: busy ? null : cubit.reset,
+          child: const Text('تغيير رقم الهاتف'),
+        ),
+      ],
+    );
+  }
+
+  Widget _resetCodeStep(
+      BuildContext context, PhoneAuthState state, PhoneAuthCubit cubit) {
+    final busy = state.status == PhoneAuthStatus.sendingCode ||
+        state.status == PhoneAuthStatus.verifyingCode;
+    final codeSent = state.status != PhoneAuthStatus.sendingCode;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        verticalSpace(24),
+        Text(
+          'لإعادة تعيين كلمة المرور، أدخل الرمز المُرسل إلى ${state.phone}',
+          style: AppStyle.styleMedium14,
+        ),
+        verticalSpace(16),
+        CustomTextField(
+          labelText: 'رمز التحقق',
+          controller: _otpController,
+          keyboardType: TextInputType.number,
+        ),
+        verticalSpace(24),
+        busy
+            ? const CustomLoadingWidget()
+            : CustomButton(
+                text: 'تأكيد الرمز',
+                onPressed: codeSent
+                    ? () {
+                        FocusManager.instance.primaryFocus?.unfocus();
+                        final code = _otpController.text.trim();
+                        if (code.length < 6) {
+                          errorToast(
+                              context, 'تنبيه', 'الرمز يجب أن يكون 6 أرقام.');
+                          return;
+                        }
+                        cubit.verifyResetCode(code);
+                      }
+                    : () {},
+              ),
+        verticalSpace(12),
+        state.cooldownSeconds > 0
+            ? Text(
+                'إعادة الإرسال بعد ${state.cooldownSeconds} ث',
+                textAlign: TextAlign.center,
+                style: AppStyle.styleMedium14,
+              )
+            : TextButton(
+                onPressed: busy ? null : () => cubit.sendResetCode(state.phone),
+                child: const Text('إعادة إرسال الرمز'),
+              ),
+        TextButton(
+          onPressed: busy ? null : cubit.reset,
+          child: const Text('إلغاء'),
+        ),
+      ],
+    );
+  }
+
+  Widget _newPasswordStep(
+      BuildContext context, PhoneAuthState state, PhoneAuthCubit cubit) {
+    final busy = state.status == PhoneAuthStatus.resetting;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        verticalSpace(24),
+        Text('أدخل كلمة المرور الجديدة.', style: AppStyle.styleMedium14),
+        verticalSpace(16),
+        CustomTextField(
+          labelText: 'كلمة المرور الجديدة',
+          controller: _newPasswordController,
+          obscureText: true,
+        ),
+        verticalSpace(24),
+        busy
+            ? const CustomLoadingWidget()
+            : CustomButton(
+                text: 'تعيين كلمة المرور',
+                onPressed: () {
+                  FocusManager.instance.primaryFocus?.unfocus();
+                  final pw = _newPasswordController.text;
+                  if (pw.length < 6) {
+                    errorToast(context, 'تنبيه',
+                        'كلمة المرور يجب ألا تقل عن 6 أحرف.');
+                    return;
+                  }
+                  cubit.submitNewPassword(pw);
+                },
+              ),
+      ],
     );
   }
 }

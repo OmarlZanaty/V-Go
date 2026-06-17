@@ -20,6 +20,9 @@ import '../../../../core/utils/widgets/loading_dialog.dart';
 import '../../../trips/presentation/logic/realtime_trip_cubit/realtime_trip_cubit.dart';
 import '../../../trips/presentation/logic/realtime_trip_cubit/realtime_trip_extension.dart';
 
+/// Payment area shown during/after the ride. Renders ONLY the method the rider
+/// already chose when requesting the trip (cash OR card) — no switching mid-ride.
+/// Auto-hides once the payment lands (paymentStatus == 'Paid').
 Widget paymentOptionsSection(
   BuildContext context,
   RealTimeTripState tripState, {
@@ -49,132 +52,124 @@ Widget paymentOptionsSection(
           ),
         ).show();
         log(state.paymentStatusModel?.paymentStatus ?? '');
-      }else if(state.status.isPayTripInCashFailure){
+      } else if (state.status.isPayTripInCashFailure) {
         context.pop();
         errorToast(context, 'حدث خطا', state.errorMessage);
-      }else if(state.status.isPayTripInCashLoading){
+      } else if (state.status.isPayTripInCashLoading) {
         loadingDialog(context);
       }
     },
     builder: (context, state) {
-      return state.paymentStatusModel?.paymentStatus != 'Paid' 
-          ? Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                verticalSpace(16),
-                Text('اختر وسيلة الدفع', style: AppStyle.styleMedium14),
-                verticalSpace(10),
-                Row(
+      if (state.paymentStatusModel?.paymentStatus == 'Paid') {
+        return const SizedBox.shrink();
+      }
+      // Read the chosen method from the freshest server trip first (the live
+      // currentTrip carries the real PaymentMethod); fall back to the passed one.
+      final trip = state.currentTrip ?? currentTrip;
+      final isVisa = (trip?.paymentMethod ?? 'Cash').toLowerCase() == 'visa';
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          verticalSpace(16),
+          Text(
+            isVisa ? 'الدفع إلكترونياً' : 'الدفع نقداً',
+            style: AppStyle.styleMedium14,
+          ),
+          verticalSpace(10),
+          isVisa
+              ? _electronicTile(context, tripState, currentTrip: trip)
+              : _cashTile(context),
+        ],
+      );
+    },
+  );
+}
+
+// Cash: the captain confirms receipt; guide the rider, no self-serve action.
+Widget _cashTile(BuildContext context) {
+  return InkWell(
+    onTap: () {
+      successToast(
+        context,
+        'الدفع نقداً',
+        'سلّم المبلغ للسائق وسيؤكد الاستلام لإنهاء الرحلة',
+      );
+    },
+    borderRadius: const BorderRadius.all(Radius.circular(12)),
+    child: Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      decoration: const BoxDecoration(
+        color: AppColors.lightWhite,
+        borderRadius: BorderRadius.all(Radius.circular(12)),
+      ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(
+            'نقدي',
+            style: AppStyle.styleMedium14.copyWith(color: AppColors.white),
+          ),
+          Image.asset('assets/images/cash.png', width: 34),
+        ],
+      ),
+    ),
+  );
+}
+
+// Card: opens the Paymob unified-checkout webview.
+Widget _electronicTile(
+  BuildContext context,
+  RealTimeTripState tripState, {
+  CurrentTripModel? currentTrip,
+}) {
+  return BlocConsumer<PaymentCubit, PaymentState>(
+    listenWhen: (p, c) => _buildAndListenPaymentWhen(c),
+    buildWhen: (p, c) => _buildAndListenPaymentWhen(c),
+    listener: (context, state) {
+      if (state.status.isPaymentRequestSuccess) {
+        context.pushNamed(
+          Routes.customPaymentWebViewRoute,
+          arguments: getCheckoutLink(
+            clientSecret: state.paymentResponseModel!.clientSecret,
+            publicKey: state.paymentResponseModel!.publicKey,
+          ),
+        );
+      } else if (state.status.isPaymentRequestFailure) {
+        errorToast(context, 'حدث خطا', state.errorMessage);
+      }
+    },
+    builder: (context, state) {
+      return state.status.isPaymentRequestLoading
+          ? const CustomLoadingWidget()
+          : InkWell(
+              onTap: () {
+                _createPaymentRequestModel(
+                  context,
+                  tripState,
+                  currentTrip: currentTrip,
+                );
+              },
+              borderRadius: const BorderRadius.all(Radius.circular(12)),
+              child: Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                decoration: const BoxDecoration(
+                  color: AppColors.lightWhite,
+                  borderRadius: BorderRadius.all(Radius.circular(12)),
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    Expanded(
-                      child: InkWell(
-                        onTap: () {
-                          // Cash is confirmed by the captain (not self-served).
-                          // Guide the rider; the trip unlocks when the driver
-                          // presses "payment received".
-                          successToast(
-                            context,
-                            'الدفع نقداً',
-                            'سلّم المبلغ للسائق وسيؤكد الاستلام لإنهاء الرحلة',
-                          );
-                        },
-                        borderRadius: const BorderRadius.all(
-                          Radius.circular(12),
-                        ),
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 14,
-                            vertical: 10,
-                          ),
-                          decoration: const BoxDecoration(
-                            color: AppColors.lightWhite,
-                            borderRadius: BorderRadius.all(Radius.circular(12)),
-                          ),
-                          child: Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            children: [
-                              Text(
-                                'نقدي',
-                                style: AppStyle.styleMedium14.copyWith(
-                                  color: AppColors.white,
-                                ),
-                              ),
-                              Image.asset('assets/images/cash.png', width: 34),
-                            ],
-                          ),
-                        ),
-                      ),
+                    Text(
+                      'الكتروني',
+                      style: AppStyle.styleMedium14
+                          .copyWith(color: AppColors.white),
                     ),
-                    horizontalSpace(8),
-                    Expanded(
-                      child: BlocConsumer<PaymentCubit, PaymentState>(
-                        listenWhen: (p, c) => _buildAndListenPaymentWhen(c),
-                        buildWhen: (p, c) => _buildAndListenPaymentWhen(c),
-                        listener: (context, state) {
-                          if (state.status.isPaymentRequestSuccess) {
-                            context.pushNamed(
-                              Routes.customPaymentWebViewRoute,
-                              arguments: getCheckoutLink(
-                                clientSecret:
-                                    state.paymentResponseModel!.clientSecret,
-                                publicKey:
-                                    state.paymentResponseModel!.publicKey,
-                              ),
-                            );
-                          } else if (state.status.isPaymentRequestFailure) {
-                            errorToast(context, 'حدث خطا', state.errorMessage);
-                          }
-                        },
-                        builder: (context, state) {
-                          return state.status.isPaymentRequestLoading
-                              ? const CustomLoadingWidget()
-                              : InkWell(
-                                  onTap: () {
-                                    _createPaymentRequestModel(
-                                      context,
-                                      tripState,
-                                      currentTrip: currentTrip,
-                                    );
-                                  },
-                                  borderRadius: const BorderRadius.all(
-                                    Radius.circular(12),
-                                  ),
-                                  child: Container(
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 14,
-                                      vertical: 10,
-                                    ),
-                                    decoration: const BoxDecoration(
-                                      color: AppColors.lightWhite,
-                                      borderRadius: BorderRadius.all(
-                                        Radius.circular(12),
-                                      ),
-                                    ),
-                                    child: Row(
-                                      mainAxisAlignment:
-                                          MainAxisAlignment.spaceBetween,
-                                      children: [
-                                        Text(
-                                          'الكتروني',
-                                          style: AppStyle.styleMedium14
-                                              .copyWith(color: AppColors.white),
-                                        ),
-                                        Image.asset(
-                                          'assets/images/wallet.png',
-                                          width: 34,
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                );
-                        },
-                      ),
-                    ),
+                    Image.asset('assets/images/wallet.png', width: 34),
                   ],
                 ),
-              ],
-            )
-          : const SizedBox.shrink();
+              ),
+            );
     },
   );
 }

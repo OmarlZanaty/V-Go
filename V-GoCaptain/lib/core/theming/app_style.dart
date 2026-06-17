@@ -34,4 +34,30 @@ abstract class AppStyle {
         fontWeight: FontWeight.bold,
         color: AppColors.black,
       );
+
+  // Client-parity styles (used by the shared auth widgets ported from the
+  // client app so the captain login matches it pixel-for-pixel).
+  static TextStyle get styleRegular14 => GoogleFonts.cairo(
+        fontSize: 14.sp,
+        fontWeight: FontWeight.w400,
+        color: AppColors.white,
+      );
+
+  static TextStyle get styleMedium14 => GoogleFonts.cairo(
+        fontSize: 14.sp,
+        fontWeight: FontWeight.w500,
+        color: AppColors.white,
+      );
+
+  static TextStyle get styleMedium16 => GoogleFonts.cairo(
+        fontSize: 16.sp,
+        fontWeight: FontWeight.w500,
+        color: AppColors.white,
+      );
+
+  static TextStyle get styleMedium18 => GoogleFonts.cairo(
+        fontSize: 18.sp,
+        fontWeight: FontWeight.w500,
+        color: AppColors.white,
+      );
 }

@@ -125,7 +125,14 @@ namespace Masafet_Elseka.Infrastructure.ExternalService.CloudinaryService
 
         string ICloudinaryService.GetFileUrl(string path)
         {
-            throw new NotImplementedException();
+            if (string.IsNullOrWhiteSpace(path))
+                return string.Empty;
+            // Already a full URL (most stored values) — return as-is.
+            if (path.StartsWith("http://", StringComparison.OrdinalIgnoreCase) ||
+                path.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
+                return path;
+            // Otherwise treat it as a Cloudinary public id and build a secure URL.
+            return _cloudinary.Api.UrlImgUp.Secure(true).BuildUrl(path);
         }
 
 

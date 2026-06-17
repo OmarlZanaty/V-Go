@@ -26,51 +26,66 @@ class ActiveTripPanel extends StatelessWidget {
       children: [
         _stageHeader(),
         SizedBox(height: 20.h),
-        Container(
-          padding: EdgeInsets.all(18.w),
-          decoration: BoxDecoration(
-            color: AppColors.darkGrey,
-            borderRadius: BorderRadius.circular(18.r),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              _row(Icons.person, trip.client.fullName),
-              SizedBox(height: 8.h),
-              _row(Icons.my_location, trip.start.address,
-                  color: AppColors.success),
-              SizedBox(height: 8.h),
-              _row(Icons.location_on, trip.end.address,
-                  color: AppColors.primaryOrange),
-            ],
+        // Scrollable middle so the panel never overflows when the visa banner /
+        // long addresses make the content taller than the available height.
+        Expanded(
+          child: SingleChildScrollView(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Container(
+                  padding: EdgeInsets.all(18.w),
+                  decoration: BoxDecoration(
+                    color: AppColors.darkGrey,
+                    borderRadius: BorderRadius.circular(18.r),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      _row(Icons.person, trip.client.fullName),
+                      SizedBox(height: 8.h),
+                      _row(Icons.my_location, trip.start.displayAddress,
+                          color: AppColors.success),
+                      SizedBox(height: 8.h),
+                      _row(Icons.location_on, trip.end.displayAddress,
+                          color: AppColors.primaryOrange),
+                    ],
+                  ),
+                ),
+                if (trip.isVisa) ...[
+                  SizedBox(height: 12.h),
+                  _visaPaymentStatus(),
+                ],
+                SizedBox(height: 12.h),
+                _priceBanner(),
+                SizedBox(height: 12.h),
+                SizedBox(
+                  height: 48.h,
+                  child: OutlinedButton.icon(
+                    style: OutlinedButton.styleFrom(
+                      // Solid dark fill so the yellow label is legible over the map.
+                      backgroundColor: AppColors.darkGrey,
+                      foregroundColor: AppColors.primary,
+                      side: const BorderSide(color: AppColors.primary),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14.r),
+                      ),
+                    ),
+                    onPressed: () => _openNavigation(context, state),
+                    icon: Icon(Icons.navigation_outlined, size: 20.r),
+                    label: Text(
+                      state.stage == TripStage.inProgress
+                          ? 'الملاحة إلى الوجهة'
+                          : 'الملاحة إلى العميل',
+                      style: AppStyle.body.copyWith(color: AppColors.primary),
+                    ),
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
         SizedBox(height: 12.h),
-        _priceBanner(),
-        SizedBox(height: 12.h),
-        SizedBox(
-          height: 48.h,
-          child: OutlinedButton.icon(
-            style: OutlinedButton.styleFrom(
-              // Solid dark fill so the yellow label is legible over the map.
-              backgroundColor: AppColors.darkGrey,
-              foregroundColor: AppColors.primary,
-              side: const BorderSide(color: AppColors.primary),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(14.r),
-              ),
-            ),
-            onPressed: () => _openNavigation(context, state),
-            icon: Icon(Icons.navigation_outlined, size: 20.r),
-            label: Text(
-              state.stage == TripStage.inProgress
-                  ? 'الملاحة إلى الوجهة'
-                  : 'الملاحة إلى العميل',
-              style: AppStyle.body.copyWith(color: AppColors.primary),
-            ),
-          ),
-        ),
-        const Spacer(),
         SizedBox(
           height: 54.h,
           child: ElevatedButton(
@@ -87,7 +102,50 @@ class ActiveTripPanel extends StatelessWidget {
                 : Text(_buttonLabel(state), style: AppStyle.button),
           ),
         ),
+        // Visa escape hatch: if the client never completes the card payment, the
+        // captain must still be able to finish and move on. Only at the settle
+        // stage, and only while still unpaid.
+        if (state.stage == TripStage.completed &&
+            (state.activeTrip?.isVisa ?? false) &&
+            !state.activeTripPaid)
+          TextButton(
+            onPressed: state.isBusy ? null : cubit.markVisaRefusedAndFinish,
+            child: Text(
+              'العميل رفض الدفع',
+              style: AppStyle.body.copyWith(color: AppColors.danger),
+            ),
+          ),
       ],
+    );
+  }
+
+  /// Live payment indicator for visa trips — green once the client's card
+  /// payment lands, amber while still pending. Updates from TripPaymentUpdated.
+  Widget _visaPaymentStatus() {
+    final paid = state.activeTripPaid;
+    final color = paid ? AppColors.success : AppColors.primaryOrange;
+    return Container(
+      padding: EdgeInsets.symmetric(vertical: 10.h, horizontal: 14.w),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.15),
+        borderRadius: BorderRadius.circular(14.r),
+        border: Border.all(color: color, width: 1.2),
+      ),
+      child: Row(
+        children: [
+          Icon(paid ? Icons.check_circle : Icons.hourglass_top,
+              color: color, size: 20.r),
+          SizedBox(width: 10.w),
+          Expanded(
+            child: Text(
+              paid
+                  ? 'تم استلام دفع العميل عبر فيزا'
+                  : 'بانتظار دفع العميل عبر فيزا',
+              style: AppStyle.body.copyWith(color: AppColors.white),
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -108,7 +166,7 @@ class ActiveTripPanel extends StatelessWidget {
         children: [
           Text(
             isCompleted ? 'المبلغ المطلوب' : 'قيمة الرحلة',
-            style: AppStyle.hint.copyWith(color: AppColors.white),
+            style: AppStyle.hint.copyWith(color: AppColors.black),
           ),
           SizedBox(height: 4.h),
           Row(
@@ -121,7 +179,7 @@ class ActiveTripPanel extends StatelessWidget {
                 style: GoogleFonts.cairo(
                   fontSize: isCompleted ? 40.sp : 28.sp,
                   fontWeight: FontWeight.bold,
-                  color: AppColors.primary,
+                  color: AppColors.black,
                 ),
               ),
               SizedBox(width: 6.w),
@@ -130,7 +188,7 @@ class ActiveTripPanel extends StatelessWidget {
                 style: GoogleFonts.cairo(
                   fontSize: isCompleted ? 20.sp : 16.sp,
                   fontWeight: FontWeight.bold,
-                  color: AppColors.primary,
+                  color: AppColors.black,
                 ),
               ),
             ],

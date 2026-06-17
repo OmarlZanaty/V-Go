@@ -168,6 +168,28 @@ namespace Masafet_Elseka.Infrastructure.Services.RatingService
             }
         }
 
+        public async Task<Dictionary<string, decimal>> GetAverageRatesFor(IEnumerable<string> userIds)
+        {
+            try
+            {
+                var ids = userIds.Where(id => !string.IsNullOrEmpty(id)).Distinct().ToList();
+                if (ids.Count == 0)
+                    return new Dictionary<string, decimal>();
+
+                var grouped = await _context.Rates.AsNoTracking()
+                    .Where(r => ids.Contains(r.ToUserId))
+                    .GroupBy(r => r.ToUserId)
+                    .Select(g => new { UserId = g.Key, Avg = g.Average(x => x.Score) })
+                    .ToListAsync();
+
+                return grouped.ToDictionary(x => x.UserId, x => (decimal)Math.Round(x.Avg, 1));
+            }
+            catch
+            {
+                return new Dictionary<string, decimal>();
+            }
+        }
+
         public async Task<ICollection<RatingResponseDTO>> GetCurrentUserTripRates()
         {
             try

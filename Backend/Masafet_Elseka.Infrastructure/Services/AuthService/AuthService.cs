@@ -265,8 +265,22 @@ namespace Masafet_Elseka.Infrastructure.Services.AuthService
                 if (user.IsBlocked)
                     return Response<LoginResponseDTO>.Failure("تم تعطيل حسابك، يُرجى التواصل مع الدعم", 403);
 
-                if (!await _userManager.CheckPasswordAsync(user, model.Password))
+                // Legacy accounts created under the old OTP flow have no password
+                // yet — treat the first sign-in as setting it ("first time").
+                if (!await _userManager.HasPasswordAsync(user))
+                {
+                    var addPw = await _userManager.AddPasswordAsync(user, model.Password);
+                    if (!addPw.Succeeded)
+                    {
+                        var err = string.Join(" ", addPw.Errors.Select(e => e.Description));
+                        return Response<LoginResponseDTO>.Failure(
+                            string.IsNullOrWhiteSpace(err) ? "تعذّر تعيين كلمة المرور" : err, 400);
+                    }
+                }
+                else if (!await _userManager.CheckPasswordAsync(user, model.Password))
+                {
                     return Response<LoginResponseDTO>.Failure("رقم الهاتف أو كلمة المرور غير صحيحة", 401);
+                }
 
                 if (!string.IsNullOrEmpty(model.FCMToken))
                     await _notificationService.RegisterDeviceAsync(user.Id, model.FCMToken, model.DeviceType);
@@ -327,8 +341,22 @@ namespace Masafet_Elseka.Infrastructure.Services.AuthService
                     return Response<LoginResponseDTO>.Failure(RiderOnCaptainMessage, 403);
                 }
 
-                if (!await _userManager.CheckPasswordAsync(user, model.Password))
+                // Legacy accounts created under the old OTP flow have no password
+                // yet — treat the first sign-in as setting it ("first time").
+                if (!await _userManager.HasPasswordAsync(user))
+                {
+                    var addPw = await _userManager.AddPasswordAsync(user, model.Password);
+                    if (!addPw.Succeeded)
+                    {
+                        var err = string.Join(" ", addPw.Errors.Select(e => e.Description));
+                        return Response<LoginResponseDTO>.Failure(
+                            string.IsNullOrWhiteSpace(err) ? "تعذّر تعيين كلمة المرور" : err, 400);
+                    }
+                }
+                else if (!await _userManager.CheckPasswordAsync(user, model.Password))
+                {
                     return Response<LoginResponseDTO>.Failure("رقم الهاتف أو كلمة المرور غير صحيحة", 401);
+                }
 
                 if (!string.IsNullOrEmpty(model.FCMToken))
                     await _notificationService.RegisterDeviceAsync(user.Id, model.FCMToken, model.DeviceType);

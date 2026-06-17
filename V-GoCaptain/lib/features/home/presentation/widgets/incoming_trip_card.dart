@@ -42,9 +42,9 @@ class IncomingTripCard extends StatelessWidget {
           _row(Icons.person, offer.client.fullName),
           _row(Icons.star, '${offer.client.rating.toStringAsFixed(1)} تقييم'),
           const Divider(color: AppColors.grey, height: 28),
-          _row(Icons.my_location, offer.start.address, color: AppColors.success),
+          _row(Icons.my_location, offer.start.displayAddress, color: AppColors.success),
           SizedBox(height: 10.h),
-          _row(Icons.location_on, offer.end.address, color: AppColors.primaryOrange),
+          _row(Icons.location_on, offer.end.displayAddress, color: AppColors.primaryOrange),
           SizedBox(height: 24.h),
           Row(
             children: [

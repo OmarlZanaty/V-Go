@@ -89,12 +89,14 @@ namespace Masafet_Elseka.Infrastructure.Services.PaymentService
                         int.Parse(_configuration["Paymob:CardIntegrationId"] ?? "0"),
                         int.Parse(_configuration["Paymob:WalletIntegrationId"] ?? "0")
                     },
+                    // Paymob rejects the intention (400) if billing fields are blank.
+                    // Phone-registered users have no email, so synthesize a valid one.
                     ["billing_data"] = new
                     {
-                        first_name = user.FullName,
+                        first_name = string.IsNullOrWhiteSpace(user.FullName) ? "Customer" : user.FullName,
                         last_name = "NA",
-                        phone_number = user.PhoneNumber,
-                        email = user.Email,
+                        phone_number = string.IsNullOrWhiteSpace(user.PhoneNumber) ? "+201000000000" : user.PhoneNumber,
+                        email = string.IsNullOrWhiteSpace(user.Email) ? $"user_{user.Id}@vgo-eg.com" : user.Email,
                     }
                 };
 
@@ -113,7 +115,13 @@ namespace Masafet_Elseka.Infrastructure.Services.PaymentService
                 requestMessage.Content = JsonContent.Create(body);
                 
                 var response = await _httpClient.SendAsync(requestMessage);
-                response.EnsureSuccessStatusCode();
+                if (!response.IsSuccessStatusCode)
+                {
+                    var errBody = await response.Content.ReadAsStringAsync();
+                    Log.Error("Paymob intention failed: {Status} body={Body}", response.StatusCode, errBody);
+                    return Response<PaymobIntentResponseDTO>.Failure(
+                        "تعذّر إنشاء عملية الدفع، يرجى المحاولة لاحقًا أو الدفع نقداً.", 503);
+                }
                 var intentResponse = await response.Content.ReadFromJsonAsync<PaymobIntentResponseDTO>();
 
                 // Validate the gateway response BEFORE dereferencing it. Previously the null
@@ -205,12 +213,14 @@ namespace Masafet_Elseka.Infrastructure.Services.PaymentService
                     ["currency"] = request.Currency,
                     ["merchant_order_id"] = payment.Id,
                     ["payment_methods"] = new[] { int.Parse(authIntegrationId) },
+                    // Paymob rejects the intention (400) if billing fields are blank.
+                    // Phone-registered users have no email, so synthesize a valid one.
                     ["billing_data"] = new
                     {
-                        first_name = user.FullName,
+                        first_name = string.IsNullOrWhiteSpace(user.FullName) ? "Customer" : user.FullName,
                         last_name = "NA",
-                        phone_number = user.PhoneNumber,
-                        email = user.Email,
+                        phone_number = string.IsNullOrWhiteSpace(user.PhoneNumber) ? "+201000000000" : user.PhoneNumber,
+                        email = string.IsNullOrWhiteSpace(user.Email) ? $"user_{user.Id}@vgo-eg.com" : user.Email,
                     }
                 };
 

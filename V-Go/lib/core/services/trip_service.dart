@@ -303,7 +303,7 @@ class TripService {
     }
   }
 
-  Future<void> cancelTrip(String tripId, String userId) async {
+  Future<void> cancelTrip(String tripId, String userId, {String? reason}) async {
     // Cancelling only works over the socket. If the connection dropped (e.g.
     // after a network error) a pending trip would be impossible to cancel and
     // the user gets stuck on the "searching" screen — so reconnect and retry
@@ -319,7 +319,8 @@ class TripService {
 
     for (var attempt = 1; attempt <= 2; attempt++) {
       try {
-        await _hubConnection.invoke('CancelTripRequest', args: [tripId, userId]);
+        await _hubConnection
+            .invoke('CancelTripRequest', args: [tripId, userId, reason ?? '']);
         log('Trip $tripId Canceled (attempt $attempt)', name: 'TripService');
         return;
       } catch (e) {

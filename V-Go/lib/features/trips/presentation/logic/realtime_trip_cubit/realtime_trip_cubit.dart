@@ -168,12 +168,13 @@ class RealTimeTripCubit extends Cubit<RealTimeTripState>
     }
   }
 
-  Future<void> cancelTrip({String? tripId}) async {
+  Future<void> cancelTrip({String? tripId, String? reason}) async {
     emit(state.copyWith(status: RealTimeTripStatus.cancelTripLoading));
     try {
       await _tripService.cancelTrip(
         tripId ?? state.tripId,
         AppConstants.kUserId,
+        reason: reason,
       );
       emit(
         state.copyWith(

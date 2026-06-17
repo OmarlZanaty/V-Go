@@ -61,7 +61,7 @@ namespace Masafet_Elseka.Infrastructure.Services.ExpenseService
         {
             try
             {
-                var query = _unitOfWork.Expenses.GetAllAsync().Result.AsQueryable();
+                var query = (await _unitOfWork.Expenses.GetAllAsync()).AsQueryable();
 
                 if (!string.IsNullOrEmpty(filter))
                 {
@@ -111,7 +111,7 @@ namespace Masafet_Elseka.Infrastructure.Services.ExpenseService
         {
             try
             {
-                var expense = _unitOfWork.Expenses.GetByIdAsync(id).Result;
+                var expense = await _unitOfWork.Expenses.GetByIdAsync(id);
                 if (expense == null)
                 {
                     return Response<string>.Failure("المصروف غير موجود", 404);

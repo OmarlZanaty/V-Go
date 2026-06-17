@@ -68,6 +68,10 @@ class _ClientMapViewState extends State<ClientMapView> {
   double rating = 0.0;
   // Payment method chosen on the confirm screen, before searching: 'Cash'/'Visa'.
   String _selectedPaymentMethod = 'Cash';
+  // Map-pin picker: when set ('from'/'to') a fixed pin sits at the map centre and
+  // a confirm bar replaces the search sheet. _cameraTarget tracks the live centre.
+  String? _pinMode;
+  LatLng? _cameraTarget;
   bool _isLocationPermissionChecking = true;
   bool _isLocationPermissionGranted = false;
 
@@ -506,6 +510,8 @@ class _ClientMapViewState extends State<ClientMapView> {
                               );
                             },
                             onCameraMove: (pos) {
+                              // Track the live centre for the pin picker.
+                              _cameraTarget = pos.target;
                               // نتجنّب عمل update في كل فريم — نستخدم debounce
                               _cameraMoveDebounce?.cancel();
                               _cameraMoveDebounce = Timer(
@@ -546,7 +552,27 @@ class _ClientMapViewState extends State<ClientMapView> {
                             },
                           ),
 
-                          clientMapBottomSheet(state, status),
+                          // Centre pin overlay while picking a point on the map.
+                          if (_pinMode != null)
+                            IgnorePointer(
+                              child: Align(
+                                child: Padding(
+                                  // Lift the icon so its tip marks the exact centre.
+                                  padding: const EdgeInsets.only(bottom: 40),
+                                  child: Icon(
+                                    Icons.location_on,
+                                    size: 48,
+                                    color: _pinMode == 'from'
+                                        ? Colors.green
+                                        : Colors.red,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          if (_pinMode != null)
+                            _pinConfirmBar(context, state)
+                          else
+                            clientMapBottomSheet(state, status),
                         ],
                       );
               },
@@ -662,12 +688,27 @@ class _ClientMapViewState extends State<ClientMapView> {
             } else if (tripState.tripStatus == 'Pending') {
               return waitingAssignDriverSection();
             } else if (tripState.tripStatus == 'Accepted') {
-              return acceptedAssignDriverSection(context);
+              final ct = tripState.currentTrip ?? widget.currentTrip;
+              final isVisa =
+                  (ct?.paymentMethod ?? 'Cash').toLowerCase() == 'visa';
+              // Prompt visa riders to pay early (while the captain is en route).
+              // Cash riders settle with the captain at the end — no early prompt.
+              return isVisa
+                  ? Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        paymentOptionsSection(context, tripState,
+                            currentTrip: ct),
+                        verticalSpace(10),
+                        acceptedAssignDriverSection(context),
+                      ],
+                    )
+                  : acceptedAssignDriverSection(context);
             } else if (tripState.tripStatus == 'Arrived') {
               return arrivedDriverSection(
                 tripState,
                 context,
-                currentTrip: widget.currentTrip,
+                currentTrip: tripState.currentTrip ?? widget.currentTrip,
               );
             } else if (tripState.tripStatus == 'InProgress') {
               final remainingTime = context
@@ -681,7 +722,7 @@ class _ClientMapViewState extends State<ClientMapView> {
                 state,
                 tripState,
                 context,
-                currentTrip: widget.currentTrip,
+                currentTrip: tripState.currentTrip ?? widget.currentTrip,
               );
             } else if (tripState.tripStatus == 'Completed') {
               return endTripWidgetSection(tripState, context);
@@ -691,6 +732,103 @@ class _ClientMapViewState extends State<ClientMapView> {
               return const SizedBox.shrink();
             }
           },
+        ),
+      ),
+    );
+  }
+
+  // Enter map-pin mode for the given field and centre the map on its current
+  // point (if any) so the user starts from a sensible place.
+  Future<void> _startPinMode(BuildContext context, bool isFrom) async {
+    context.read<MapBloc>().add(ToggleFieldFocus(isFrom: isFrom));
+    final mapState = context.read<MapBloc>().state;
+    final existing = isFrom ? mapState.fromLocation : mapState.toLocation;
+    final start = existing ?? mapState.currentLocation;
+    if (start != null) {
+      _cameraTarget = LatLng(start.latitude, start.longitude);
+      if (controller != null) {
+        await controller!.animateCamera(
+          CameraUpdate.newLatLngZoom(_cameraTarget!, 16),
+        );
+      }
+    }
+    setState(() => _pinMode = isFrom ? 'from' : 'to');
+  }
+
+  // Bottom bar shown during map-pin mode: confirm the centred point or cancel.
+  Widget _pinConfirmBar(BuildContext context, MapState state) {
+    final isFrom = _pinMode == 'from';
+    return Positioned(
+      bottom: 0,
+      right: 0,
+      left: 0,
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Container(
+          padding: const EdgeInsets.all(12),
+          decoration: const BoxDecoration(
+            color: AppColors.darkGrey,
+            borderRadius: BorderRadius.all(Radius.circular(18)),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                isFrom
+                    ? 'حرّك الخريطة لتحديد نقطة الانطلاق'
+                    : 'حرّك الخريطة لتحديد نقطة الوصول',
+                textAlign: TextAlign.center,
+                style: AppStyle.styleMedium14.copyWith(color: AppColors.white),
+              ),
+              verticalSpace(12),
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton(
+                      style: OutlinedButton.styleFrom(
+                        side: const BorderSide(color: AppColors.primary),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(50),
+                        ),
+                        minimumSize: const Size(0, 48),
+                      ),
+                      onPressed: () => setState(() => _pinMode = null),
+                      child: Text(
+                        'إلغاء',
+                        style: AppStyle.styleMedium14
+                            .copyWith(color: AppColors.primary),
+                      ),
+                    ),
+                  ),
+                  horizontalSpace(10),
+                  Expanded(
+                    child: CustomButton(
+                      height: 48,
+                      text: 'تأكيد الموقع',
+                      onPressed: () {
+                        final target = _cameraTarget ??
+                            (state.currentLocation != null
+                                ? LatLng(state.currentLocation!.latitude,
+                                    state.currentLocation!.longitude)
+                                : null);
+                        if (target == null) return;
+                        context.read<MapBloc>().add(
+                              SelectLocationFromMap(
+                                location: LocationModel(
+                                  latitude: target.latitude,
+                                  longitude: target.longitude,
+                                ),
+                                isFrom: isFrom,
+                              ),
+                            );
+                        setState(() => _pinMode = null);
+                      },
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -759,6 +897,14 @@ class _ClientMapViewState extends State<ClientMapView> {
                     trailing: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
+                        IconButton(
+                          tooltip: 'تحديد على الخريطة',
+                          onPressed: () => _startPinMode(context, true),
+                          icon: const Icon(
+                            Icons.add_location_alt_outlined,
+                            color: AppColors.primary,
+                          ),
+                        ),
                         IconButton(
                           onPressed: _setPickupToCurrent,
                           icon: const Icon(
@@ -839,6 +985,14 @@ class _ClientMapViewState extends State<ClientMapView> {
                     trailing: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
+                        IconButton(
+                          tooltip: 'تحديد على الخريطة',
+                          onPressed: () => _startPinMode(context, false),
+                          icon: const Icon(
+                            Icons.add_location_alt_outlined,
+                            color: AppColors.primary,
+                          ),
+                        ),
                         IconButton(
                           onPressed: () {
                             if (controller == null) return;
@@ -1028,8 +1182,9 @@ class _ClientMapViewState extends State<ClientMapView> {
                             Expanded(
                               child: _payMethodChip(
                                 'Visa',
-                                'فيزا',
+                                'فيزا (قريباً)',
                                 Icons.credit_card,
+                                enabled: false,
                               ),
                             ),
                           ],
@@ -1248,36 +1403,46 @@ class _ClientMapViewState extends State<ClientMapView> {
     );
   }
 
-  Widget _payMethodChip(String value, String label, IconData icon) {
+  Widget _payMethodChip(String value, String label, IconData icon,
+      {bool enabled = true}) {
     final selected = _selectedPaymentMethod == value;
-    return InkWell(
-      onTap: () => setState(() => _selectedPaymentMethod = value),
-      borderRadius: BorderRadius.circular(12),
-      child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 10),
-        decoration: BoxDecoration(
-          color: selected ? AppColors.primary : AppColors.darkGrey,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(
-            color: selected ? AppColors.primary : AppColors.lightWhite,
-          ),
-        ),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(
-              icon,
-              size: 20,
-              color: selected ? AppColors.black : AppColors.white,
+    // Disabled methods (e.g. Visa, temporarily off) are dimmed and not tappable.
+    return Opacity(
+      opacity: enabled ? 1 : 0.45,
+      child: InkWell(
+        onTap: enabled
+            ? () => setState(() => _selectedPaymentMethod = value)
+            : null,
+        borderRadius: BorderRadius.circular(12),
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 10),
+          decoration: BoxDecoration(
+            color: selected ? AppColors.primary : AppColors.darkGrey,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(
+              color: selected ? AppColors.primary : AppColors.lightWhite,
             ),
-            horizontalSpace(6),
-            Text(
-              label,
-              style: AppStyle.styleMedium14.copyWith(
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(
+                icon,
+                size: 20,
                 color: selected ? AppColors.black : AppColors.white,
               ),
-            ),
-          ],
+              horizontalSpace(6),
+              Flexible(
+                child: Text(
+                  label,
+                  overflow: TextOverflow.ellipsis,
+                  style: AppStyle.styleMedium14.copyWith(
+                    color: selected ? AppColors.black : AppColors.white,
+                  ),
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -1452,6 +1617,52 @@ class _ClientMapViewState extends State<ClientMapView> {
         state.status.isRequestTripSuccess;
   }
 
+  // Returns the chosen reason, '' for "no reason", or null if dismissed.
+  Future<String?> _pickCancelReason(BuildContext context) {
+    const reasons = [
+      'تأخر السائق',
+      'غيّرت رأيي',
+      'طلبت بالخطأ',
+      'وجدت وسيلة أخرى',
+      'سبب آخر',
+    ];
+    return showModalBottomSheet<String>(
+      context: context,
+      backgroundColor: AppColors.darkGrey,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(18)),
+      ),
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Padding(
+              padding: const EdgeInsets.all(16),
+              child: Text(
+                'سبب الإلغاء',
+                style: AppStyle.styleMedium14.copyWith(color: AppColors.white),
+              ),
+            ),
+            for (final r in reasons)
+              ListTile(
+                title: Text(
+                  r,
+                  style:
+                      AppStyle.styleMedium14.copyWith(color: AppColors.white),
+                ),
+                onTap: () => Navigator.pop(ctx, r),
+              ),
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, ''),
+              child: const Text('إلغاء بدون تحديد سبب'),
+            ),
+            verticalSpace(8),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget cancelTripButton() {
     return BlocConsumer<RealTimeTripCubit, RealTimeTripState>(
       listener: (context, state) {
@@ -1470,9 +1681,13 @@ class _ClientMapViewState extends State<ClientMapView> {
             ? const CustomLoadingWidget()
             : ElevatedButton.icon(
                 onPressed: () async {
+                  final reason = await _pickCancelReason(context);
+                  if (reason == null) return; // dismissed the sheet
+                  if (!context.mounted) return;
                   context.read<MapBloc>().add(ClearFakeScooters());
                   await context.read<RealTimeTripCubit>().cancelTrip(
                     tripId: widget.currentTrip?.tripId,
+                    reason: reason.isEmpty ? null : reason,
                   );
                 },
                 label: Text(

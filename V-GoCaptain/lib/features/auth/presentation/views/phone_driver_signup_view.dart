@@ -7,6 +7,7 @@ import 'package:toastification/toastification.dart';
 import '../../../../core/routing/routes.dart';
 import '../../../../core/theming/app_colors.dart';
 import '../../../../core/theming/app_style.dart';
+import '../../../../core/utils/widgets/password_field.dart';
 import '../logic/phone_auth_cubit/phone_auth_cubit.dart';
 
 /// Captain (driver) sign-up after phone verification — no password. Collects
@@ -133,11 +134,10 @@ class _PhoneDriverSignupViewState extends State<PhoneDriverSignupView> {
                   ),
                   SizedBox(height: 16.h),
                   if (!_isGoogle) ...[
-                    _field(_password, 'كلمة المرور', Icons.lock_outline,
-                        obscure: true),
+                    PasswordField(controller: _password, hint: 'كلمة المرور'),
                     SizedBox(height: 12.h),
-                    _field(_confirm, 'تأكيد كلمة المرور', Icons.lock_outline,
-                        obscure: true),
+                    PasswordField(
+                        controller: _confirm, hint: 'تأكيد كلمة المرور'),
                     SizedBox(height: 12.h),
                   ],
                   _field(_name, 'الاسم بالكامل', Icons.person_outline),

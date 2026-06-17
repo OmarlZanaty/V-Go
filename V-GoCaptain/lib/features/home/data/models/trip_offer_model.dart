@@ -54,6 +54,12 @@ class TripPoint {
 
   TripPoint({required this.lat, required this.lng, required this.address});
 
+  /// Address to show in the UI — falls back to coordinates when the backend
+  /// didn't supply a human-readable address, so the row is never blank.
+  String get displayAddress => address.trim().isNotEmpty
+      ? address
+      : '${lat.toStringAsFixed(4)}, ${lng.toStringAsFixed(4)}';
+
   factory TripPoint.fromMap(Map<dynamic, dynamic> map) {
     return TripPoint(
       lat: TripOfferModel._toDouble(map['lat'] ?? map['Lat']),
