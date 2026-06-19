@@ -10,7 +10,9 @@ using Masafet_Elseka.Infrastructure.ExternalService.GoogleAuth.GoogleAuthManager
 using Masafet_Elseka.Infrastructure.ExternalService.GoogleAuth.GoogleAuthService;
 using Masafet_Elseka.Infrastructure.ExternalService.GoogleAuth.HTMLResponseService;
 using Masafet_Elseka.Infrastructure.ExternalService.GoogleAuth.Models;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
 using Serilog;
@@ -31,7 +33,8 @@ namespace Masafet_Elseka.Presentation.Controllers
         private readonly IGoogleAuthService _googleAuthService;
         private readonly IGoogleAuthManager _googleAuthManager;
         private readonly IHtmlResponseService _htmlResponseService;
-        public AuthController(IAuthService authService, IJWTService jWTService, ICacheService cacheService,IGoogleAuthService googleAuthService,IConfiguration configuration, IGoogleAuthManager googleAuthManager, IHtmlResponseService htmlResponseService)
+        private readonly UserManager<ApplicationUser> _userManager;
+        public AuthController(IAuthService authService, IJWTService jWTService, ICacheService cacheService,IGoogleAuthService googleAuthService,IConfiguration configuration, IGoogleAuthManager googleAuthManager, IHtmlResponseService htmlResponseService, UserManager<ApplicationUser> userManager)
         {
             _authService = authService;
             _jWTService = jWTService;
@@ -40,7 +43,7 @@ namespace Masafet_Elseka.Presentation.Controllers
             _configuration = configuration;
             _googleAuthManager = googleAuthManager;
             _htmlResponseService = htmlResponseService;
-
+            _userManager = userManager;
         }
 
         [HttpPost("register")]
@@ -325,6 +328,31 @@ namespace Masafet_Elseka.Presentation.Controllers
         {
             var result = await _authService.LogoutFromDashboardAsync();
             return StatusCode(result.StatusCode, result.Message);
+        }
+
+        // Bootstrap endpoint — creates the first Admin account.
+        // Automatically disabled once any Admin exists.
+        [HttpPost("seed-admin")]
+        [AllowAnonymous]
+        public async Task<IActionResult> SeedAdmin([FromBody] LoginDTO model)
+        {
+            var existingAdmins = await _userManager.GetUsersInRoleAsync("Admin");
+            if (existingAdmins.Any())
+                return BadRequest(new { message = "Admin account already exists." });
+
+            var user = new ApplicationUser
+            {
+                UserName = model.Email,
+                Email = model.Email,
+                FullName = "Admin",
+                EmailConfirmed = true,
+            };
+            var createResult = await _userManager.CreateAsync(user, model.Password);
+            if (!createResult.Succeeded)
+                return BadRequest(new { errors = createResult.Errors.Select(e => e.Description) });
+
+            await _userManager.AddToRoleAsync(user, "Admin");
+            return Ok(new { message = "Admin created successfully.", email = model.Email });
         }
 
         #region Google Web Auth
