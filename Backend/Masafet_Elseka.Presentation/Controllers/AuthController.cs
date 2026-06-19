@@ -355,6 +355,15 @@ namespace Masafet_Elseka.Presentation.Controllers
                 EmailConfirmed = true,
                 PhoneNumber = "+20100000000",
             };
+            // Check if user already exists (e.g. created in a previous failed attempt)
+            var existingUser = await _userManager.FindByEmailAsync(model.Email);
+            if (existingUser != null)
+            {
+                if (!await _userManager.IsInRoleAsync(existingUser, "Admin"))
+                    await _userManager.AddToRoleAsync(existingUser, "Admin");
+                return Ok(new { message = "Admin role assigned.", email = model.Email });
+            }
+
             var createResult = await _userManager.CreateAsync(user, model.Password);
             if (!createResult.Succeeded)
                 return BadRequest(new { errors = createResult.Errors.Select(e => e.Description) });
