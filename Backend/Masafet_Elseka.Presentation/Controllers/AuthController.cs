@@ -345,7 +345,9 @@ namespace Masafet_Elseka.Presentation.Controllers
                 UserName = model.Email,
                 Email = model.Email,
                 FullName = "Admin",
+                Gender = "Male",
                 EmailConfirmed = true,
+                PhoneNumber = "+20100000000",
             };
             var createResult = await _userManager.CreateAsync(user, model.Password);
             if (!createResult.Succeeded)
