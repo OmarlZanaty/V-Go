@@ -34,7 +34,8 @@ namespace Masafet_Elseka.Presentation.Controllers
         private readonly IGoogleAuthManager _googleAuthManager;
         private readonly IHtmlResponseService _htmlResponseService;
         private readonly UserManager<ApplicationUser> _userManager;
-        public AuthController(IAuthService authService, IJWTService jWTService, ICacheService cacheService,IGoogleAuthService googleAuthService,IConfiguration configuration, IGoogleAuthManager googleAuthManager, IHtmlResponseService htmlResponseService, UserManager<ApplicationUser> userManager)
+        private readonly RoleManager<IdentityRole> _roleManager;
+        public AuthController(IAuthService authService, IJWTService jWTService, ICacheService cacheService,IGoogleAuthService googleAuthService,IConfiguration configuration, IGoogleAuthManager googleAuthManager, IHtmlResponseService htmlResponseService, UserManager<ApplicationUser> userManager, RoleManager<IdentityRole> roleManager)
         {
             _authService = authService;
             _jWTService = jWTService;
@@ -44,6 +45,7 @@ namespace Masafet_Elseka.Presentation.Controllers
             _googleAuthManager = googleAuthManager;
             _htmlResponseService = htmlResponseService;
             _userManager = userManager;
+            _roleManager = roleManager;
         }
 
         [HttpPost("register")]
@@ -336,6 +338,10 @@ namespace Masafet_Elseka.Presentation.Controllers
         [AllowAnonymous]
         public async Task<IActionResult> SeedAdmin([FromBody] LoginDTO model)
         {
+            // Ensure "Admin" role exists
+            if (!await _roleManager.RoleExistsAsync("Admin"))
+                await _roleManager.CreateAsync(new IdentityRole("Admin"));
+
             var existingAdmins = await _userManager.GetUsersInRoleAsync("Admin");
             if (existingAdmins.Any())
                 return BadRequest(new { message = "Admin account already exists." });
