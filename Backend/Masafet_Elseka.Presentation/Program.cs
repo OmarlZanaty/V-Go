@@ -366,6 +366,7 @@ builder.Services.AddCors(options =>
             "https://vgo-eg.com",
             "https://www.vgo-eg.com",
             "https://v-go-two.vercel.app",
+            "https://vgo-admin-792221536894.europe-west1.run.app",
         };
         if (builder.Environment.IsDevelopment())
         {
