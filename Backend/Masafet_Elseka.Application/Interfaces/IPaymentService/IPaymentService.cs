@@ -25,6 +25,15 @@ namespace Masafet_Elseka.Application.Interfaces.IPaymentService
         Task<Response<string>> HandleTransactionWebhookAsync(PaymobWebhookDTO webhook /*PaymobTransactionDTO webhook*/, string hmac);
         Task<Response<string>> HandleTokenWebhookAsync(PaymobCardTokenDTO webhook, string hmac);
         Task<Response<Payment>> GetPaymentStatusAsync(string tripId);
+        // The client relays Paymob's signed redirect callback here after checkout, so a
+        // card payment settles (and the captain is notified) without depending on the
+        // async server-to-server webhook. Validated with the configured HMAC secret.
+        Task<Response<string>> ConfirmPaymentCallbackAsync(Dictionary<string, string> query);
+        // Saved cards (card-on-file): list the user's active saved cards and delete one.
+        Task<Response<List<SavedCardDTO>>> GetSavedCardsAsync(string userId);
+        Task<Response<string>> DeleteSavedCardAsync(string userId, int cardId);
+        // "Add card" verification checkout (returns the unified-checkout payload).
+        Task<Response<PaymobIntentResponseDTO>> AddCardIntentAsync(string userId);
         Task<Response<string>> PayTripInCashAsync(string tripId, string userId);
         // Driver confirms they received the cash. Marks the trip paid on behalf
         // of the trip's client and returns that client id (so the hub can

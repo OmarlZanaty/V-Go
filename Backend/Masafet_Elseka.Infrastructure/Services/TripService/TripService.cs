@@ -148,6 +148,36 @@ namespace Masafet_Elseka.Infrastructure.Services.TripService
             }
 
         }
+        // Admin force-cancel: cancels any trip that isn't already completed,
+        // bypassing the client-ownership check used by the rider-facing CancelTrip.
+        public async Task<Response<string>> AdminForceCancel(string tripId, string? reason = null)
+        {
+            try
+            {
+                var trip = await _context.Trips.FirstOrDefaultAsync(t => t.Id == tripId);
+                if (trip == null)
+                {
+                    return Response<string>.Failure("الرحلة غير موجودة", 404);
+                }
+                if (trip.Status == TripStatus.Completed)
+                {
+                    return Response<string>.Failure("لا يمكن إلغاء رحلة مكتملة", 400);
+                }
+                if (trip.Status == TripStatus.Canceled)
+                {
+                    return Response<string>.Success("already", "الرحلة ملغاة بالفعل", 200);
+                }
+                trip.Status = TripStatus.Canceled;
+                trip.CancelReason = string.IsNullOrWhiteSpace(reason) ? "ألغيت من قبل الإدارة" : reason.Trim();
+                await _context.SaveChangesAsync();
+                return Response<string>.Success("cancelled", "تم إلغاء الرحلة بنجاح", 200);
+            }
+            catch (Exception ex)
+            {
+                return Response<string>.Failure("حدث خطأ أثناء إلغاء الرحلة", 500);
+            }
+        }
+
         public async Task<Response<PaginationPagedResponse<TripDetailsDTO>>> GetAll( PaginationRequest pagination,TripStatus? status = null, CancellationToken ct = default)
         {
             try
@@ -561,6 +591,8 @@ namespace Masafet_Elseka.Infrastructure.Services.TripService
                     DriverId = driverTrip != null ? driverTrip.User.Id : "لم يتم تحديد سائق حتى الان",
                     DriverName = driverTrip != null ? driverTrip.User.FullName : "لم يتم تحديد سائق حتى الان",
                     DriverPhone = driverTrip != null ? driverTrip.User.PhoneNumber : "لم يتم تحديد سائق حتى الان",
+                    DriverLat = driverTrip?.User.Latitude,
+                    DriverLng = driverTrip?.User.Longitude,
                     Status = trip.Status.ToString(),
                     DistanceKm = trip.DistanceInKm,
                     Ratings = await _ratingService.GetCurrentUserTripRates()
@@ -789,11 +821,18 @@ namespace Masafet_Elseka.Infrastructure.Services.TripService
                         Price = trip.Price,
                         From = trip.StartAddress!,
                         To = trip.EndAddress!,
+                        FromLat = trip.StartLat,
+                        FromLng = trip.StartLng,
+                        ToLat = trip.EndLat,
+                        ToLng = trip.EndLng,
                         CreatedAt = trip.CreatedAt,
                         ClientName = passengerTrip?.User.FullName!,
                         ClientRate = RateFor(passengerTrip?.UserId),
                         DriverName = driverTrip != null ? driverTrip.User.FullName : "لم يتم تحديد سائق حتى الان",
                         DriverRate = RateFor(driverTrip?.UserId),
+                        DriverId = driverTrip?.User.Id,
+                        DriverLat = driverTrip?.User.Latitude,
+                        DriverLng = driverTrip?.User.Longitude,
                         Status = trip.Status.ToString(),
                         DistanceKm = trip.DistanceInKm,
                     };

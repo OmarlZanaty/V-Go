@@ -30,11 +30,12 @@ namespace Masafet_Elseka.Domain.Entities
         public DateTime? PreauthExpiresAt { get; set; }
 
         public string UserId { get; set; }
-        public string TripId { get; set; }
+        // Null for card-verification ("add card") payments, which aren't tied to a trip.
+        public string? TripId { get; set; }
 
         [ForeignKey("UserId")]
         public virtual ApplicationUser User { get; set; }
         [ForeignKey("TripId")]
-        public virtual Trip Trip { get; set; }
+        public virtual Trip? Trip { get; set; }
     }
 }

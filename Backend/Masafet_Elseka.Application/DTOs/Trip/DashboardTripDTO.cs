@@ -19,5 +19,13 @@ namespace Masafet_Elseka.Application.DTOs.Trip
         public DateTime CreatedAt { get; set; }
         public decimal? DriverRate { get; set; }
         public decimal? ClientRate { get; set; }
+        // Coordinates for the live admin map.
+        public double FromLat { get; set; }
+        public double FromLng { get; set; }
+        public double ToLat { get; set; }
+        public double ToLng { get; set; }
+        public string? DriverId { get; set; }
+        public double? DriverLat { get; set; }
+        public double? DriverLng { get; set; }
     }
 }

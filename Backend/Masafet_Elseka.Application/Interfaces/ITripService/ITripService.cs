@@ -31,6 +31,7 @@ namespace Masafet_Elseka.Application.Interfaces.ITripService
         public Task<Response<TripProgressDTO>> StartTrip(string tripId);
         public Task<Response<TripProgressDTO>> EndTrip(string tripId);
         public Task<Response<string>> CancelTrip(string tripId, string userId, string? reason = null);
+        public Task<Response<string>> AdminForceCancel(string tripId, string? reason = null);
         public Task<Response<PaginationPagedResponse<DashboardTripDTO>>> GetAllForDashboard(PaginationRequest pagination, TripStatus? status = null, CancellationToken ct = default);
     }
 }

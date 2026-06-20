@@ -26,6 +26,9 @@ namespace Masafet_Elseka.Application.DTOs.Trip
         public string? DriverName { get; set; }
         public string? DriverPhone { get; set; }
         public string? DriverProfileImage { get; set; }
+        // Live driver location (from the driver's user record, updated each GPS tick).
+        public double? DriverLat { get; set; }
+        public double? DriverLng { get; set; }
         public bool? IsArrived { get; set; }
         public string? ScooterType { get; set; }
         public string? ScooterLicense { get; set; }

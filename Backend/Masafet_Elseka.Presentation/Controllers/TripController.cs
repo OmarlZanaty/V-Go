@@ -150,5 +150,14 @@ namespace Masafet_Elseka.Presentation.Controllers
             return StatusCode(response.StatusCode, response.Message);
         }
 
+        // Admin force-cancel any non-completed trip.
+        [Authorize(Roles = "Admin, Dispatcher")]
+        [HttpPut("admin/cancel/{tripId}")]
+        public async Task<IActionResult> AdminForceCancel(string tripId, [FromQuery] string? reason = null)
+        {
+            var response = await _tripService.AdminForceCancel(tripId, reason);
+            return StatusCode(response.StatusCode, new { response.IsSuccess, response.Message });
+        }
+
     }
 }

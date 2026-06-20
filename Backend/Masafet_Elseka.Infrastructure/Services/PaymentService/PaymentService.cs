@@ -652,6 +652,7 @@ namespace Masafet_Elseka.Infrastructure.Services.PaymentService
         public async Task<Response<Payment>> GetPaymentStatusAsync(string tripId)
         {
             var payment = await _context.Payments
+                .Include(p => p.Trip).ThenInclude(t => t.UserTrips)
                 .OrderByDescending(p => p.CreatedAt)
                 .FirstOrDefaultAsync(p => p.TripId == tripId);
 
@@ -660,7 +661,307 @@ namespace Masafet_Elseka.Infrastructure.Services.PaymentService
                 return Response<Payment>.Failure("لا يوجد دفع مسجل لهذه الرحلة", 404);
             }
 
+            // Self-healing: if the card payment is still Pending, the async Paymob
+            // webhook may never have arrived (webhook URL not configured, or a transient
+            // delivery failure). Pull the truth straight from Paymob before answering, so
+            // the captain's "verify payment" no longer hangs on a payment that succeeded.
+            if (payment.Status == PaymentStatus.Pending)
+            {
+                await ReconcileFromGatewayAsync(payment);
+            }
+
             return Response<Payment>.Success(payment, "تم جلب حالة الدفع", 200);
+        }
+
+        // Pull the latest transaction for this order directly from Paymob and apply it
+        // locally (status + notify), mirroring the webhook. The reconciliation path that
+        // makes online payments robust against missed webhooks.
+        private async Task ReconcileFromGatewayAsync(Payment payment)
+        {
+            if (payment == null || string.IsNullOrEmpty(payment.OrderId)) return;
+            if (!long.TryParse(payment.OrderId, out var orderId)) return;
+            // The legacy transaction-inquiry needs Paymob:ApiKey (separate from the
+            // SecretKey used by the intention API). If it isn't configured, skip silently
+            // — the signed redirect-callback relay (ConfirmPaymentCallbackAsync) is the
+            // primary settlement path and needs only the HMAC secret.
+            if (string.IsNullOrWhiteSpace(_configuration["Paymob:ApiKey"])) return;
+            try
+            {
+                var authToken = await AuthenticateAsync();
+                using var cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(15000));
+                var resp = await _httpClient.PostAsJsonAsync(
+                    $"{PaymobBaseUrl}/api/ecommerce/orders/transaction_inquiry",
+                    new { auth_token = authToken, order_id = orderId }, cts.Token);
+                if (!resp.IsSuccessStatusCode)
+                {
+                    Log.Warning("Paymob transaction_inquiry returned {Status} for order {OrderId}",
+                        resp.StatusCode, payment.OrderId);
+                    return;
+                }
+
+                var obj = await resp.Content.ReadFromJsonAsync<PaymobTransactionDTO>(
+                    new JsonSerializerOptions { PropertyNameCaseInsensitive = true }, cts.Token);
+
+                // No transaction on the order yet, or still processing at the gateway:
+                // leave Pending so the next poll can settle it.
+                if (obj == null || obj.Id == 0 || obj.Pending) return;
+
+                var newStatus = MapTransactionStatus(obj);
+                if (newStatus == payment.Status) return;
+
+                payment.Method ??= obj.SourceData?.Type;
+                payment.TransactionId = obj.Id.ToString();
+                payment.UpdatedAt = DateTime.Now.ToEgyptTime();
+                payment.Status = newStatus;
+                if (newStatus == PaymentStatus.Captured)
+                {
+                    payment.CaptureTransactionId = obj.Id.ToString();
+                }
+                else if (newStatus == PaymentStatus.PreAuthSuccess)
+                {
+                    payment.PreauthTransactionId = obj.Id.ToString();
+                    payment.PreauthExpiresAt ??= DateTime.Now.ToEgyptTime().AddDays(6);
+                }
+
+                await _context.SaveChangesAsync();
+
+                var driverId = payment.Trip?.UserTrips?
+                    .FirstOrDefault(ut => ut.UserId != payment.UserId && ut.Role == UserTripRole.Driver)?.UserId;
+                await NotifyClientAndDriver(payment.UserId, driverId ?? string.Empty, payment.Status);
+            }
+            catch (Exception ex)
+            {
+                Log.Error(ex, "ReconcileFromGatewayAsync failed for order {OrderId}", payment.OrderId);
+            }
+        }
+
+        private static PaymentStatus MapTransactionStatus(PaymobTransactionDTO obj)
+        {
+            if (obj.IsVoided) return PaymentStatus.Voided;
+            if (obj.IsCapture) return obj.Success ? PaymentStatus.Captured : PaymentStatus.CaptureFailed;
+            if (obj.IsAuth) return obj.Success ? PaymentStatus.PreAuthSuccess : PaymentStatus.PreAuthFailed;
+            return obj.Success ? PaymentStatus.Paid : PaymentStatus.Failed;
+        }
+
+        // The client relays Paymob's signed redirect (response) callback after checkout.
+        // We validate the HMAC over the same field set as the server-to-server webhook,
+        // then settle the payment and notify both sides. This makes online payments work
+        // even though the async webhook isn't being delivered, using only the HMAC secret.
+        public async Task<Response<string>> ConfirmPaymentCallbackAsync(Dictionary<string, string> query)
+        {
+            try
+            {
+                if (query == null || query.Count == 0 || !query.TryGetValue("hmac", out var hmacReceived)
+                    || string.IsNullOrEmpty(hmacReceived))
+                {
+                    return Response<string>.Failure("بيانات الدفع غير مكتملة", 400);
+                }
+
+                var secret = _configuration["Paymob:HmacSecret"];
+                if (string.IsNullOrEmpty(secret))
+                {
+                    Log.Error("Paymob:HmacSecret is not configured");
+                    return Response<string>.Failure("خطأ في إعدادات الدفع", 500);
+                }
+
+                // Paymob's HMAC concatenates these fields in this exact order (same as the
+                // webhook); in the redirect they arrive as flat query keys.
+                string[] keys =
+                {
+                    "amount_cents", "created_at", "currency", "error_occured",
+                    "has_parent_transaction", "id", "integration_id", "is_3d_secure",
+                    "is_auth", "is_capture", "is_refunded", "is_standalone_payment",
+                    "is_voided", "order", "owner", "pending",
+                    "source_data.pan", "source_data.sub_type", "source_data.type", "success"
+                };
+                var concatenated = string.Concat(keys.Select(k =>
+                    query.TryGetValue(k, out var v) ? v : string.Empty));
+
+                using var hmac = new HMACSHA512(Encoding.UTF8.GetBytes(secret));
+                var computedHash = BitConverter.ToString(
+                    hmac.ComputeHash(Encoding.UTF8.GetBytes(concatenated))
+                ).Replace("-", "").ToLower();
+
+                if (computedHash != hmacReceived.ToLower())
+                {
+                    return Response<string>.Failure("الطلب غير موثق (HMAC mismatch)", 401);
+                }
+
+                var orderId = query.TryGetValue("order", out var o) ? o : null;
+                if (string.IsNullOrEmpty(orderId))
+                {
+                    return Response<string>.Failure("بيانات الدفع غير مكتملة", 400);
+                }
+
+                var payment = await _context.Payments
+                    .Include(p => p.Trip).ThenInclude(t => t.UserTrips)
+                    .FirstOrDefaultAsync(p => p.OrderId == orderId);
+                if (payment == null)
+                {
+                    return Response<string>.Failure("عملية الدفع غير موجودة", 404);
+                }
+
+                // Already settled as a success — nothing to do (the webhook may have won).
+                if (payment.Status == PaymentStatus.Paid || payment.Status == PaymentStatus.Captured)
+                {
+                    return Response<string>.Success("ok", "تم تأكيد الدفع مسبقاً", 200);
+                }
+
+                bool Flag(string k) => query.TryGetValue(k, out var v)
+                    && string.Equals(v, "true", StringComparison.OrdinalIgnoreCase);
+
+                var success = Flag("success");
+                var newStatus =
+                    Flag("is_voided") ? PaymentStatus.Voided :
+                    Flag("is_capture") ? (success ? PaymentStatus.Captured : PaymentStatus.CaptureFailed) :
+                    Flag("is_auth") ? (success ? PaymentStatus.PreAuthSuccess : PaymentStatus.PreAuthFailed) :
+                    (success ? PaymentStatus.Paid : PaymentStatus.Failed);
+
+                payment.Method ??= query.TryGetValue("source_data.type", out var sd) ? sd : null;
+                payment.TransactionId = query.TryGetValue("id", out var id) ? id : payment.TransactionId;
+                payment.UpdatedAt = DateTime.Now.ToEgyptTime();
+                payment.Status = newStatus;
+                if (newStatus == PaymentStatus.Captured)
+                {
+                    payment.CaptureTransactionId = payment.TransactionId;
+                }
+                await _context.SaveChangesAsync();
+
+                var driverId = payment.Trip?.UserTrips?
+                    .FirstOrDefault(ut => ut.UserId != payment.UserId && ut.Role == UserTripRole.Driver)?.UserId;
+                await NotifyClientAndDriver(payment.UserId, driverId ?? string.Empty, payment.Status);
+
+                return Response<string>.Success("ok", "تم تأكيد الدفع", 200);
+            }
+            catch (Exception ex)
+            {
+                Log.Error(ex, "ConfirmPaymentCallbackAsync failed");
+                return Response<string>.Failure("خطأ أثناء تأكيد الدفع", 500);
+            }
+        }
+
+        // "Add card" in profile: a small card-verification checkout so the rider can
+        // enter + save a card up-front. On success Paymob fires the TOKEN webhook
+        // which stores the SavedCard. Not tied to a trip (Payment.TripId = null).
+        public async Task<Response<PaymobIntentResponseDTO>> AddCardIntentAsync(string userId)
+        {
+            using var transaction = await _context.Database.BeginTransactionAsync();
+            try
+            {
+                var user = await _context.Users.FindAsync(userId);
+                if (user == null)
+                    return Response<PaymobIntentResponseDTO>.Failure("المستخدم غير موجود", 404);
+
+                var verifyAmount = int.TryParse(_configuration["Paymob:CardVerificationAmount"], out var v) && v > 0
+                    ? v
+                    : 1; // EGP
+
+                var payment = new Payment
+                {
+                    UserId = userId,
+                    TripId = null,
+                    Amount = verifyAmount,
+                    Currency = "EGP",
+                    CreatedAt = DateTime.Now.ToEgyptTime(),
+                    Status = PaymentStatus.Pending,
+                    Method = "CardVerification",
+                };
+                _context.Payments.Add(payment);
+
+                var body = new Dictionary<string, object?>
+                {
+                    ["amount"] = verifyAmount * 100,
+                    ["currency"] = "EGP",
+                    ["merchant_order_id"] = payment.Id,
+                    // Card only (no wallet) and no saved-card tokens, so the rider
+                    // enters a NEW card and can tick "save".
+                    ["payment_methods"] = new[]
+                    {
+                        int.Parse(_configuration["Paymob:CardIntegrationId"] ?? "0")
+                    },
+                    ["billing_data"] = new
+                    {
+                        first_name = user.FullName,
+                        last_name = "NA",
+                        phone_number = user.PhoneNumber,
+                        email = user.Email,
+                    }
+                };
+
+                using var requestMessage = new HttpRequestMessage(HttpMethod.Post,
+                    $"{PaymobBaseUrl}/v1/intention/");
+                requestMessage.Headers.Authorization =
+                    new System.Net.Http.Headers.AuthenticationHeaderValue("Token", _configuration["Paymob:SecretKey"]);
+                requestMessage.Content = JsonContent.Create(body);
+
+                using var cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(15000));
+                var response = await _httpClient.SendAsync(requestMessage, cts.Token);
+                response.EnsureSuccessStatusCode();
+                var intentResponse = await response.Content.ReadFromJsonAsync<PaymobIntentResponseDTO>(cancellationToken: cts.Token);
+                if (intentResponse == null)
+                    return Response<PaymobIntentResponseDTO>.Failure("فشل في بدء إضافة البطاقة", 400);
+
+                payment.OrderId = intentResponse.IntentionOrderId.ToString();
+                await _context.SaveChangesAsync();
+                intentResponse.PublicKey = _configuration["Paymob:PublicKey"];
+                await transaction.CommitAsync();
+                return Response<PaymobIntentResponseDTO>.Success(intentResponse, "تابع لإضافة البطاقة", 200);
+            }
+            catch (HttpRequestException httpEx)
+            {
+                await transaction.RollbackAsync();
+                Log.Error(httpEx, "AddCardIntent HTTP error");
+                return Response<PaymobIntentResponseDTO>.Failure("تعذّر الاتصال بخدمة الدفع. حاول لاحقاً.", 503);
+            }
+            catch (Exception ex)
+            {
+                await transaction.RollbackAsync();
+                Log.Error(ex, "AddCardIntent error");
+                return Response<PaymobIntentResponseDTO>.Failure("حدث خطأ أثناء إضافة البطاقة", 500);
+            }
+        }
+
+        public async Task<Response<List<SavedCardDTO>>> GetSavedCardsAsync(string userId)
+        {
+            try
+            {
+                var cards = await _context.SavedCards
+                    .Where(c => c.UserId == userId && c.IsActive)
+                    .OrderByDescending(c => c.CreatedAt)
+                    .Select(c => new SavedCardDTO
+                    {
+                        Id = c.Id,
+                        MaskedPan = c.MaskedPan,
+                        CreatedAt = c.CreatedAt,
+                    })
+                    .ToListAsync();
+                return Response<List<SavedCardDTO>>.Success(cards, "تم جلب البطاقات المحفوظة", 200);
+            }
+            catch (Exception ex)
+            {
+                Log.Error(ex, "GetSavedCards error for user {UserId}", userId);
+                return Response<List<SavedCardDTO>>.Failure("حدث خطأ أثناء جلب البطاقات", 500);
+            }
+        }
+
+        public async Task<Response<string>> DeleteSavedCardAsync(string userId, int cardId)
+        {
+            try
+            {
+                var card = await _context.SavedCards
+                    .FirstOrDefaultAsync(c => c.Id == cardId && c.UserId == userId);
+                if (card == null)
+                    return Response<string>.Failure("البطاقة غير موجودة", 404);
+                // Soft-delete so the token is no longer offered at checkout.
+                card.IsActive = false;
+                await _context.SaveChangesAsync();
+                return Response<string>.Success("تم حذف البطاقة", "تم حذف البطاقة", 200);
+            }
+            catch (Exception ex)
+            {
+                Log.Error(ex, "DeleteSavedCard error card {CardId}", cardId);
+                return Response<string>.Failure("حدث خطأ أثناء حذف البطاقة", 500);
+            }
         }
 
         public async Task<Response<string>> PayTripInCashAsync(string tripId, string userId)

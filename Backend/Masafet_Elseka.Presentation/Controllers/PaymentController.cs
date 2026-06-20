@@ -7,6 +7,9 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.WebUtilities;
+using System.Linq;
+using System.Security.Claims;
 using System.Text.Json;
 
 namespace Masafet_Elseka.Presentation.Controllers
@@ -68,37 +71,53 @@ namespace Masafet_Elseka.Presentation.Controllers
 
         [AllowAnonymous]
         [HttpPost("webhook")]
-        public async Task<IActionResult> HandleWebhook([FromBody] PaymobWebhookDTO webhook, [FromQuery] string hmac)
+        public async Task<IActionResult> HandleWebhook([FromBody] JsonElement payload, [FromQuery] string hmac)
         {
-            if (webhook == null)
+            // Paymob sends two webhook shapes: TRANSACTION (payment result) and
+            // TOKEN (a saved card). Route by `type`. ALWAYS return 200 so Paymob
+            // doesn't retry forever on our errors.
+            try
             {
-                return BadRequest("Invalid payload");
+                var opts = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
+                var type = payload.TryGetProperty("type", out var t) ? t.GetString() : null;
+
+                if (string.Equals(type, "TOKEN", System.StringComparison.OrdinalIgnoreCase)
+                    && payload.TryGetProperty("obj", out var tokenObj))
+                {
+                    var dto = tokenObj.Deserialize<PaymobCardTokenDTO>(opts);
+                    if (dto != null)
+                        await _paymentService.HandleTokenWebhookAsync(dto, hmac);
+                }
+                else
+                {
+                    var webhook = payload.Deserialize<PaymobWebhookDTO>(opts);
+                    if (webhook?.Obj != null)
+                        await _paymentService.HandleTransactionWebhookAsync(webhook, hmac);
+                }
+            }
+            catch (System.Exception)
+            {
+                // Swallow — never make Paymob retry on our internal error.
             }
 
-            //var result = null as Response<string>;
+            return Ok(new { message = "received" });
+        }
 
-            //switch (webhook.Type)
-            //{
-            //    case "TRANSACTION":
-            //        result = await _paymentService.HandleTransactionWebhookAsync(
-            //            webhook.Obj.Deserialize<PaymobTransactionDTO>(), hmac);
-            //        break;
-            //    case "TOKEN":
-            //        result = await _paymentService.HandleTokenWebhookAsync(
-            //            webhook.Obj.Deserialize<PaymobCardTokenDTO>(), hmac);
-            //        break;
-            //}
+        // The app relays Paymob's signed redirect callback here after checkout closes,
+        // so a card payment settles without depending on the async webhook.
+        [HttpPost("confirm-callback")]
+        public async Task<IActionResult> ConfirmCallback([FromBody] PaymentCallbackDTO dto)
+        {
+            var raw = dto?.Query ?? string.Empty;
+            // Accept either a full redirect URL or just the query string.
+            var qIndex = raw.IndexOf('?');
+            if (qIndex >= 0) raw = raw[(qIndex + 1)..];
 
-            var result = await _paymentService.HandleTransactionWebhookAsync(webhook, hmac);
+            var query = QueryHelpers.ParseQuery(raw)
+                .ToDictionary(kv => kv.Key, kv => kv.Value.ToString());
 
-            if (result != null && result.IsSuccess)
-            {
-                return Ok(new { message = result.Message });
-            }
-            else
-            {
-                return BadRequest(new { error = result?.Message });
-            }
+            var result = await _paymentService.ConfirmPaymentCallbackAsync(query);
+            return StatusCode(result.StatusCode, result.Message);
         }
 
         [HttpGet("status/{tripId}")]
@@ -111,6 +130,47 @@ namespace Masafet_Elseka.Presentation.Controllers
             }
 
             return StatusCode(response.StatusCode, response.Message);
+        }
+
+        // Saved cards for the authenticated user (card-on-file). The user id comes
+        // from the JWT, never the client, so one user can't read another's cards.
+        [HttpGet("saved-cards")]
+        public async Task<IActionResult> GetSavedCards()
+        {
+            var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+            if (string.IsNullOrEmpty(userId))
+            {
+                return Unauthorized();
+            }
+            var result = await _paymentService.GetSavedCardsAsync(userId);
+            return StatusCode(result.StatusCode,
+                result.IsSuccess ? (object)result.Data : result.Message);
+        }
+
+        [HttpDelete("saved-cards/{cardId:int}")]
+        public async Task<IActionResult> DeleteSavedCard(int cardId)
+        {
+            var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+            if (string.IsNullOrEmpty(userId))
+            {
+                return Unauthorized();
+            }
+            var result = await _paymentService.DeleteSavedCardAsync(userId, cardId);
+            return StatusCode(result.StatusCode, result.Message);
+        }
+
+        // Start an "add card" verification checkout for the authenticated user.
+        [HttpPost("add-card")]
+        public async Task<IActionResult> AddCard()
+        {
+            var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+            if (string.IsNullOrEmpty(userId))
+            {
+                return Unauthorized();
+            }
+            var result = await _paymentService.AddCardIntentAsync(userId);
+            return StatusCode(result.StatusCode,
+                result.IsSuccess ? (object)result.Data : result.Message);
         }
 
     }
