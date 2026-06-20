@@ -13,9 +13,12 @@ using Masafet_Elseka.Application.Interfaces.User;
 using Masafet_Elseka.Application.Response;
 using Masafet_Elseka.Domain.Entities;
 using Masafet_Elseka.Domain.Enums;
+using Masafet_Elseka.Domain.Const;
 using Masafet_Elseka.Infrastructure.Data;
 using Masafet_Elseka.Infrastructure.ExtensionMethods;
+using Masafet_Elseka.Infrastructure.Hubs;
 using Masafet_Elseka.Infrastructure.UOW;
+using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
 
 namespace Masafet_Elseka.Infrastructure.Services.TripService
@@ -27,16 +30,18 @@ namespace Masafet_Elseka.Infrastructure.Services.TripService
         private readonly ICacheService _cacheService;
         private readonly IRatingService _ratingService;
         private readonly IDriverService _driverService;
+        private readonly IHubContext<TripHub> _tripHubContext;
         private readonly decimal _baseFare = 5; // Meter opening fees
         private readonly decimal _minFare = 10; // minimum trip fees
 
-        public TripService(IUnitOfWork unitOfWork, Context context, ICacheService cacheService, IRatingService ratingService, IDriverService driverService)
+        public TripService(IUnitOfWork unitOfWork, Context context, ICacheService cacheService, IRatingService ratingService, IDriverService driverService, IHubContext<TripHub> tripHubContext)
         {
             _unitOfWork = unitOfWork;
             _context = context;
             _cacheService = cacheService;
             _ratingService = ratingService;
             _driverService = driverService;
+            _tripHubContext = tripHubContext;
         }
 
         public async Task<Response<TripResponseDTO>> AddTrip(TripRequest request)
@@ -154,7 +159,9 @@ namespace Masafet_Elseka.Infrastructure.Services.TripService
         {
             try
             {
-                var trip = await _context.Trips.FirstOrDefaultAsync(t => t.Id == tripId);
+                var trip = await _context.Trips
+                    .Include(t => t.UserTrips)
+                    .FirstOrDefaultAsync(t => t.Id == tripId);
                 if (trip == null)
                 {
                     return Response<string>.Failure("الرحلة غير موجودة", 404);
@@ -170,6 +177,33 @@ namespace Masafet_Elseka.Infrastructure.Services.TripService
                 trip.Status = TripStatus.Canceled;
                 trip.CancelReason = string.IsNullOrWhiteSpace(reason) ? "ألغيت من قبل الإدارة" : reason.Trim();
                 await _context.SaveChangesAsync();
+
+                // Push the cancellation to both apps so the active trip disappears
+                // immediately (same events the rider-cancel flow uses).
+                var clientId = trip.UserTrips.FirstOrDefault(ut => ut.Role == UserTripRole.Client)?.UserId;
+                var driverId = trip.UserTrips.FirstOrDefault(ut => ut.Role == UserTripRole.Driver)?.UserId;
+                var payload = new
+                {
+                    TripId = tripId,
+                    UserId = clientId,
+                    Message = "تم إلغاء الرحلة من قبل الإدارة",
+                    Status = TripStatus.Canceled.ToString(),
+                    UpdatedAt = DateTime.Now.ToEgyptTime()
+                };
+                try
+                {
+                    if (!string.IsNullOrEmpty(clientId))
+                        await _tripHubContext.Clients.Group(HubGroups.User(clientId))
+                            .SendAsync(HubEvents.TripCancelledForClient, payload);
+                    if (!string.IsNullOrEmpty(driverId))
+                        await _tripHubContext.Clients.Group(HubGroups.Driver(driverId))
+                            .SendAsync(HubEvents.TripCancelledForTripDriver, payload);
+                    await _tripHubContext.Clients.Group(HubGroups.Admin)
+                        .SendAsync(HubEvents.TripCancelledForAdmin, payload);
+                    await UpdateTripStateInCache(tripId, TripStatus.Canceled);
+                }
+                catch { /* DB cancel already committed; notification best-effort */ }
+
                 return Response<string>.Success("cancelled", "تم إلغاء الرحلة بنجاح", 200);
             }
             catch (Exception ex)
