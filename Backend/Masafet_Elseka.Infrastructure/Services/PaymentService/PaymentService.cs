@@ -107,14 +107,29 @@ namespace Masafet_Elseka.Infrastructure.Services.PaymentService
                     body["card_tokens"] = savedCardTokens;
                 }
 
+                // Fail fast (and loud in the logs) if the gateway isn't configured on
+                // this host. After the AWS migration a missing Paymob:SecretKey /
+                // integration id makes every intention fail with an opaque 5xx; this
+                // turns that into an explicit, diagnosable error.
+                var secretKey = _configuration["Paymob:SecretKey"];
+                if (string.IsNullOrWhiteSpace(secretKey))
+                {
+                    Log.Error("Paymob:SecretKey is not configured on this server (env var missing).");
+                    return Response<PaymobIntentResponseDTO>.Failure(
+                        "خدمة الدفع الإلكتروني غير مُهيأة حاليًا، يرجى الدفع نقداً.", 503);
+                }
+
                 using var requestMessage = new HttpRequestMessage(HttpMethod.Post,
                     "https://accept.paymob.com/v1/intention/");
 
                 requestMessage.Headers.Authorization =
-                    new System.Net.Http.Headers.AuthenticationHeaderValue("Token", _configuration["Paymob:SecretKey"]);
+                    new System.Net.Http.Headers.AuthenticationHeaderValue("Token", secretKey);
                 requestMessage.Content = JsonContent.Create(body);
-                
-                var response = await _httpClient.SendAsync(requestMessage);
+
+                // Bound the outbound call so an unreachable/slow Paymob returns a clean
+                // 503 instead of hanging until the reverse proxy times out (504).
+                using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(20));
+                var response = await _httpClient.SendAsync(requestMessage, cts.Token);
                 if (!response.IsSuccessStatusCode)
                 {
                     var errBody = await response.Content.ReadAsStringAsync();
@@ -140,6 +155,12 @@ namespace Masafet_Elseka.Infrastructure.Services.PaymentService
 
                 transaction.Commit();
                 return Response<PaymobIntentResponseDTO>.Success(intentResponse, "تم إنشاء الدفع بنجاح", 200);
+            }
+            catch (OperationCanceledException)
+            {
+                transaction.Rollback();
+                Log.Error("PaymentService CreatePaymentIntent timed out calling Paymob (>20s).");
+                return Response<PaymobIntentResponseDTO>.Failure("تعذّر الاتصال بخدمة الدفع. يرجى المحاولة لاحقًا.", 503);
             }
             catch (HttpRequestException httpEx)
             {

@@ -78,7 +78,11 @@ class ServerFailure extends Failure {
       case 502:
       case 503:
       case 504:
-        return ServerFailure('الخدمة غير متاحة مؤقتًا، يرجى المحاولة بعد قليل.');
+        // Prefer the backend's own message when present (e.g. the payment API
+        // returns 503 with an actionable text) instead of masking it.
+        return ServerFailure(
+          backendMsg ?? 'الخدمة غير متاحة مؤقتًا، يرجى المحاولة بعد قليل.',
+        );
       default:
         return ServerFailure(
           backendMsg ?? 'عذرًا، حدث خطأ ما، يرجى المحاولة مرة أخرى.',
