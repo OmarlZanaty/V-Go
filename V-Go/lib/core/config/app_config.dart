@@ -2,9 +2,9 @@ class AppConfig {
   AppConfig._();
 
   static const String _defaultApiBaseUrl =
-      'https://52.57.40.64.sslip.io/api/';
+      'https://vgo.almobarmg.com/api/';
   static const String _defaultSignalRBaseUrl =
-      'https://52.57.40.64.sslip.io';
+      'https://vgo.almobarmg.com';
 
   /// Base URL for REST APIs. Override with:
   /// `--dart-define=API_BASE_URL=https://your-domain/api/`
