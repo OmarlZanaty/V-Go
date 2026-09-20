@@ -40,4 +40,5 @@ abstract class Routes {
   static const String customPaymentWebViewRoute = "/customPaymentWebView";
   static const String accountantDataForAdminViewRoute = "/accountantDataForAdminView";
   static const String allCurrentTripsViewRoute = "/allCurrentTripsView";
+  static const String savedCardsViewRoute = "/savedCardsView";
 }

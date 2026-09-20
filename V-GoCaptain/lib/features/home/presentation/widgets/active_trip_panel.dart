@@ -2,12 +2,14 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:toastification/toastification.dart';
-import 'package:url_launcher/url_launcher.dart';
 
+import '../../../../core/services/location_service.dart';
 import '../../../../core/theming/app_colors.dart';
 import '../../../../core/theming/app_style.dart';
 import '../../../../core/utils/app_constants.dart';
+import '../../../navigation/screens/navigation_screen.dart';
 import '../logic/cubit/captain_home_cubit.dart';
 
 /// Panel shown while a trip is being served. The primary button advances the
@@ -267,36 +269,54 @@ class ActiveTripPanel extends StatelessWidget {
     return _actionLabel(state.stage);
   }
 
-  /// Opens turn-by-turn navigation in Google Maps to the current target — the
+  /// Opens the in-app turn-by-turn navigation to the current target — the
   /// client's pickup before the ride starts, the destination once it's running.
+  /// The captain never leaves V-Go; everything renders in [NavigationScreen].
   Future<void> _openNavigation(
       BuildContext context, CaptainHomeState state) async {
     final trip = state.activeTrip;
     if (trip == null) return;
-    final target = state.stage == TripStage.inProgress ? trip.end : trip.start;
+    final isDropoff = state.stage == TripStage.inProgress;
+    final target = isDropoff ? trip.end : trip.start;
 
-    // Prefer the Google Maps navigation intent; fall back to a maps URL.
-    final navUri = Uri.parse('google.navigation:q=${target.lat},${target.lng}&mode=d');
-    final webUri = Uri.parse(
-        'https://www.google.com/maps/dir/?api=1&destination=${target.lat},${target.lng}&travelmode=driving');
+    // Origin = captain's live location; fall back to a one-shot fix if the
+    // stream hasn't produced a position yet.
+    LatLng? origin;
+    final pos = state.position;
+    if (pos != null) {
+      origin = LatLng(pos.latitude, pos.longitude);
+    } else {
+      try {
+        final p = await LocationService().currentPosition();
+        origin = LatLng(p.latitude, p.longitude);
+      } catch (_) {
+        origin = null;
+      }
+    }
 
-    var launched = false;
-    if (await canLaunchUrl(navUri)) {
-      launched = await launchUrl(navUri, mode: LaunchMode.externalApplication);
-    }
-    if (!launched) {
-      launched = await launchUrl(webUri, mode: LaunchMode.externalApplication);
-    }
-    if (!launched && context.mounted) {
+    if (!context.mounted) return;
+    if (origin == null) {
       toastification.show(
         context: context,
         type: ToastificationType.error,
         style: ToastificationStyle.fillColored,
-        title: Text('تعذّر فتح تطبيق الخرائط', style: AppStyle.body),
+        title: Text('تعذّر تحديد موقعك الحالي', style: AppStyle.body),
         autoCloseDuration: const Duration(seconds: 3),
         alignment: Alignment.bottomCenter,
       );
+      return;
     }
+
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => NavigationScreen(
+          origin: origin!,
+          destination: LatLng(target.lat, target.lng),
+          destinationName: target.displayAddress,
+          phase: isDropoff ? 'dropoff' : 'pickup',
+        ),
+      ),
+    );
   }
 
   Widget _row(IconData icon, String text, {Color color = AppColors.grey}) {

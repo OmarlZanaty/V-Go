@@ -48,6 +48,13 @@ class SettingsView extends StatelessWidget {
                     AppSettings.openAppSettings(type: AppSettingsType.location);
                   },
                 ),
+                SettingsItem(
+                  title: 'بطاقاتي',
+                  icon: Icons.credit_card,
+                  onTap: () {
+                    context.pushNamed(Routes.savedCardsViewRoute);
+                  },
+                ),
                 const _SettingsHeader(title: 'السياسات والدعم'),
                 SettingsItem(
                   title: 'سياسة الخصوصية',

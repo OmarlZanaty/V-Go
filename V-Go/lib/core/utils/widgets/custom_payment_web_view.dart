@@ -3,7 +3,6 @@ import 'dart:developer';
 import 'package:flutter/material.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 
-import '../../helpers/extensions.dart';
 import 'custom_app_bar.dart';
 import 'custom_toastification.dart';
 
@@ -21,16 +20,19 @@ class CustomPaymentWebView extends StatefulWidget {
 class CustomPaymentWebViewState extends State<CustomPaymentWebView> {
   bool _handled = false;
 
-  /// Inspect a URL for PayMob's success/failure callback and react once.
+  /// Inspect a URL for PayMob's success/failure callback and react once. The full
+  /// callback URL (which carries the signed transaction result) is returned to the
+  /// caller via pop, so the backend can validate it and settle the payment.
   void _checkResult(String url) {
     if (_handled) return;
     if (url.contains('success=true')) {
       _handled = true;
       successToast(context, 'عملية دفع ناجحة', 'تم دفع الرحلة بنجاح');
-      context.pop();
+      Navigator.of(context).pop(url);
     } else if (url.contains('success=false')) {
       _handled = true;
       errorToast(context, 'حدث خطأ', 'فشلت عملية الدفع');
+      Navigator.of(context).pop(url);
     }
   }
 

@@ -66,6 +66,8 @@ class CurrentTripModel {
         scooterLicense: json['scooterLicense'],
         createdAt: DateTime.parse(json['createdAt']),
         isPaid: json['isPaid'],
-        paymentMethod: (json['paymentMethod'] ?? 'Cash') as String,
+        paymentMethod:
+            (json['paymentMethod'] ?? json['PaymentMethod'] ?? 'Cash')
+                .toString(),
       );
 }

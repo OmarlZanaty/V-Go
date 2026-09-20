@@ -19,6 +19,9 @@ class RealtimeService {
   // Callbacks the UI/cubit can listen to.
   void Function(Map<dynamic, dynamic> offer)? onTripOffer;
   void Function(String tripId)? onTripTaken;
+  // Fired when the client cancels the trip (offer or accepted) so the captain
+  // app clears it instead of leaving a "ghost" active ride.
+  void Function(String tripId)? onTripCancelled;
   void Function()? onConnectionLost;
   void Function()? onReconnected;
   // Fired when the backend reports this trip's payment became Paid (cash
@@ -67,6 +70,13 @@ class RealtimeService {
         final id = (data is Map ? (data['tripId'] ?? data['TripId']) : data)
             ?.toString();
         if (id != null) onTripTaken?.call(id);
+      });
+      // Client cancelled — clear the captain's offer/active trip.
+      tripHub.on('TripCancelledForTripDriver', (args) {
+        final data = (args != null && args.isNotEmpty) ? args.first : null;
+        final id = (data is Map ? (data['tripId'] ?? data['TripId']) : data)
+            ?.toString();
+        if (id != null) onTripCancelled?.call(id);
       });
       tripHub.on('TripPaymentUpdated', (args) {
         onPaymentUpdated?.call();

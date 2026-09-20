@@ -27,6 +27,10 @@ Widget paymentOptionsSection(
   BuildContext context,
   RealTimeTripState tripState, {
   CurrentTripModel? currentTrip,
+  // The method the rider picked on the confirm screen. It's the authoritative
+  // source: the live `currentTrip` is often null in the normal flow (it's only
+  // populated on resume), so deriving Visa from it wrongly fell back to Cash.
+  String? clientSelectedMethod,
 }) {
   return BlocConsumer<RealTimeTripCubit, RealTimeTripState>(
     listener: (context, state) {
@@ -63,10 +67,14 @@ Widget paymentOptionsSection(
       if (state.paymentStatusModel?.paymentStatus == 'Paid') {
         return const SizedBox.shrink();
       }
-      // Read the chosen method from the freshest server trip first (the live
-      // currentTrip carries the real PaymentMethod); fall back to the passed one.
+      // Prefer the rider's own selection (always known on the client). Fall back to
+      // the server trip's method only when we don't have the local choice.
       final trip = state.currentTrip ?? currentTrip;
-      final isVisa = (trip?.paymentMethod ?? 'Cash').toLowerCase() == 'visa';
+      final method = (clientSelectedMethod != null &&
+              clientSelectedMethod.isNotEmpty)
+          ? clientSelectedMethod
+          : (trip?.paymentMethod ?? 'Cash');
+      final isVisa = method.toLowerCase() == 'visa';
       return Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -127,13 +135,26 @@ Widget _electronicTile(
     buildWhen: (p, c) => _buildAndListenPaymentWhen(c),
     listener: (context, state) {
       if (state.status.isPaymentRequestSuccess) {
-        context.pushNamed(
+        final tripId = currentTrip?.tripId ?? tripState.tripId;
+        final paymentCubit = context.read<PaymentCubit>();
+        context
+            .pushNamed(
           Routes.customPaymentWebViewRoute,
           arguments: getCheckoutLink(
             clientSecret: state.paymentResponseModel!.clientSecret,
             publicKey: state.paymentResponseModel!.publicKey,
           ),
-        );
+        )
+            .then((result) {
+          // The webview returns Paymob's signed callback URL. Relay it so the backend
+          // validates and settles the payment (and notifies the captain). If we didn't
+          // get a callback, fall back to a status reconcile.
+          if (result is String && result.contains('success=')) {
+            paymentCubit.confirmCallback(result);
+          } else {
+            paymentCubit.syncPayment(tripId);
+          }
+        });
       } else if (state.status.isPaymentRequestFailure) {
         errorToast(context, 'حدث خطا', state.errorMessage);
       }

@@ -12,6 +12,14 @@ class PaymentCubit extends Cubit<PaymentState> {
   PaymentCubit(this._paymentRepo) : super(const PaymentState());
   final PaymentRepo _paymentRepo;
 
+  /// Relays Paymob's signed redirect callback to the backend to settle the payment.
+  Future<void> confirmCallback(String callbackUrl) =>
+      _paymentRepo.confirmCallback(callbackUrl);
+
+  /// Called after the checkout webview closes: nudges the backend to reconcile the
+  /// payment with Paymob so the captain is notified even if the webhook was missed.
+  Future<void> syncPayment(String tripId) => _paymentRepo.syncPayment(tripId);
+
   Future<void> paymentRequest({required PaymentRequestModel model}) async {
     emit(state.copyWith(status: PaymentStatus.paymentRequestLoading));
     try {

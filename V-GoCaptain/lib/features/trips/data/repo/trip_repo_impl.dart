@@ -27,6 +27,16 @@ class TripRepoImpl implements TripRepo {
   }
 
   @override
+  Future<void> syncPayment(String tripId) async {
+    try {
+      await _apiServices.get(EndPoint.paymentStatus(tripId));
+    } catch (_) {
+      // Best-effort: the reconcile is server-side; a failure here just means we
+      // fall back to whatever getMyTrips already knows.
+    }
+  }
+
+  @override
   Future<List<TripModel>> getPendingTrips() async {
     final response = await _apiServices.get(EndPoint.allPendingTrips);
     final list = response is List

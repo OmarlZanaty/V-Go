@@ -39,6 +39,12 @@ import '../widgets/start_trip_section.dart';
 import '../widgets/trip_duration_widget.dart';
 import '../../../../core/helpers/location_helper.dart';
 
+// TEMP(debug): when true, the client map auto-runs a simulated live-tracking
+// trip (Accepted → InProgress with a moving captain) so the camera-follow /
+// route-flip can be verified without a second captain device. Set back to
+// false (or delete) after verification.
+const bool kDebugTrackingSim = false;
+
 class ClientMapView extends StatefulWidget {
   const ClientMapView({this.currentTrip, super.key});
   final CurrentTripModel? currentTrip;
@@ -74,6 +80,11 @@ class _ClientMapViewState extends State<ClientMapView> {
   LatLng? _cameraTarget;
   bool _isLocationPermissionChecking = true;
   bool _isLocationPermissionGranted = false;
+  // Uber-style camera follow during an active trip. Auto-follow pauses for a few
+  // seconds after the rider drags/zooms by hand; `_programmaticCameraMove` lets
+  // us tell our own animations apart from those manual gestures.
+  DateTime? _manualPanUntil;
+  bool _programmaticCameraMove = false;
 
   @override
   void initState() {
@@ -117,6 +128,70 @@ class _ClientMapViewState extends State<ClientMapView> {
     _loadCustomMarker();
     _loadFakeScooterMarker();
     _checkInitialLocation();
+    if (kDebugTrackingSim) _scheduleTrackingSim();
+  }
+
+  // TEMP(debug): wait until we have a location + destination, then drive a fake
+  // Accepted→InProgress trip with a moving captain to verify live tracking.
+  void _scheduleTrackingSim() {
+    int tries = 0;
+    Timer.periodic(const Duration(milliseconds: 800), (t) {
+      tries++;
+      if (!mounted || tries > 30) {
+        t.cancel();
+        return;
+      }
+      final s = context.read<MapBloc>().state;
+      if (s.currentLocation != null) {
+        t.cancel();
+        _runTrackingSim();
+      }
+    });
+  }
+
+  // TEMP(debug): scripted trip used only for on-device verification.
+  Future<void> _runTrackingSim() async {
+    final mapBloc = context.read<MapBloc>();
+    final tripCubit = context.read<RealTimeTripCubit>();
+    final from = mapBloc.state.fromLocation ?? mapBloc.state.currentLocation;
+    if (from == null) return;
+    var to = mapBloc.state.toLocation;
+    if (to == null) {
+      // No destination chosen → synthesize one ~4 km NE so the trip can run.
+      to = LocationModel(
+        latitude: from.latitude + 0.035,
+        longitude: from.longitude + 0.025,
+      );
+      mapBloc.add(SelectLocationFromMap(location: to, isFrom: false));
+    }
+    setState(() => status = 2); // show the trip UI, not the search sheet
+
+    // Phase 1 — Accepted: captain approaches the pickup from ~2 km away.
+    tripCubit.updateTripStatus('Accepted');
+    final startLat = from.latitude - 0.018;
+    final startLng = from.longitude - 0.018;
+    for (var i = 0; i <= 6; i++) {
+      if (!mounted) return;
+      final t = i / 6;
+      tripCubit.debugInjectDriverLocation(
+        startLat + (from.latitude - startLat) * t,
+        startLng + (from.longitude - startLng) * t,
+      );
+      await Future.delayed(const Duration(milliseconds: 1600));
+    }
+
+    // Phase 2 — InProgress: captain drives from pickup to the destination.
+    if (!mounted) return;
+    tripCubit.updateTripStatus('InProgress');
+    for (var i = 0; i <= 8; i++) {
+      if (!mounted) return;
+      final t = i / 8;
+      tripCubit.debugInjectDriverLocation(
+        from.latitude + (to.latitude - from.latitude) * t,
+        from.longitude + (to.longitude - from.longitude) * t,
+      );
+      await Future.delayed(const Duration(milliseconds: 1600));
+    }
   }
 
   Future<void> _checkInitialLocation() async {
@@ -200,7 +275,10 @@ class _ClientMapViewState extends State<ClientMapView> {
 
   Set<Marker> _buildMarkers(MapState state) {
     final markers = <Marker>{};
-    if (state.fromLocation != null) {
+    final tripStatus = context.read<RealTimeTripCubit>().state.tripStatus;
+    // Once the ride is in progress the rider is in the car, so the pickup pin is
+    // just clutter — Uber shows only the moving car + the destination.
+    if (state.fromLocation != null && tripStatus != 'InProgress') {
       markers.add(
         Marker(
           markerId: const MarkerId('from'),
@@ -268,7 +346,6 @@ class _ClientMapViewState extends State<ClientMapView> {
       );
     }
 
-    final tripStatus = context.read<RealTimeTripCubit>().state.tripStatus;
     if (status != 0 && status != 1 && tripStatus == 'Pending') {
       for (var i = 0; i < state.fakeScooterLocations.length; i++) {
         final loc = state.fakeScooterLocations[i];
@@ -442,6 +519,80 @@ class _ClientMapViewState extends State<ClientMapView> {
     return points[midIndex];
   }
 
+  // True while the rider is manually inspecting the map (recently panned/zoomed).
+  bool get _autoFollowPaused =>
+      _manualPanUntil != null && DateTime.now().isBefore(_manualPanUntil!);
+
+  /// Keep the camera framed on what matters for the current ride stage, the way
+  /// Uber does: captain → pickup while he's on the way, captain → destination
+  /// once the ride is in progress. No-op outside an active ride, or (unless
+  /// [force]d, e.g. on a status change) while the rider is panning by hand.
+  Future<void> _followTripCamera(
+    String tripStatus, {
+    LocationModel? driverOverride,
+    bool force = false,
+  }) async {
+    if (controller == null) return;
+    if (!force && _autoFollowPaused) return;
+    if (force) _manualPanUntil = null;
+
+    final mapState = context.read<MapBloc>().state;
+    final driver = driverOverride ?? mapState.driverLocation;
+    final from = mapState.fromLocation;
+    final to = mapState.toLocation;
+
+    final List<LatLng> pts = [];
+    void add(LocationModel? l) {
+      if (l != null) pts.add(LatLng(l.latitude, l.longitude));
+    }
+
+    if (tripStatus == 'InProgress') {
+      // Follow the captain (the car the rider is in) toward the destination.
+      add(driver ?? mapState.currentLocation);
+      add(to);
+    } else if (tripStatus == 'Accepted' || tripStatus == 'Arrived') {
+      // Captain heading to the pickup point.
+      add(driver);
+      add(from);
+      // No captain fix yet → frame the planned pickup→destination route instead.
+      if (driver == null) add(to);
+    } else {
+      return;
+    }
+
+    // Include the live route geometry (or the planned route) for tighter framing
+    // so the whole path stays on screen, not just the two endpoints.
+    final route = mapState.routeDriverToPickup.isNotEmpty
+        ? mapState.routeDriverToPickup
+        : mapState.routePoints;
+    pts.addAll(route);
+
+    if (pts.isEmpty) return;
+
+    log(
+      'followTripCamera: status=$tripStatus pts=${pts.length} '
+      'driver=${driver != null} paused=$_autoFollowPaused force=$force',
+    );
+    _programmaticCameraMove = true;
+    try {
+      if (pts.length == 1) {
+        await controller!.animateCamera(
+          CameraUpdate.newLatLngZoom(pts.first, 16),
+        );
+      } else {
+        // Leave room so the route isn't hidden behind the bottom sheet.
+        final padding = MediaQuery.of(context).size.height * 0.20;
+        await controller!.animateCamera(
+          CameraUpdate.newLatLngBounds(_computeBounds(pts), padding),
+        );
+      }
+    } catch (e) {
+      log('followTripCamera failed: $e');
+    } finally {
+      _programmaticCameraMove = false;
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -472,14 +623,22 @@ class _ClientMapViewState extends State<ClientMapView> {
                               final target = tripState.tripStatus == 'InProgress'
                                   ? mapBloc.state.toLocation
                                   : mapBloc.state.fromLocation;
+                              final driverLoc = LocationModel(
+                                latitude: tripState.driverLat!,
+                                longitude: tripState.driverLng!,
+                              );
                               mapBloc.add(
                                 UpdateDriverLocation(
-                                  driverLocation: LocationModel(
-                                    latitude: tripState.driverLat!,
-                                    longitude: tripState.driverLng!,
-                                  ),
+                                  driverLocation: driverLoc,
                                   target: target,
                                 ),
+                              );
+                              // Re-frame the camera so the moving captain (and the
+                              // live route) stay on screen — the whole point of
+                              // live tracking. Respects a manual pan.
+                              _followTripCamera(
+                                tripState.tripStatus,
+                                driverOverride: driverLoc,
                               );
                             },
                             child: const SizedBox.shrink(),
@@ -508,6 +667,16 @@ class _ClientMapViewState extends State<ClientMapView> {
                                   isFrom: state.isFromFieldFocused,
                                 ),
                               );
+                            },
+                            onCameraMoveStarted: () {
+                              // A real drag/zoom (not one of our own animations)
+                              // pauses auto-follow for a few seconds so the rider
+                              // can look around without the camera yanking back.
+                              if (!_programmaticCameraMove) {
+                                _manualPanUntil = DateTime.now().add(
+                                  const Duration(seconds: 6),
+                                );
+                              }
                             },
                             onCameraMove: (pos) {
                               // Track the live centre for the pin picker.
@@ -653,6 +822,15 @@ class _ClientMapViewState extends State<ClientMapView> {
               if (dest != null && mapBloc.state.currentLocation != null) {
                 mapBloc.startEtaTracking(dest);
               }
+              // Flip the live route to the destination immediately (don't wait
+              // for the next captain GPS tick) and re-frame on car→drop-off.
+              final lastDriver = mapBloc.state.driverLocation;
+              if (dest != null && lastDriver != null) {
+                mapBloc.add(
+                  UpdateDriverLocation(driverLocation: lastDriver, target: dest),
+                );
+              }
+              _followTripCamera('InProgress', force: true);
               setState(() => this.status = 2);
               return;
             }
@@ -672,9 +850,11 @@ class _ClientMapViewState extends State<ClientMapView> {
               mapBloc.add(ClearFakeScooters());
             }
 
-            // لو حبيت: لما السائق يوصل (Arrived) ممكن نزود سلوك آخر
-            if (tripState.tripStatus == 'Arrived') {
-              // optional: stop or keep tracking depending UX
+            // Captain assigned / arrived: frame the captain→pickup route (falls
+            // back to the planned route until his first live GPS fix arrives).
+            if (tripState.tripStatus == 'Accepted' ||
+                tripState.tripStatus == 'Arrived') {
+              _followTripCamera(tripState.tripStatus, force: true);
             }
             if (tripState.status.isTripStartedForClientReceived) {
               setState(() => this.status = 2);
@@ -698,7 +878,8 @@ class _ClientMapViewState extends State<ClientMapView> {
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         paymentOptionsSection(context, tripState,
-                            currentTrip: ct),
+                            currentTrip: ct,
+                            clientSelectedMethod: _selectedPaymentMethod),
                         verticalSpace(10),
                         acceptedAssignDriverSection(context),
                       ],
@@ -1182,9 +1363,8 @@ class _ClientMapViewState extends State<ClientMapView> {
                             Expanded(
                               child: _payMethodChip(
                                 'Visa',
-                                'فيزا (قريباً)',
+                                'فيزا',
                                 Icons.credit_card,
-                                enabled: false,
                               ),
                             ),
                           ],
@@ -1543,6 +1723,7 @@ class _ClientMapViewState extends State<ClientMapView> {
             context,
             tripState,
             currentTrip: tripState.currentTrip ?? widget.currentTrip,
+            clientSelectedMethod: _selectedPaymentMethod,
           ),
           if (!isPaid) ...[
             verticalSpace(10),

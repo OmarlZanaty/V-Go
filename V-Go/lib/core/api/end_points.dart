@@ -71,4 +71,13 @@ abstract class EndPoint {
   // sale. Returns the same unified-checkout payload as createIntent. Capture/void
   // happen server-side on ride completion/cancellation.
   static const String initiatePreAuth = 'Payment/initiate-preauth';
+  // Fetching status also triggers a server-side reconcile with Paymob, settling a
+  // card payment whose webhook was missed and notifying the captain.
+  static String paymentStatus(String tripId) => 'Payment/status/$tripId';
+  // Relay Paymob's signed redirect callback so the backend settles the payment.
+  static const String confirmCallback = 'Payment/confirm-callback';
+  // Saved cards (card-on-file)
+  static const String savedCards = 'Payment/saved-cards';
+  static String deleteSavedCard(int id) => 'Payment/saved-cards/$id';
+  static const String addCard = 'Payment/add-card';
 }

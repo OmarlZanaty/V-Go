@@ -83,6 +83,7 @@ class TripService {
     //! live driver location during a trip
     _hubConnection.on('ReceiveDriverLocation', (args) {
       receiveDriverLocation?.call(args);
+      log('ReceiveDriverLocation received in Client: $args', name: 'TripService');
     });
 
     //! receiveCurrentTrip Listeners
@@ -196,9 +197,13 @@ class TripService {
   }
 
   Future<String> requestTrip(TripRequestModel tripRequest) async {
+    // A momentarily-down or not-yet-started socket (e.g. mid auto-reconnect, or
+    // right after login) shouldn't fail the request outright — (re)connect first.
+    // connect() is a no-op if already connected, and only throws the connection
+    // error if the server is genuinely unreachable.
     if (!_isConnected) {
-      log('Cannot request trip: Not connected to TripHub', name: 'TripService');
-      throw 'حدث خطاء اثناء الاتصال , حاول مره اخرى';
+      log('Request: socket down, (re)connecting first…', name: 'TripService');
+      await connect();
     }
 
     try {
@@ -221,6 +226,9 @@ class TripService {
       return tripId;
     } catch (e) {
       log('Error requesting trip: $e', name: 'TripService');
+      // Surface the server's business message (e.g. "you already have an active
+      // trip") instead of masking it; only generic-fallback for transport errors.
+      if (e is String) rethrow;
       throw 'حدث خطاء اثناء طلب الرحلة , حاول مره اخرى';
     }
   }

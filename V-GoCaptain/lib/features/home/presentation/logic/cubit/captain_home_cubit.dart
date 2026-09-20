@@ -29,6 +29,7 @@ class CaptainHomeCubit extends Cubit<CaptainHomeState> with WidgetsBindingObserv
       : super(const CaptainHomeState()) {
     _realtime.onTripOffer = _handleOffer;
     _realtime.onTripTaken = _handleTripTaken;
+    _realtime.onTripCancelled = _handleTripCancelled;
     _realtime.onConnectionLost = _handleConnectionLost;
     _realtime.onReconnected = _handleReconnected;
     _realtime.onPaymentUpdated = _handlePaymentUpdated;
@@ -51,6 +52,10 @@ class CaptainHomeCubit extends Cubit<CaptainHomeState> with WidgetsBindingObserv
     if (trip == null || state.activeTripPaid) return;
     if (showFeedback) emit(state.copyWith(isBusy: true, clearError: true));
     try {
+      // Trigger a server-side reconcile with Paymob first, so a card payment whose
+      // webhook never arrived gets settled before we read the trip list.
+      await _tripRepo.syncPayment(trip.tripId);
+      if (isClosed) return;
       final trips = await _tripRepo.getMyTrips();
       final match = trips.where((t) => t.tripId == trip.tripId).toList();
       final paid = match.isNotEmpty && match.first.isPaid;
@@ -212,6 +217,24 @@ class CaptainHomeCubit extends Cubit<CaptainHomeState> with WidgetsBindingObserv
     });
   }
 
+  /// Immediately push the captain's current location for the active trip so the
+  /// rider's map updates without waiting for the movement-filtered stream. Safe
+  /// to fire-and-forget; failures never disrupt the trip flow.
+  Future<void> _pushActiveTripLocation() async {
+    if (!state.hasActiveTrip) return;
+    try {
+      final pos = _lastPosition ?? await _location.currentPosition();
+      _lastPosition = pos;
+      await _realtime.updateDriverStatus(
+        isAvailable: false,
+        lat: pos.latitude,
+        lng: pos.longitude,
+      );
+    } catch (_) {
+      // Best-effort seed; the position stream will follow up on movement.
+    }
+  }
+
   void _handleOffer(Map<dynamic, dynamic> raw) {
     if (state.hasActiveTrip) return; // already serving a trip
     final offer = TripOfferModel.fromMap(raw);
@@ -223,6 +246,21 @@ class CaptainHomeCubit extends Cubit<CaptainHomeState> with WidgetsBindingObserv
     if (state.offer?.tripId == tripId) {
       emit(state.copyWith(
           clearOffer: true, error: 'تم قبول الرحلة من كابتن آخر'));
+    }
+  }
+
+  // Client cancelled the trip — clear whichever we hold for it (offer if not yet
+  // accepted, or the active ride if already accepted) so it doesn't "ghost".
+  void _handleTripCancelled(String tripId) {
+    if (isClosed) return;
+    if (state.offer?.tripId == tripId) {
+      emit(state.copyWith(
+          clearOffer: true, error: 'تم إلغاء الرحلة من قِبل العميل'));
+      return;
+    }
+    if (state.activeTrip?.tripId == tripId) {
+      emit(state.copyWith(error: 'تم إلغاء الرحلة من قِبل العميل'));
+      _finishTrip();
     }
   }
 
@@ -254,6 +292,7 @@ class CaptainHomeCubit extends Cubit<CaptainHomeState> with WidgetsBindingObserv
     emit(state.copyWith(isBusy: true, clearError: true));
     try {
       final pos = _lastPosition ?? await _location.currentPosition();
+      _lastPosition = pos;
       await _realtime.acceptTrip(
         tripId: offer.tripId,
         lat: pos.latitude,
@@ -265,6 +304,11 @@ class CaptainHomeCubit extends Cubit<CaptainHomeState> with WidgetsBindingObserv
         isBusy: false,
         clearOffer: true,
       ));
+      // Seed the rider's live tracking immediately. The position stream only
+      // emits after 15m of movement (distanceFilter), so without this push the
+      // captain marker wouldn't appear on the client until the captain moved.
+      // isAvailable:false makes the backend forward this to the trip's client.
+      unawaited(_pushActiveTripLocation());
     } catch (_) {
       emit(state.copyWith(isBusy: false, error: 'تعذّر قبول الرحلة'));
     }
@@ -288,9 +332,13 @@ class CaptainHomeCubit extends Cubit<CaptainHomeState> with WidgetsBindingObserv
         case TripStage.accepted:
           await _realtime.arrived(trip.tripId);
           emit(state.copyWith(stage: TripStage.arrived, isBusy: false));
+          unawaited(_pushActiveTripLocation());
         case TripStage.arrived:
           await _realtime.startTrip(trip.tripId);
           emit(state.copyWith(stage: TripStage.inProgress, isBusy: false));
+          // Trip just started → target flips to the destination; seed a location
+          // so the client's route/marker updates right away.
+          unawaited(_pushActiveTripLocation());
         case TripStage.inProgress:
           await _realtime.endTrip(trip.tripId);
           // Keep the trip active at the completed stage so the captain must

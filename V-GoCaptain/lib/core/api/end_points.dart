@@ -33,6 +33,10 @@ abstract class EndPoint {
   static String getTripsByUserId(String userId) => 'Trip/tripByUserId/$userId';
   static String getTripById(String tripId) => 'Trip/GetTripById/$tripId';
 
+  // Payment — fetching status also triggers a server-side reconcile with Paymob,
+  // settling a card payment whose webhook was missed.
+  static String paymentStatus(String tripId) => 'Payment/status/$tripId';
+
   // Notifications
   static const String getNotifications = 'Notification/GetAll';
 

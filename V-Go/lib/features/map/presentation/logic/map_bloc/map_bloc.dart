@@ -275,6 +275,11 @@ class MapBloc extends Bloc<MapEvent, MapState> {
 
   // --- live captain tracking ---
   DateTime? _lastDriverRouteCalcAt;
+  // The point the captain was last routed to. When it changes (pickup → drop-off
+  // the moment the ride starts) we bypass the throttle and recompute right away,
+  // so the live line flips to the destination instantly instead of lingering on
+  // the old captain→pickup route for up to a few seconds.
+  LocationModel? _lastDriverTarget;
 
   Future<void> _onUpdateDriverLocation(
     UpdateDriverLocation event,
@@ -284,15 +289,21 @@ class MapBloc extends Bloc<MapEvent, MapState> {
     emit(state.copyWith(driverLocation: event.driverLocation));
 
     // Recalculate the captain's live route to its target, throttled so we don't
-    // spam the Routes API on every GPS tick.
+    // spam the Routes API on every GPS tick — except the first calc after the
+    // target changes, which must run immediately.
     final target = event.target;
     if (target == null) return;
+    final targetChanged = _lastDriverTarget == null ||
+        _lastDriverTarget!.latitude != target.latitude ||
+        _lastDriverTarget!.longitude != target.longitude;
     final now = DateTime.now();
-    if (_lastDriverRouteCalcAt != null &&
+    if (!targetChanged &&
+        _lastDriverRouteCalcAt != null &&
         now.difference(_lastDriverRouteCalcAt!) < const Duration(seconds: 4)) {
       return;
     }
     _lastDriverRouteCalcAt = now;
+    _lastDriverTarget = target;
     try {
       final r = await mapRepo.getRoute(event.driverLocation, target);
       if (isClosed) return;
@@ -307,6 +318,7 @@ class MapBloc extends Bloc<MapEvent, MapState> {
     Emitter<MapState> emit,
   ) {
     _lastDriverRouteCalcAt = null;
+    _lastDriverTarget = null;
     emit(state.copyWith(clearDriverLocation: true, routeDriverToPickup: []));
   }
 

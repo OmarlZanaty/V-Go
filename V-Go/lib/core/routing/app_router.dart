@@ -60,6 +60,7 @@ import '../utils/model/current_trip_model.dart';
 import '../utils/model/dispatcher_chat_model.dart';
 import '../utils/model/user_model.dart';
 import '../utils/widgets/custom_payment_web_view.dart';
+import '../../features/client/presentation/views/saved_cards_view.dart';
 import 'routes.dart';
 
 class AppRouter {
@@ -379,6 +380,8 @@ class AppRouter {
             child: const DriverBottomNavBarView(),
           ),
         );
+      case Routes.savedCardsViewRoute:
+        return MaterialPageRoute(builder: (_) => const SavedCardsView());
       case Routes.expenseViewRoute:
         return MaterialPageRoute(
           builder: (_) => BlocProvider(

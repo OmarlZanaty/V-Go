@@ -60,7 +60,11 @@ dependencies:
   # Location & maps (driver core)
   geolocator: ^14.0.2
   google_maps_flutter: ^2.12.3
-  url_launcher: ^6.3.1          # launch Google Maps turn-by-turn navigation
+  url_launcher: ^6.3.1          # fallback: open external maps if in-app nav fails
+
+  # In-app turn-by-turn navigation (captain never leaves V-Go)
+  http: ^1.2.2                  # Google Routes API v2 calls
+  flutter_tts: ^4.2.3           # Arabic voice guidance (ar-EG)
 
   # Realtime (shared backend SignalR hubs)
   signalr_netcore: ^1.4.3

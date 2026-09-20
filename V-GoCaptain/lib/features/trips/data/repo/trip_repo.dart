@@ -6,4 +6,8 @@ abstract class TripRepo {
 
   /// Unassigned trips currently waiting for a driver (status == Pending).
   Future<List<TripModel>> getPendingTrips();
+
+  /// Asks the backend to reconcile this trip's card payment with Paymob (recovers
+  /// a missed webhook). Best-effort; errors are swallowed.
+  Future<void> syncPayment(String tripId);
 }

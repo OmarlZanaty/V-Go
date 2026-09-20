@@ -536,6 +536,17 @@ class RealTimeTripCubit extends Cubit<RealTimeTripState>
     emit(state.copyWith(tripPrice: price));
   }
 
+  // TEMP(debug): inject a simulated live captain location, exactly as if it had
+  // arrived from the server via ReceiveDriverLocation. Used to verify client
+  // live-tracking without a second (captain) device. Remove after verification.
+  void debugInjectDriverLocation(double lat, double lng) {
+    emit(state.copyWith(
+      status: RealTimeTripStatus.driverLocationReceived,
+      driverLat: lat,
+      driverLng: lng,
+    ));
+  }
+
   @override
   Future<void> close() {
     if (_lifecycleObserved) WidgetsBinding.instance.removeObserver(this);

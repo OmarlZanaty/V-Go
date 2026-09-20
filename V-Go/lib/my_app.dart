@@ -13,7 +13,9 @@ class MyApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return ScreenUtilInit(
-      designSize: const Size(375, 812),
+      // Larger reference than the 375×812 it was authored at, so flutter_screenutil
+      // scales the whole UI down ~18% — the design read as oversized/"zoomed in".
+      designSize: const Size(440, 952),
       minTextAdapt: true,
       builder: (context, child) {
         return _myMaterialApp();
