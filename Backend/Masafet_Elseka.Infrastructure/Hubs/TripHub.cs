@@ -892,15 +892,19 @@ namespace Masafet_Elseka.Infrastructure.Hubs
             var trip = await _unitOfWork.Trips.GetByIdAsync(tripId);
             if (trip == null)
                 return false;
-            return trip.Status == TripStatus.Accepted;
+            // A driver is assigned from Accepted until the ride starts — including
+            // Arrived, otherwise a cancel after "arrived" never reaches the captain.
+            return trip.Status == TripStatus.Accepted || trip.Status == TripStatus.Arrived;
         }
 
         private async Task NotifyDriverTripCancelled(string tripId, string userId)
         {
             var userTrip = await _context.UserTrips
                 .FirstOrDefaultAsync(ut => ut.TripId == tripId && ut.Role == UserTripRole.Driver);
+            if (userTrip == null)
+                return;
 
-            await _notificationService.SendNotificationToUserAsync(userTrip!.UserId,
+            await _notificationService.SendNotificationToUserAsync(userTrip.UserId,
                 "تم إلغاء الرحلة", "تم إلغاء الرحلة من قِبل العميل.");
 
             await Clients.Group(HubGroups.Driver(userTrip.UserId))
