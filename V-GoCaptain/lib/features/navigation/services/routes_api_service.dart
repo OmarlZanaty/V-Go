@@ -53,7 +53,11 @@ class RouteResult {
 /// into the Arabic retry banner.
 class RoutesApiException implements Exception {
   final String message;
-  RoutesApiException(this.message);
+
+  /// No response at all (offline / timeout) — retrying another travel mode
+  /// would just wait out a second timeout.
+  final bool network;
+  RoutesApiException(this.message, {this.network = false});
   @override
   String toString() => message;
 }
@@ -85,14 +89,23 @@ class RoutesApiService {
 
   /// Routes for scooters first (TWO_WHEELER takes the shortcuts cars can't,
   /// and is supported in Egypt), falling back to DRIVE if it fails.
+  ///
+  /// [heading] (degrees) is the captain's direction of travel: Google then
+  /// starts the route the way they're already going instead of asking for a
+  /// U-turn. [reroute] skips alternative routes so the answer comes back
+  /// faster while the captain is driving off the old line.
   Future<RouteResult> computeRoute({
     required LatLng origin,
     required LatLng destination,
+    double? heading,
+    bool reroute = false,
   }) async {
     try {
-      return await _computeRoute(origin, destination, 'TWO_WHEELER');
-    } on RoutesApiException {
-      return _computeRoute(origin, destination, 'DRIVE');
+      return await _computeRoute(
+          origin, destination, 'TWO_WHEELER', heading, reroute);
+    } on RoutesApiException catch (e) {
+      if (e.network) rethrow;
+      return _computeRoute(origin, destination, 'DRIVE', heading, reroute);
     }
   }
 
@@ -100,13 +113,15 @@ class RoutesApiService {
     LatLng origin,
     LatLng destination,
     String travelMode,
+    double? heading,
+    bool reroute,
   ) async {
     final body = {
-      'origin': _waypoint(origin),
+      'origin': _waypoint(origin, heading: heading),
       'destination': _waypoint(destination),
       'travelMode': travelMode,
       'routingPreference': 'TRAFFIC_AWARE',
-      'computeAlternativeRoutes': true,
+      'computeAlternativeRoutes': !reroute,
       'languageCode': 'ar',
       'regionCode': 'EG',
       'units': 'METRIC',
@@ -129,9 +144,9 @@ class RoutesApiService {
             },
             body: jsonEncode(body),
           )
-          .timeout(const Duration(seconds: 20));
+          .timeout(Duration(seconds: reroute ? 8 : 15));
     } catch (e) {
-      throw RoutesApiException('تعذر الاتصال بخدمة المسار');
+      throw RoutesApiException('تعذر الاتصال بخدمة المسار', network: true);
     }
 
     if (res.statusCode != 200) {
@@ -193,9 +208,10 @@ class RoutesApiService {
     return best;
   }
 
-  Map<String, dynamic> _waypoint(LatLng p) => {
+  Map<String, dynamic> _waypoint(LatLng p, {double? heading}) => {
         'location': {
           'latLng': {'latitude': p.latitude, 'longitude': p.longitude},
+          if (heading != null) 'heading': heading.round() % 360,
         },
       };
 

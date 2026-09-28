@@ -57,11 +57,59 @@ void main() {
     expect(upd.deviated, isFalse);
   });
 
-  test('one bad fix does not reroute, two in a row do', () {
+  test('a couple of bad fixes do not reroute, three in a row do', () {
     final engine = NavigationEngine()..setRoute(route());
     const far = LatLng(30.0400, 31.2340);
     expect(engine.update(far).deviated, isFalse);
+    expect(engine.update(far).deviated, isFalse);
     expect(engine.update(far).deviated, isTrue);
+  });
+
+  test('a parallel street ~60 m away counts as off route even on a poor fix',
+      () {
+    final engine = NavigationEngine()..setRoute(route());
+    // ~58 m east of the northbound leg; accuracy 45 m used to widen the
+    // tolerance to 67 m and keep the captain "on route" forever.
+    const parallel = LatLng(30.0410, 31.2306);
+    NavUpdate? upd;
+    for (var i = 0; i < 3; i++) {
+      upd = engine.update(parallel, accuracy: 45, speed: 8, heading: 0);
+    }
+    expect(upd!.deviated, isTrue);
+  });
+
+  test('driving against the route direction triggers a reroute', () {
+    final engine = NavigationEngine()..setRoute(route());
+    engine.update(lerp(a, b, 0.6), speed: 6, heading: 0);
+    NavUpdate? upd;
+    for (var i = 0; i < 3; i++) {
+      // Right on the line, but heading south (route runs north).
+      upd = engine.update(lerp(a, b, 0.5), speed: 6, heading: 180);
+    }
+    expect(upd!.snapped, isNull);
+    expect(upd.deviated, isTrue);
+  });
+
+  test('does not snap back onto a stretch already driven', () {
+    final engine = NavigationEngine()..setRoute(route());
+    engine.update(lerp(a, b, 0.5));
+    engine.update(lerp(b, c, 0.8)); // well past the corner
+    // A fix back on the first leg must not rewind progress.
+    final upd = engine.update(lerp(a, b, 0.3));
+    expect(upd.snapped, isNull);
+    expect(engine.progress, greaterThan(300));
+  });
+
+  test('pointAlong walks the route and faces along it', () {
+    final engine = NavigationEngine()..setRoute(route());
+    final first = engine.pointAlong(111)!;
+    expect(first.point.latitude, closeTo(30.0410, 1e-5));
+    expect(first.bearing, closeTo(0, 1));
+    final second = engine.pointAlong(300)!;
+    expect(second.point.latitude, closeTo(30.0420, 1e-6));
+    expect(second.bearing, closeTo(90, 1));
+    // Clamped to the ends.
+    expect(engine.pointAlong(99999)!.point.longitude, closeTo(31.2320, 1e-6));
   });
 
   test('voice cues fire once each on approach', () {

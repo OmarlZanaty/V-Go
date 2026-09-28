@@ -1,5 +1,7 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
+
 import 'package:geolocator/geolocator.dart';
 
 /// Thin wrapper around geolocator: permission handling, one-shot position,
@@ -46,14 +48,36 @@ class LocationService {
     }
   }
 
-  /// [distanceFilter] is 15 m for live-location pushes; turn-by-turn passes a
-  /// small value so the arrow moves smoothly instead of jumping.
-  Stream<Position> positionStream({int distanceFilter = 15}) {
-    return Geolocator.getPositionStream(
-      locationSettings: LocationSettings(
-        distanceFilter: distanceFilter,
+  /// [distanceFilter] is 15 m for idle live-location pushes; turn-by-turn
+  /// passes a small value so the arrow moves smoothly instead of jumping.
+  ///
+  /// Platform settings matter: with the generic [LocationSettings] Android
+  /// only delivers a fix every 5 s, which made the nav arrow lag and reroutes
+  /// take 10 s+. [interval] asks the fused provider for faster fixes.
+  Stream<Position> positionStream({
+    int distanceFilter = 15,
+    Duration interval = const Duration(seconds: 5),
+  }) {
+    final LocationSettings settings;
+    if (defaultTargetPlatform == TargetPlatform.android) {
+      settings = AndroidSettings(
         accuracy: LocationAccuracy.bestForNavigation,
-      ),
-    );
+        distanceFilter: distanceFilter,
+        intervalDuration: interval,
+      );
+    } else if (defaultTargetPlatform == TargetPlatform.iOS) {
+      settings = AppleSettings(
+        accuracy: LocationAccuracy.bestForNavigation,
+        distanceFilter: distanceFilter,
+        activityType: ActivityType.automotiveNavigation,
+        pauseLocationUpdatesAutomatically: false,
+      );
+    } else {
+      settings = LocationSettings(
+        accuracy: LocationAccuracy.bestForNavigation,
+        distanceFilter: distanceFilter,
+      );
+    }
+    return Geolocator.getPositionStream(locationSettings: settings);
   }
 }

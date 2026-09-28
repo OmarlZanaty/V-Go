@@ -300,9 +300,18 @@ class MapBloc extends Bloc<MapEvent, MapState> {
 
     // While the captain is still on the route we already have, just cut the
     // driven part off: the line stays put and the scooter moves along it,
-    // with no Routes API call per GPS tick.
-    final snap = GeoUtils.snapToPath(driver, _driverRouteFull);
-    if (!targetChanged && snap != null && snap.distance <= 40) {
+    // with no Routes API call per GPS tick. Only the part still ahead is
+    // searched (plus a couple of vertices of jitter): matching against the
+    // whole line let a captain who turned back or took a nearby street keep
+    // "fitting" the old route, so it was never recalculated.
+    final snap = GeoUtils.snapToPath(
+      driver,
+      _driverRouteFull,
+      from: max(0, _driverSegment - 2),
+    );
+    if (!targetChanged && snap != null && snap.distance <= 30) {
+      _driverSegment = snap.segment;
+      _driverOffRouteCount = 0;
       final ahead = [snap.point, ..._driverRouteFull.skip(snap.segment + 1)];
       final meters = _pathMeters(ahead);
       emit(
@@ -319,22 +328,40 @@ class MapBloc extends Bloc<MapEvent, MapState> {
     // Move the captain marker immediately on every update.
     emit(state.copyWith(driverLocation: event.driverLocation));
 
-    // New target, or the captain left the line: fetch a fresh route. Throttled
-    // so a captain driving off-route doesn't spam the Routes API — except the
-    // first calc after the target changes, which must run immediately.
+    // New target, or the captain left the line: fetch a fresh route. Needs
+    // two off-route updates in a row (one GPS jump shouldn't redraw), and is
+    // throttled so a captain driving off-route doesn't spam the API — except
+    // the first calc after the target changes, which must run immediately.
     if (target == null) return;
+    if (!targetChanged && _driverRouteFull.isNotEmpty) {
+      _driverOffRouteCount++;
+      if (_driverOffRouteCount < 2) return;
+    }
     final now = DateTime.now();
     if (!targetChanged &&
-        _lastDriverRouteCalcAt != null &&
-        now.difference(_lastDriverRouteCalcAt!) < const Duration(seconds: 4)) {
+        (_driverRouteInFlight ||
+            (_lastDriverRouteCalcAt != null &&
+                now.difference(_lastDriverRouteCalcAt!) <
+                    const Duration(seconds: 3)))) {
       return;
     }
     _lastDriverRouteCalcAt = now;
     _lastDriverTarget = target;
+    _driverRouteInFlight = true;
     try {
       final r = await mapRepo.getRoute(event.driverLocation, target);
       if (isClosed) return;
+      // The target moved on (ride started) while this was in flight — a newer
+      // request owns the line now.
+      final current = _lastDriverTarget;
+      if (current == null ||
+          current.latitude != target.latitude ||
+          current.longitude != target.longitude) {
+        return;
+      }
       _driverRouteFull = r.points;
+      _driverSegment = 0;
+      _driverOffRouteCount = 0;
       _driverRouteMeters = r.distanceKm * 1000;
       _driverRouteSeconds = r.durationSeconds;
       emit(
@@ -346,8 +373,15 @@ class MapBloc extends Bloc<MapEvent, MapState> {
       );
     } catch (e) {
       log('driver route calc failed: $e');
+    } finally {
+      _driverRouteInFlight = false;
     }
   }
+
+  // Progress along [_driverRouteFull] and off-route bookkeeping.
+  int _driverSegment = 0;
+  int _driverOffRouteCount = 0;
+  bool _driverRouteInFlight = false;
 
   // Full captain route from the last Routes API call; the state holds only the
   // part still ahead of the captain.
@@ -379,6 +413,8 @@ class MapBloc extends Bloc<MapEvent, MapState> {
     _driverRouteFull = const [];
     _driverRouteMeters = 0;
     _driverRouteSeconds = 0;
+    _driverSegment = 0;
+    _driverOffRouteCount = 0;
     emit(state.copyWith(clearDriverLocation: true, routeDriverToPickup: []));
   }
 

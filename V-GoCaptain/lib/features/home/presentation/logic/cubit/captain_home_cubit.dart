@@ -218,11 +218,24 @@ class CaptainHomeCubit extends Cubit<CaptainHomeState> with WidgetsBindingObserv
     ));
   }
 
+  DateTime? _lastPushAt;
+
   void _startLocationStream() {
     _positionSub?.cancel();
-    _positionSub = _location.positionStream().listen((pos) {
+    // Fast fixes so the rider sees the captain move smoothly during a trip;
+    // pushes are throttled below so idle captains don't flood the server.
+    _positionSub = _location
+        .positionStream(distanceFilter: 3, interval: const Duration(seconds: 1))
+        .listen((pos) {
       _lastPosition = pos;
       if (!isClosed) emit(state.copyWith(position: pos)); // keep the map following
+      final now = DateTime.now();
+      final minGap = state.hasActiveTrip
+          ? const Duration(milliseconds: 1500)
+          : const Duration(seconds: 10);
+      final last = _lastPushAt;
+      if (last != null && now.difference(last) < minGap) return;
+      _lastPushAt = now;
       // Fire-and-forget but never let a failed push crash the stream.
       unawaited(_realtime
           .updateDriverStatus(

@@ -76,6 +76,9 @@ namespace Masafet_Elseka.Infrastructure.Hubs
         }
 
 
+        private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, DateTime> _lastDbLocationWrite = new();
+        private static readonly TimeSpan DbLocationWriteInterval = TimeSpan.FromSeconds(10);
+
         //[Authorize(Roles = "Driver")]
         public async Task UpdateDriverStatus(DriverStatusDTO status)
         {
@@ -106,7 +109,16 @@ namespace Masafet_Elseka.Infrastructure.Hubs
             await _driverService.UpdateAvailability(driverId, status.IsAvailable);
             if(status.Latitude.HasValue && status.Longitude.HasValue)
             {
-                await _driverService.UpdateLocation(driverId, status.Latitude.Value, status.Longitude.Value);
+                // The app now pushes every ~1.5 s during a trip for smooth rider
+                // tracking; the live position lives in the cache, so only persist
+                // it to the DB every few seconds.
+                var nowUtc = DateTime.UtcNow;
+                if (!_lastDbLocationWrite.TryGetValue(driverId, out var lastWrite)
+                    || nowUtc - lastWrite > DbLocationWriteInterval)
+                {
+                    _lastDbLocationWrite[driverId] = nowUtc;
+                    await _driverService.UpdateLocation(driverId, status.Latitude.Value, status.Longitude.Value);
+                }
 
                 // While serving a trip, forward the live location to that trip's
                 // rider so the client map can track the captain in real time.

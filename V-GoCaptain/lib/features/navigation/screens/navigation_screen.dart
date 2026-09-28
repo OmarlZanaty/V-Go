@@ -74,19 +74,25 @@ class _NavigationScreenState extends State<NavigationScreen> {
   LatLng _captain = const LatLng(0, 0); // raw GPS fix
   double _speed = 0; // m/s
 
-  // What the map shows. The arrow glides from fix to fix (snapped onto the
-  // route line) and its heading eases toward the direction of travel, so the
-  // map never jumps or spins when GPS heading is noisy.
+  // What the map shows. Between GPS fixes the arrow keeps moving along the
+  // route at the captain's speed (dead reckoning), so it sits where the
+  // captain is NOW instead of trailing the last fix by a second or more; the
+  // shown position then eases toward that prediction so a new fix never
+  // makes it jump. Heading eases the same way, so the map never spins.
   LatLng _shown = const LatLng(0, 0);
   double _shownHeading = 0;
   double _targetHeading = 0;
   double _shownZoom = 17.5;
-  LatLng _glideFrom = const LatLng(0, 0);
-  LatLng _glideTo = const LatLng(0, 0);
-  DateTime _glideStart = DateTime.now();
-  Duration _glideDuration = Duration.zero;
   Timer? _glideTimer;
   DateTime? _prevFixAt;
+
+  double? _fixProgress; // route progress at the last on-route fix
+  DateTime _fixAt = DateTime.now();
+  double _fixSpeed = 0;
+  double _gpsHeading = -1; // GPS course, <0 when unknown
+
+  /// Longest we extrapolate past the last fix before waiting for a new one.
+  static const double _maxPredictSeconds = 1.5;
 
   /// Camera follows the captain until they pan the map; the recenter button
   /// turns it back on.
@@ -134,25 +140,39 @@ class _NavigationScreenState extends State<NavigationScreen> {
     _startLocationStream();
     await _loadRoute(from: widget.origin);
     // Re-paint periodically so the "searching for GPS" banner appears if fixes stop.
+    // (Only rebuilds when the stale state actually flips.)
+    var wasStale = false;
     _gpsWatchdog = Timer.periodic(const Duration(seconds: 3), (_) {
-      if (mounted) setState(() {});
+      if (!mounted || _gpsStale == wasStale) return;
+      wasStale = _gpsStale;
+      setState(() {});
     });
   }
 
   // ---- Route loading & rerouting -------------------------------------------
 
-  Future<void> _loadRoute({required LatLng from}) async {
+  /// [reroute] keeps the current instructions on screen (no loading banner,
+  /// no "starting" announcement) while the new route is fetched.
+  Future<void> _loadRoute({
+    required LatLng from,
+    double? heading,
+    bool reroute = false,
+  }) async {
     setState(() {
-      _loading = true;
+      if (!reroute) _loading = true;
       _error = null;
     });
     try {
       final result = await _routes.computeRoute(
         origin: from,
         destination: widget.destination,
+        heading: heading,
+        reroute: reroute,
       );
+      if (!mounted) return;
       _engine.setRoute(result);
-      final upd = _engine.update(_captain);
+      // Measure from where the captain is now, not where the request started.
+      final upd = _engine.update(_captain, speed: _speed);
       setState(() {
         _routePoints = result.polyline;
         _update = upd;
@@ -160,12 +180,15 @@ class _NavigationScreenState extends State<NavigationScreen> {
         _offlineWarning = false;
       });
       // Face the way the route starts right away, before the captain moves.
-      _placeArrow(upd, const Duration(milliseconds: 600));
+      _placeArrow(upd);
       _tts.resetDedupe();
-      _tts.speak(widget.isPickup
-          ? 'بدء التوجه إلى الراكب'
-          : 'بدء التوجه إلى الوجهة');
+      if (!reroute) {
+        _tts.speak(widget.isPickup
+            ? 'بدء التوجه إلى الراكب'
+            : 'بدء التوجه إلى الوجهة');
+      }
     } catch (e) {
+      if (!mounted) return;
       // Keep the last route on screen if we have one (transient network) and
       // just warn; otherwise show the full retry state.
       if (_routePoints.isNotEmpty) {
@@ -189,14 +212,19 @@ class _NavigationScreenState extends State<NavigationScreen> {
     // Cool-down: while offline every fix is "off route"; don't nag each time.
     final now = DateTime.now();
     if (_lastRerouteAt != null &&
-        now.difference(_lastRerouteAt!) < const Duration(seconds: 8)) {
+        now.difference(_lastRerouteAt!) < const Duration(seconds: 4)) {
       return;
     }
     _lastRerouteAt = now;
-    _rerouting = true;
+    setState(() => _rerouting = true);
     _tts.speak('جارٍ إعادة حساب المسار');
-    await _loadRoute(from: _captain);
-    _rerouting = false;
+    // Pass the direction of travel so the new route doesn't start with a U-turn.
+    await _loadRoute(
+      from: _captain,
+      heading: _speed > 2.5 && _gpsHeading >= 0 ? _gpsHeading : null,
+      reroute: true,
+    );
+    if (mounted) setState(() => _rerouting = false);
   }
 
   // ---- Live location --------------------------------------------------------
@@ -209,8 +237,9 @@ class _NavigationScreenState extends State<NavigationScreen> {
       }
       return;
     }
-    _posSub =
-        _location.positionStream(distanceFilter: 2).listen(_onPosition);
+    _posSub = _location
+        .positionStream(distanceFilter: 1, interval: const Duration(seconds: 1))
+        .listen(_onPosition);
   }
 
   void _onPosition(Position pos) {
@@ -221,21 +250,17 @@ class _NavigationScreenState extends State<NavigationScreen> {
         now.difference(_prevFixAt!) < const Duration(seconds: 5);
     if (pos.accuracy > 50 && recentGoodFix) return;
 
-    final sincePrev = _prevFixAt == null
-        ? const Duration(seconds: 1)
-        : now.difference(_prevFixAt!);
     _prevFixAt = now;
     _lastFix = now;
     _captain = LatLng(pos.latitude, pos.longitude);
     _speed = pos.speed.isFinite && pos.speed > 0 ? pos.speed : 0;
+    _gpsHeading = pos.heading.isFinite && pos.heading >= 0 ? pos.heading : -1;
 
-    final upd =
-        _engine.update(_captain, accuracy: pos.accuracy, speed: _speed);
+    final upd = _engine.update(_captain,
+        accuracy: pos.accuracy, speed: _speed, heading: _gpsHeading);
     setState(() => _update = upd);
 
-    // Glide over roughly the gap between fixes so the arrow moves continuously.
-    final ms = sincePrev.inMilliseconds.clamp(300, 1500);
-    _placeArrow(upd, Duration(milliseconds: ms), gpsHeading: pos.heading);
+    _placeArrow(upd);
 
     _handleVoice(upd);
 
@@ -288,43 +313,57 @@ class _NavigationScreenState extends State<NavigationScreen> {
 
   // ---- Arrow & camera -------------------------------------------------------
 
-  /// Start gliding the arrow to the latest position — snapped onto the route
-  /// line while the captain is on it. Heading comes from the route itself when
+  /// A new fix arrived: remember where it put the captain on the route so the
+  /// tick can extrapolate from it. Heading comes from the route itself while
   /// on it (stable, ignores how the phone is held), else from GPS course once
   /// really moving.
-  void _placeArrow(NavUpdate upd, Duration duration, {double? gpsHeading}) {
-    if (upd.routeBearing != null) {
-      _targetHeading = upd.routeBearing!;
-    } else if (gpsHeading != null && gpsHeading.isFinite && _speed > 2.5) {
-      _targetHeading = gpsHeading;
+  void _placeArrow(NavUpdate upd) {
+    _fixAt = DateTime.now();
+    _fixSpeed = _speed;
+    _fixProgress = upd.snapped != null ? _engine.progress : null;
+    if (upd.snapped == null && _gpsHeading >= 0 && _speed > 2.5) {
+      _targetHeading = _gpsHeading;
     }
-
-    _glideFrom = _shown;
-    _glideTo = upd.snapped ?? _captain;
-    _glideStart = DateTime.now();
-    _glideDuration = duration;
-    // ~20 fps: smooth enough for driving, light on low-end phones.
+    // ~30 fps: smooth for driving, still light on low-end phones.
     _glideTimer ??=
-        Timer.periodic(const Duration(milliseconds: 50), (_) => _glideTick());
+        Timer.periodic(const Duration(milliseconds: 33), (_) => _glideTick());
   }
 
   void _glideTick() {
     if (!mounted) return;
-    final elapsed = DateTime.now().difference(_glideStart).inMilliseconds;
-    final total = _glideDuration.inMilliseconds;
-    final t = total <= 0 ? 1.0 : (elapsed / total).clamp(0.0, 1.0);
+    final sinceFix =
+        DateTime.now().difference(_fixAt).inMilliseconds / 1000.0;
 
-    _shown = LatLng(
-      _glideFrom.latitude + (_glideTo.latitude - _glideFrom.latitude) * t,
-      _glideFrom.longitude + (_glideTo.longitude - _glideFrom.longitude) * t,
-    );
+    // Where the captain should be right now.
+    LatLng target = _captain;
+    final base = _fixProgress;
+    if (base != null) {
+      final ahead = _fixSpeed > 0.8
+          ? _fixSpeed * math.min(sinceFix, _maxPredictSeconds)
+          : 0.0;
+      final p = _engine.pointAlong(base + ahead);
+      if (p != null) {
+        target = p.point;
+        _targetHeading = p.bearing;
+      }
+    }
+
+    // Ease toward it; a big jump (reroute, GPS reacquired) snaps instead.
+    if (_distance(_shown, target) > 150) {
+      _shown = target;
+    } else {
+      _shown = LatLng(
+        _shown.latitude + (target.latitude - _shown.latitude) * 0.3,
+        _shown.longitude + (target.longitude - _shown.longitude) * 0.3,
+      );
+    }
     final turn = _angleDiff(_shownHeading, _targetHeading);
     _shownHeading = (_shownHeading + turn * 0.2 + 360) % 360;
     final zoomGap = _targetZoom() - _shownZoom;
-    _shownZoom += zoomGap * 0.1;
+    _shownZoom += zoomGap * 0.08;
 
     // Rebuilding the whole screen (and the map widget with its route lines)
-    // 20×/s is what made the arrow stutter on mid/low-end phones. While
+    // every tick is what made the arrow stutter on mid/low-end phones. While
     // following, the arrow sits still on screen and only the camera moves;
     // the screen rebuilds only when the captain has panned away and the arrow
     // is a real marker.
@@ -335,10 +374,25 @@ class _NavigationScreenState extends State<NavigationScreen> {
       setState(() {});
     }
 
-    if (t >= 1 && turn.abs() < 0.5 && zoomGap.abs() < 0.02) {
+    // Park the timer once everything has settled and nothing is moving.
+    final predicting = _fixSpeed > 0.8 && sinceFix < _maxPredictSeconds;
+    if (!predicting &&
+        _distance(_shown, target) < 0.3 &&
+        turn.abs() < 0.5 &&
+        zoomGap.abs() < 0.02) {
       _glideTimer?.cancel();
       _glideTimer = null;
     }
+  }
+
+  /// Flat-earth distance in meters — plenty for the short gaps compared here.
+  double _distance(LatLng a, LatLng b) {
+    const mPerDeg = 111320.0;
+    final dy = (a.latitude - b.latitude) * mPerDeg;
+    final dx = (a.longitude - b.longitude) *
+        mPerDeg *
+        math.cos(a.latitude * math.pi / 180);
+    return math.sqrt(dx * dx + dy * dy);
   }
 
   /// Signed shortest turn from [from] to [to], in -180..180 degrees.
@@ -638,11 +692,13 @@ class _NavigationScreenState extends State<NavigationScreen> {
     };
   }
 
-  /// The part of the route still ahead of the captain (cached per fix; the
-  /// map rebuilds ~20×/s while the arrow glides).
+  /// The part of the route still ahead of the captain. Cached per route
+  /// segment, not per fix: a new list every fix re-sent the whole polyline to
+  /// the map plugin each second for no visible gain (the arrow covers the
+  /// short gap back to the last vertex).
   List<LatLng> get _routeAhead {
     final upd = _update;
-    final key = (_routePoints, upd?.segment, upd?.snapped);
+    final key = (_routePoints, upd?.segment, upd?.snapped == null);
     if (key == _routeAheadKey) return _routeAheadCache;
     _routeAheadKey = key;
     final snapped = upd?.snapped;
@@ -764,6 +820,8 @@ class _NavigationScreenState extends State<NavigationScreen> {
                     _loadingBanner()
                   else
                     InstructionBanner(update: _update),
+                  if (_rerouting)
+                    _warningBanner('جارٍ إعادة حساب المسار...'),
                   if (_offlineWarning) _warningBanner(
                       'لا يوجد اتصال — يتم استخدام آخر مسار معروف'),
                   if (_gpsStale && _error == null)

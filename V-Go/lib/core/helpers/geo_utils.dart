@@ -31,10 +31,11 @@ class GeoUtils {
   }
 
   /// Closest point on [path] to [p], or null for a path under 2 points.
-  static PathSnap? snapToPath(LatLng p, List<LatLng> path) {
+  /// [from] skips segments before that vertex index (already driven).
+  static PathSnap? snapToPath(LatLng p, List<LatLng> path, {int from = 0}) {
     if (path.length < 2) return null;
     PathSnap? best;
-    for (var i = 0; i < path.length - 1; i++) {
+    for (var i = math.max(0, from); i < path.length - 1; i++) {
       final a = path[i], b = path[i + 1];
       // Local flat projection around `a` — fine at city scale.
       final k = math.cos(_rad(a.latitude));

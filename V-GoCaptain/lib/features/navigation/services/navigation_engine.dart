@@ -74,17 +74,27 @@ class NavUpdate {
 /// that begins beyond the captain's progress.
 class NavigationEngine {
   NavigationEngine({
-    this.deviationThresholdMeters = 40,
+    this.deviationThresholdMeters = 30,
     this.arrivalThresholdMeters = 30,
-    this.offRouteFixesToReroute = 2,
+    this.offRouteFixesToReroute = 3,
   });
 
   final double deviationThresholdMeters;
   final double arrivalThresholdMeters;
 
   /// Consecutive off-route fixes needed before rerouting, so one GPS jump
-  /// (tall buildings, under a bridge) doesn't throw the route away.
+  /// (tall buildings, under a bridge) doesn't throw the route away. Fixes
+  /// arrive ~1/s, so 3 means a reroute starts ~3 s after leaving the route.
   final int offRouteFixesToReroute;
+
+  /// Heading gap (degrees) between GPS course and the route that counts as
+  /// driving the wrong way — e.g. a U-turn or a road that runs right next to
+  /// the route, where distance alone can't tell the two apart.
+  static const double _wrongWayDegrees = 100;
+
+  /// Extra tolerance is capped here: a looser limit let a parallel street
+  /// 50–80 m away count as "on route", so the route never recalculated.
+  static const double _maxToleranceMeters = 50;
 
   /// How far ahead of the current position to look when snapping, so a road
   /// that passes near itself (U-turn, flyover) doesn't pull the arrow back.
@@ -105,6 +115,38 @@ class NavigationEngine {
 
   int get stepIndex => _maneuverIndex;
   RouteResult? get route => _route;
+
+  /// Meters travelled along the route at the last on-route fix.
+  double get progress => _progress;
+
+  /// Point and direction of travel [distance] meters along the route —
+  /// lets the screen extrapolate the arrow between GPS fixes.
+  ({LatLng point, double bearing})? pointAlong(double distance) {
+    final path = _route?.polyline;
+    if (path == null || path.length < 2) return null;
+    final d = distance.clamp(0.0, _vertexAt.last);
+    // Last vertex at or before d.
+    var lo = 0, hi = _vertexAt.length - 1;
+    while (lo < hi) {
+      final mid = (lo + hi + 1) >> 1;
+      if (_vertexAt[mid] <= d) {
+        lo = mid;
+      } else {
+        hi = mid - 1;
+      }
+    }
+    final i = math.min(lo, path.length - 2);
+    final segLen = _vertexAt[i + 1] - _vertexAt[i];
+    final t = segLen <= 0 ? 0.0 : ((d - _vertexAt[i]) / segLen).clamp(0.0, 1.0);
+    final a = path[i], b = path[i + 1];
+    final point = LatLng(
+      a.latitude + (b.latitude - a.latitude) * t,
+      a.longitude + (b.longitude - a.longitude) * t,
+    );
+    final bearing = DistanceHelper.bearingAlongPath(
+        path, PathSnap(point: point, segment: i, distance: 0));
+    return (point: point, bearing: bearing);
+  }
 
   /// Load (or replace, after a reroute) the active route. Resets progress.
   void setRoute(RouteResult route) {
@@ -144,7 +186,13 @@ class NavigationEngine {
   /// Process a new captain position and emit the render snapshot.
   /// [accuracy] (meters) widens the off-route tolerance on a poor fix;
   /// [speed] (m/s) moves voice cues earlier when going fast.
-  NavUpdate update(LatLng captain, {double accuracy = 0, double speed = 0}) {
+  /// [heading] is the GPS course (degrees, <0 when unknown).
+  NavUpdate update(
+    LatLng captain, {
+    double accuracy = 0,
+    double speed = 0,
+    double heading = -1,
+  }) {
     final route = _route;
     if (route == null || route.polyline.length < 2 || route.steps.isEmpty) {
       return NavUpdate.empty;
@@ -153,22 +201,38 @@ class NavigationEngine {
     final total = _vertexAt.last;
 
     final tolerance = math.min(
-        80.0, math.max(deviationThresholdMeters, accuracy * 1.5));
+        _maxToleranceMeters, math.max(deviationThresholdMeters, accuracy * 1.2));
 
-    // Snap near where we were first; search the whole line only if that
-    // fails (rejoining after a detour, or a big GPS jump).
+    // Snap near where we were first. If that fails, only look FURTHER along
+    // the route (rejoining after a short detour) and with a tighter limit —
+    // searching the whole line let the arrow snap back onto a stretch
+    // already driven or onto a nearby street, so no reroute ever happened.
     var snap = DistanceHelper.snapToPath(captain, path,
         from: math.max(0, _segment - 2), to: _windowEnd());
-    if (snap == null || snap.distance > tolerance) {
-      snap = DistanceHelper.snapToPath(captain, path);
+    // GPS jitter can put a fix a few meters behind; more than that means the
+    // captain turned back, which must not rewind progress.
+    if (snap != null && _progressAt(snap) < _progress - _maxBacktrackMeters) {
+      snap = null;
     }
-    final onRoute = snap != null && snap.distance <= tolerance;
+    if (snap == null || snap.distance > tolerance) {
+      final ahead = DistanceHelper.snapToPath(captain, path, from: _segment);
+      snap = ahead != null && ahead.distance <= math.min(tolerance, 25.0)
+          ? ahead
+          : null;
+    }
+    var onRoute = snap != null && snap.distance <= tolerance;
+
+    // Moving clearly against the route's direction = wrong way / wrong road.
+    if (onRoute && speed > 3 && heading >= 0) {
+      final routeDir = DistanceHelper.bearingAlongPath(path, snap);
+      final gap = ((heading - routeDir + 540) % 360 - 180).abs();
+      if (gap > _wrongWayDegrees) onRoute = false;
+    }
 
     if (onRoute) {
       _offRouteCount = 0;
-      _segment = snap.segment;
-      _progress = _vertexAt[snap.segment] +
-          DistanceHelper.haversine(path[snap.segment], snap.point);
+      _segment = snap!.segment;
+      _progress = _progressAt(snap);
     } else {
       _offRouteCount++;
     }
@@ -224,12 +288,18 @@ class NavigationEngine {
       arrived: arrived,
       cue: _computeCue(distToManeuver, speed, arrived),
       stepIndex: _maneuverIndex,
-      snapped: onRoute ? snap.point : null,
+      snapped: onRoute ? snap!.point : null,
       routeBearing:
-          onRoute ? DistanceHelper.bearingAlongPath(path, snap) : null,
+          onRoute ? DistanceHelper.bearingAlongPath(path, snap!) : null,
       segment: _segment,
     );
   }
+
+  static const double _maxBacktrackMeters = 30;
+
+  double _progressAt(PathSnap snap) =>
+      _vertexAt[snap.segment] +
+      DistanceHelper.haversine(_route!.polyline[snap.segment], snap.point);
 
   /// Last segment index within [_snapWindowMeters] ahead of the captain.
   int _windowEnd() {
