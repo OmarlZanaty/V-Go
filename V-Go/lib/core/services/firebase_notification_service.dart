@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:developer';
 
 import 'package:firebase_core/firebase_core.dart';
@@ -69,9 +70,16 @@ class FirebaseNotificationService {
     FirebaseMessaging.onMessageOpenedApp.listen(_handleBackgroundMessage);
   }
 
+  /// Fires on every push while the app is alive. Trip pushes (accepted,
+  /// arrived, started, ended…) arrive even when the live socket silently died,
+  /// so listeners use this to re-sync the current trip right away.
+  static final StreamController<void> pushReceived =
+      StreamController<void>.broadcast();
+
   /// Handle foreground messages.
   void _handleForegroundMessage(RemoteMessage message) {
     log('Message data: ${message.data}');
+    pushReceived.add(null);
 
     if (message.notification?.title != null &&
         message.notification?.title != 'رسالة جديدة') {
@@ -85,6 +93,7 @@ class FirebaseNotificationService {
   /// Handle background messages when the app is opened from a notification.
   void _handleBackgroundMessage(RemoteMessage message) {
     log('Received background message: ${message.notification?.title}');
+    pushReceived.add(null);
     // Handle navigation or other actions based on the message data
     _navigateToScreen(message);
   }

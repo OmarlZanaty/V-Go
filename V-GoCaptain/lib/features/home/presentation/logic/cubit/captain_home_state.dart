@@ -29,6 +29,11 @@ class CaptainHomeState extends Equatable {
   /// first GPS fix is available.
   final Position? position;
 
+  /// Rider's live GPS while heading to the pickup (null until the client app
+  /// reports it). Can differ from the trip's pickup pin.
+  final double? clientLat;
+  final double? clientLng;
+
   const CaptainHomeState({
     this.connection = CaptainConnection.offline,
     this.offer,
@@ -38,10 +43,13 @@ class CaptainHomeState extends Equatable {
     this.activeTripPaid = false,
     this.error,
     this.position,
+    this.clientLat,
+    this.clientLng,
   });
 
   bool get isOnline => connection == CaptainConnection.online;
   bool get hasActiveTrip => activeTrip != null;
+  bool get hasClientLocation => clientLat != null && clientLng != null;
 
   CaptainHomeState copyWith({
     CaptainConnection? connection,
@@ -55,7 +63,12 @@ class CaptainHomeState extends Equatable {
     String? error,
     bool clearError = false,
     Position? position,
+    double? clientLat,
+    double? clientLng,
+    bool clearClientLocation = false,
   }) {
+    // The rider's live location only matters for the current pickup.
+    final dropClient = clearClientLocation || clearActiveTrip;
     return CaptainHomeState(
       connection: connection ?? this.connection,
       offer: clearOffer ? null : (offer ?? this.offer),
@@ -65,6 +78,8 @@ class CaptainHomeState extends Equatable {
       activeTripPaid: clearActiveTrip ? false : (activeTripPaid ?? this.activeTripPaid),
       error: clearError ? null : error,
       position: position ?? this.position,
+      clientLat: dropClient ? null : (clientLat ?? this.clientLat),
+      clientLng: dropClient ? null : (clientLng ?? this.clientLng),
     );
   }
 
@@ -79,5 +94,7 @@ class CaptainHomeState extends Equatable {
         error,
         position?.latitude,
         position?.longitude,
+        clientLat,
+        clientLng,
       ];
 }

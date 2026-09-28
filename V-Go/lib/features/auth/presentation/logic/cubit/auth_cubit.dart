@@ -14,6 +14,7 @@ import '../../../data/model/phone_login_response_model.dart';
 import '../../../data/model/register_request_model.dart';
 import '../../../data/model/reset_password_request_model.dart';
 import '../../../data/repo/auth_repo.dart';
+import '../../../../../core/services/device_token_sync.dart';
 
 part 'auth_state.dart';
 
@@ -32,6 +33,7 @@ class AuthCubit extends Cubit<AuthState> {
         fcmToken: CacheHelper.getString(AppConstants.fcmToken),
       );
       await _cacheUserData(result);
+      unawaited(DeviceTokenSync.sync());
       emit(state.copyWith(status: AuthStatus.loginSuccess));
     } catch (e) {
       if (isClosed) return;
@@ -72,8 +74,10 @@ class AuthCubit extends Cubit<AuthState> {
         return;
       }
 
-      final fcmToken =
-          (await CacheHelper.getSecuredString(AppConstants.fcmToken)) ?? '';
+      // The FCM token is saved with CacheHelper.setData (SharedPreferences);
+      // reading it from secure storage returned '' and registered nothing, so
+      // Google-login users never received a push.
+      final fcmToken = CacheHelper.getString(AppConstants.fcmToken);
       final result = await _authRepo.googleTokenLogin(
         idToken: idToken,
         fcmToken: fcmToken,
@@ -91,6 +95,7 @@ class AuthCubit extends Cubit<AuthState> {
         ));
       } else {
         await _cacheUserDataFromGoogle(result);
+        unawaited(DeviceTokenSync.sync());
         emit(state.copyWith(status: AuthStatus.loginWithGoogleSuccess));
       }
     } catch (e) {
@@ -113,8 +118,10 @@ class AuthCubit extends Cubit<AuthState> {
   }) async {
     emit(state.copyWith(status: AuthStatus.loginWithGoogleLoading));
     try {
-      final fcmToken =
-          (await CacheHelper.getSecuredString(AppConstants.fcmToken)) ?? '';
+      // The FCM token is saved with CacheHelper.setData (SharedPreferences);
+      // reading it from secure storage returned '' and registered nothing, so
+      // Google-login users never received a push.
+      final fcmToken = CacheHelper.getString(AppConstants.fcmToken);
       final result = await _authRepo.googleTokenLogin(
         idToken: idToken,
         fullName: fullName,

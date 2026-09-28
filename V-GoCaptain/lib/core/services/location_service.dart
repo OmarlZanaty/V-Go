@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:geolocator/geolocator.dart';
 
 /// Thin wrapper around geolocator: permission handling, one-shot position,
@@ -25,18 +27,31 @@ class LocationService {
     return p == LocationPermission.always || p == LocationPermission.whileInUse;
   }
 
-  Future<Position> currentPosition() {
-    return Geolocator.getCurrentPosition(
-      locationSettings: const LocationSettings(
-        accuracy: LocationAccuracy.bestForNavigation,
-      ),
-    );
+  /// One-shot fix, capped at [timeLimit] so a weak GPS signal (indoors) can't
+  /// hang the caller; falls back to the last known position on timeout.
+  Future<Position> currentPosition({
+    Duration timeLimit = const Duration(seconds: 8),
+  }) async {
+    try {
+      return await Geolocator.getCurrentPosition(
+        locationSettings: LocationSettings(
+          accuracy: LocationAccuracy.high,
+          timeLimit: timeLimit,
+        ),
+      );
+    } on TimeoutException {
+      final last = await Geolocator.getLastKnownPosition();
+      if (last != null) return last;
+      rethrow;
+    }
   }
 
-  Stream<Position> positionStream() {
+  /// [distanceFilter] is 15 m for live-location pushes; turn-by-turn passes a
+  /// small value so the arrow moves smoothly instead of jumping.
+  Stream<Position> positionStream({int distanceFilter = 15}) {
     return Geolocator.getPositionStream(
-      locationSettings: const LocationSettings(
-        distanceFilter: 15,
+      locationSettings: LocationSettings(
+        distanceFilter: distanceFilter,
         accuracy: LocationAccuracy.bestForNavigation,
       ),
     );

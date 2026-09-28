@@ -292,11 +292,19 @@ namespace Masafet_Elseka.Infrastructure.Services.TripService
 
                 if (role == UserTripRole.Client)
                 {
+                    // A just-finished trip the rider hasn't rated yet still counts as
+                    // "current": a rider who missed the live TripEnded event (dead
+                    // socket, app backgrounded) recovers straight to the payment /
+                    // rating screen instead of being stuck on "captain on the way".
+                    var recentlyEnded = DateTime.Now.ToEgyptTime().AddHours(-1);
                     query = query.Where(t =>
                         (t.Status == TripStatus.Pending ||
                          t.Status == TripStatus.Accepted ||
                          t.Status == TripStatus.InProgress ||
-                         t.Status == TripStatus.Arrived) &&
+                         t.Status == TripStatus.Arrived ||
+                         (t.Status == TripStatus.Completed &&
+                          t.EndTime >= recentlyEnded &&
+                          !t.UserRates.Any(r => r.FromUserId == userId))) &&
                         t.UserTrips.Any(ut => ut.UserId == userId && ut.Role == UserTripRole.Client));
                 }
                 else if (role == UserTripRole.Driver)
@@ -308,7 +316,9 @@ namespace Masafet_Elseka.Infrastructure.Services.TripService
                         t.UserTrips.Any(ut => ut.UserId == userId && ut.Role == UserTripRole.Driver));
                 }
 
-                var trip = await query.FirstOrDefaultAsync();
+                // Newest first — an unrated completed trip must never shadow a newer
+                // active one.
+                var trip = await query.OrderByDescending(t => t.CreatedAt).FirstOrDefaultAsync();
 
                 if (trip == null)
                 {
@@ -658,6 +668,29 @@ namespace Masafet_Elseka.Infrastructure.Services.TripService
                         .FirstOrDefault())
                     .FirstOrDefaultAsync();
                 return clientId ?? string.Empty;
+            }
+            catch
+            {
+                return string.Empty;
+            }
+        }
+
+        public async Task<string> GetPickupTripDriverIdAsync(string clientId)
+        {
+            try
+            {
+                var driverId = await _context.Trips
+                    .Where(t =>
+                        (t.Status == TripStatus.Accepted ||
+                         t.Status == TripStatus.Arrived) &&
+                        t.UserTrips.Any(ut => ut.UserId == clientId && ut.Role == UserTripRole.Client))
+                    .OrderByDescending(t => t.CreatedAt)
+                    .Select(t => t.UserTrips
+                        .Where(ut => ut.Role == UserTripRole.Driver)
+                        .Select(ut => ut.UserId)
+                        .FirstOrDefault())
+                    .FirstOrDefaultAsync();
+                return driverId ?? string.Empty;
             }
             catch
             {

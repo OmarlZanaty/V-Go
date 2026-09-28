@@ -97,13 +97,21 @@ namespace Masafet_Elseka.Infrastructure.Services.NotificationService
                 Body = body,
                 Data = data
             };
-            if (tokens.Count == 1)
-            {               
-                await _firebaseNotification.SendToDeviceAsync(tokens.First(), pushNotification,ct);
-            }
-            else
+            var dead = tokens.Count == 1
+                ? await _firebaseNotification.SendToDeviceAsync(tokens.First(), pushNotification, ct)
+                : await _firebaseNotification.SendToMultipleDevicesAsync(tokens!, pushNotification, ct);
+
+            // A token FCM has declared dead stays dead; keeping it means every
+            // later send to this user pays for it again and the logs fill with
+            // the same failure. Deactivate, never delete — the row is history.
+            if (dead.Count > 0)
             {
-                await _firebaseNotification.SendToMultipleDevicesAsync(tokens!, pushNotification, ct);
+                foreach (var d in devices.Where(d => dead.Contains(d.DeviceToken)))
+                {
+                    d.IsActive = false;
+                    d.LastActive = DateTime.Now.ToEgyptTime();
+                }
+                await _unitOfWork.SaveAsync(ct);
             }
         }
 

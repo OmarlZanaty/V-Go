@@ -4,6 +4,7 @@ import 'package:flutter_screenutil/flutter_screenutil.dart';
 import '../../../core/theming/app_colors.dart';
 import '../../../core/theming/app_style.dart';
 import '../services/navigation_engine.dart';
+import '../services/routes_api_service.dart';
 import '../utils/distance_helper.dart';
 import 'maneuver_icon.dart';
 
@@ -25,10 +26,45 @@ class InstructionBanner extends StatelessWidget {
         : ManeuverIcon.arabicPhrase(maneuver);
     final distance =
         update == null ? '' : DistanceHelper.formatDistance(update!.distanceToManeuver);
+    // Preview the maneuver after this one when it comes soon after.
+    final next = update?.nextStep;
+    final showNext = next != null && update!.distanceToNext <= 300;
 
     return Directionality(
       textDirection: TextDirection.rtl,
-      child: AnimatedSwitcher(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _mainCard(maneuver, text, distance),
+          if (showNext) _thenChip(next),
+        ],
+      ),
+    );
+  }
+
+  Widget _thenChip(NavStep next) {
+    return Container(
+      margin: EdgeInsets.fromLTRB(12.w, 6.h, 12.w, 0),
+      padding: EdgeInsets.symmetric(horizontal: 12.w, vertical: 8.h),
+      decoration: BoxDecoration(
+        color: AppColors.darkGrey,
+        borderRadius: BorderRadius.circular(14.r),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text('ثم', style: AppStyle.body.copyWith(color: AppColors.primary)),
+          SizedBox(width: 8.w),
+          ManeuverIcon(
+              maneuver: next.maneuver, size: 22.r, color: AppColors.primary),
+        ],
+      ),
+    );
+  }
+
+  Widget _mainCard(String maneuver, String text, String distance) {
+    return AnimatedSwitcher(
         duration: const Duration(milliseconds: 300),
         transitionBuilder: (child, anim) => FadeTransition(
           opacity: anim,
@@ -96,7 +132,6 @@ class InstructionBanner extends StatelessWidget {
             ],
           ),
         ),
-      ),
     );
   }
 }

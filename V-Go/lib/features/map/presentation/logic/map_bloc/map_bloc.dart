@@ -4,8 +4,10 @@ import 'dart:developer';
 import 'dart:math' hide log;
 
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:rxdart/rxdart.dart';
 
+import '../../../../../core/helpers/geo_utils.dart';
 import '../../../../../core/utils/app_constants.dart';
 import '../../../../../core/utils/model/location_model.dart';
 import '../../../data/repo/map_repo.dart';
@@ -285,17 +287,42 @@ class MapBloc extends Bloc<MapEvent, MapState> {
     UpdateDriverLocation event,
     Emitter<MapState> emit,
   ) async {
+    final target = event.target;
+    final driver = LatLng(
+      event.driverLocation.latitude,
+      event.driverLocation.longitude,
+    );
+    final targetChanged =
+        target != null &&
+        (_lastDriverTarget == null ||
+            _lastDriverTarget!.latitude != target.latitude ||
+            _lastDriverTarget!.longitude != target.longitude);
+
+    // While the captain is still on the route we already have, just cut the
+    // driven part off: the line stays put and the scooter moves along it,
+    // with no Routes API call per GPS tick.
+    final snap = GeoUtils.snapToPath(driver, _driverRouteFull);
+    if (!targetChanged && snap != null && snap.distance <= 40) {
+      final ahead = [snap.point, ..._driverRouteFull.skip(snap.segment + 1)];
+      final meters = _pathMeters(ahead);
+      emit(
+        state.copyWith(
+          driverLocation: event.driverLocation,
+          routeDriverToPickup: ahead,
+          driverRemainingMeters: meters,
+          driverRemainingSeconds: _secondsFor(meters),
+        ),
+      );
+      return;
+    }
+
     // Move the captain marker immediately on every update.
     emit(state.copyWith(driverLocation: event.driverLocation));
 
-    // Recalculate the captain's live route to its target, throttled so we don't
-    // spam the Routes API on every GPS tick — except the first calc after the
-    // target changes, which must run immediately.
-    final target = event.target;
+    // New target, or the captain left the line: fetch a fresh route. Throttled
+    // so a captain driving off-route doesn't spam the Routes API — except the
+    // first calc after the target changes, which must run immediately.
     if (target == null) return;
-    final targetChanged = _lastDriverTarget == null ||
-        _lastDriverTarget!.latitude != target.latitude ||
-        _lastDriverTarget!.longitude != target.longitude;
     final now = DateTime.now();
     if (!targetChanged &&
         _lastDriverRouteCalcAt != null &&
@@ -307,10 +334,40 @@ class MapBloc extends Bloc<MapEvent, MapState> {
     try {
       final r = await mapRepo.getRoute(event.driverLocation, target);
       if (isClosed) return;
-      emit(state.copyWith(routeDriverToPickup: r.points));
+      _driverRouteFull = r.points;
+      _driverRouteMeters = r.distanceKm * 1000;
+      _driverRouteSeconds = r.durationSeconds;
+      emit(
+        state.copyWith(
+          routeDriverToPickup: r.points,
+          driverRemainingMeters: _driverRouteMeters,
+          driverRemainingSeconds: _driverRouteSeconds,
+        ),
+      );
     } catch (e) {
       log('driver route calc failed: $e');
     }
+  }
+
+  // Full captain route from the last Routes API call; the state holds only the
+  // part still ahead of the captain.
+  List<LatLng> _driverRouteFull = const [];
+  // Google's length/duration for that full route, used to pro-rate the ETA as
+  // the captain eats into it (no API call per GPS tick).
+  double _driverRouteMeters = 0;
+  double _driverRouteSeconds = 0;
+
+  static double _pathMeters(List<LatLng> path) {
+    var total = 0.0;
+    for (var i = 0; i < path.length - 1; i++) {
+      total += GeoUtils.haversine(path[i], path[i + 1]);
+    }
+    return total;
+  }
+
+  double? _secondsFor(double meters) {
+    if (_driverRouteMeters <= 0 || _driverRouteSeconds <= 0) return null;
+    return _driverRouteSeconds * (meters / _driverRouteMeters);
   }
 
   void _onClearDriverLocation(
@@ -319,6 +376,9 @@ class MapBloc extends Bloc<MapEvent, MapState> {
   ) {
     _lastDriverRouteCalcAt = null;
     _lastDriverTarget = null;
+    _driverRouteFull = const [];
+    _driverRouteMeters = 0;
+    _driverRouteSeconds = 0;
     emit(state.copyWith(clearDriverLocation: true, routeDriverToPickup: []));
   }
 
@@ -498,6 +558,7 @@ class MapBloc extends Bloc<MapEvent, MapState> {
     ClearDriverToPickupRoute event,
     Emitter<MapState> emit,
   ) {
+    _driverRouteFull = const [];
     emit(state.copyWith(routeDriverToPickup: []));
   }
 

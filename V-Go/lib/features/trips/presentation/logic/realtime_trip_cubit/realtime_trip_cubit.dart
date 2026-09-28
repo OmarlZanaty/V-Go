@@ -4,10 +4,12 @@ import 'dart:developer';
 import 'package:equatable/equatable.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:geolocator/geolocator.dart';
 
 import '../../../../../core/errors/exception.dart';
 import '../../../../../core/helpers/extensions.dart';
 import '../../../../../core/helpers/play_notification_sound.dart';
+import '../../../../../core/services/firebase_notification_service.dart';
 import '../../../../../core/services/trip_service.dart';
 import '../../../../../core/utils/app_constants.dart';
 import '../../../../../core/utils/model/current_trip_model.dart';
@@ -35,6 +37,46 @@ class RealTimeTripCubit extends Cubit<RealTimeTripState>
     }
   }
 
+  // ---- Missed-event safety net ---------------------------------------------
+  // SignalR never replays events sent while the socket was down, so during an
+  // active trip we periodically ask for the authoritative current trip. Polls
+  // that bring nothing new are dropped (see _listenForReceiveCurrentTrip) so
+  // they don't redraw the map or recompute routes.
+
+  StreamSubscription<void>? _pushSub;
+  Timer? _syncTimer;
+  bool _pollInFlight = false;
+
+  static const _syncedStatuses = {
+    'Pending',
+    'Accepted',
+    'Arrived',
+    'InProgress',
+    'Completed',
+  };
+
+  void _updateSyncTimer(RealTimeTripState s) {
+    final needsSync =
+        _syncedStatuses.contains(s.tripStatus) &&
+        !(s.tripStatus == 'Completed' &&
+            s.paymentStatusModel?.paymentStatus == 'Paid');
+    if (needsSync && _syncTimer == null) {
+      _syncTimer = Timer.periodic(
+        const Duration(seconds: 20),
+        (_) => _pollCurrentTrip(),
+      );
+    } else if (!needsSync && _syncTimer != null) {
+      _syncTimer!.cancel();
+      _syncTimer = null;
+    }
+  }
+
+  void _pollCurrentTrip() {
+    if (isClosed) return;
+    _pollInFlight = true;
+    unawaited(_tripService.requestCurrentTrip());
+  }
+
   Future<void> connect() async {
     emit(state.copyWith(status: RealTimeTripStatus.connecting));
     try {
@@ -50,6 +92,11 @@ class RealTimeTripCubit extends Cubit<RealTimeTripState>
         WidgetsBinding.instance.addObserver(this);
         _lifecycleObserved = true;
       }
+      // A trip push means the trip changed — re-sync now in case the live
+      // event was lost with a dead socket.
+      _pushSub ??= FirebaseNotificationService.pushReceived.stream.listen(
+        (_) => _pollCurrentTrip(),
+      );
     } catch (e) {
       if (isClosed) return;
       emit(
@@ -247,6 +294,7 @@ class RealTimeTripCubit extends Cubit<RealTimeTripState>
     _listenForTripPaymentUpdated();
     _listenForTripCancelledForClient();
     _listenForReceiveDriverLocation();
+    _listenForNoCurrentTrip();
   }
 
   void _listenForReceiveDriverLocation() {
@@ -333,6 +381,14 @@ class RealTimeTripCubit extends Cubit<RealTimeTripState>
       final currentTrip = CurrentTripModel.fromJson(
         data![0] as Map<String, dynamic>,
       );
+      final wasPoll = _pollInFlight;
+      _pollInFlight = false;
+      final unchanged =
+          state.currentTrip?.tripId == currentTrip.tripId &&
+          state.tripStatus == currentTrip.tripStatus &&
+          (state.paymentStatusModel?.paymentStatus == 'Paid') ==
+              currentTrip.isPaid;
+      if (wasPoll && unchanged) return;
       emit(
         state.copyWith(
           status: RealTimeTripStatus.currentTripReceived,
@@ -450,6 +506,29 @@ class RealTimeTripCubit extends Cubit<RealTimeTripState>
     };
   }
 
+  /// The server says we have no current trip. If a poll gets this while the
+  /// screen still shows an active ride, the trip ended without us hearing
+  /// (cancelled / rejected while the socket was down) — reset like a cancel
+  /// instead of leaving the rider on a stale "captain on the way".
+  void _listenForNoCurrentTrip() {
+    _tripService.noCurrentTrip = (message) {
+      final wasPoll = _pollInFlight;
+      _pollInFlight = false;
+      if (!wasPoll || AppConstants.kRole == 'Driver') return;
+      // Only the definite "no trip" answer — not a transient server error.
+      if (!message.contains('لا توجد رحلة حالية')) return;
+      const stale = {'Pending', 'Accepted', 'Arrived', 'InProgress'};
+      if (!stale.contains(state.tripStatus)) return;
+      emit(
+        state.copyWith(
+          status: RealTimeTripStatus.tripCanceledReceived,
+          resetCurrentTrip: true,
+          tripStatus: 'Canceled',
+        ),
+      );
+    };
+  }
+
   void _listenForTripCancelledForClient() {
     _tripService.tripCanceledForClient = (data) {
       if (data.isNullOrEmpty()) return;
@@ -547,8 +626,73 @@ class RealTimeTripCubit extends Cubit<RealTimeTripState>
     ));
   }
 
+  // ---- Share the rider's live location with the captain -------------------
+  // While the captain is heading to the pickup (Accepted/Arrived) the rider's
+  // GPS is streamed to the server, which relays it to the captain. The pickup
+  // pin alone isn't enough: riders often drop it away from where they stand.
+
+  bool _sharing = false;
+  StreamSubscription<Position>? _shareSub;
+  Timer? _shareTimer;
+  Position? _lastSharedFix;
+
+  @override
+  void onChange(Change<RealTimeTripState> change) {
+    super.onChange(change);
+    _updateSyncTimer(change.nextState);
+    if (AppConstants.kRole == 'Driver') return;
+    final s = change.nextState.tripStatus;
+    final waitingForCaptain = s == 'Accepted' || s == 'Arrived';
+    if (waitingForCaptain && !_sharing) {
+      _sharing = true;
+      unawaited(_startSharingLocation());
+    } else if (!waitingForCaptain && _sharing) {
+      _stopSharingLocation();
+    }
+  }
+
+  Future<void> _startSharingLocation() async {
+    final perm = await Geolocator.checkPermission();
+    if (perm == LocationPermission.denied ||
+        perm == LocationPermission.deniedForever) {
+      _sharing = false;
+      return;
+    }
+    // Trip moved on (or cubit closed) while we awaited the permission check.
+    if (!_sharing || isClosed || _shareSub != null) return;
+    _shareSub = Geolocator.getPositionStream(
+      locationSettings: const LocationSettings(
+        accuracy: LocationAccuracy.high,
+        distanceFilter: 5,
+      ),
+    ).listen((pos) {
+      _lastSharedFix = pos;
+      unawaited(_tripService.updateClientLocation(pos.latitude, pos.longitude));
+    }, onError: (_) {});
+    // A rider standing still produces no stream events; resend the last fix so
+    // a captain who opens the map late (or reconnects) still sees them.
+    _shareTimer = Timer.periodic(const Duration(seconds: 10), (_) {
+      final p = _lastSharedFix;
+      if (p != null) {
+        unawaited(_tripService.updateClientLocation(p.latitude, p.longitude));
+      }
+    });
+  }
+
+  void _stopSharingLocation() {
+    _sharing = false;
+    _shareSub?.cancel();
+    _shareSub = null;
+    _shareTimer?.cancel();
+    _shareTimer = null;
+    _lastSharedFix = null;
+  }
+
   @override
   Future<void> close() {
+    _stopSharingLocation();
+    _syncTimer?.cancel();
+    _pushSub?.cancel();
     if (_lifecycleObserved) WidgetsBinding.instance.removeObserver(this);
     _tripService.dispose();
     return super.close();

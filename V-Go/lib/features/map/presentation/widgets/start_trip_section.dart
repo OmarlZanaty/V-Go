@@ -9,6 +9,7 @@ import '../../../../core/utils/model/current_trip_model.dart';
 import '../../../trips/presentation/logic/realtime_trip_cubit/realtime_trip_cubit.dart';
 import '../logic/map_bloc/map_state.dart';
 import 'driver_data_widget.dart';
+import 'live_eta_widget.dart';
 import 'payment_options_section.dart';
 
 // 💡 دالة مساعدة لتهيئة الوقت (تظهر الدقائق والثواني لرؤية التحديث)
@@ -34,7 +35,11 @@ Widget startTripSection(
   BuildContext context, {
   CurrentTripModel? currentTrip,
 }) {
-  final remainingTime = state.remainingTime;
+  // The live captain-based countdown (below) replaces this one whenever the
+  // captain's location is streaming; this is only the no-captain-GPS fallback.
+  final remainingTime = state.driverLocation == null
+      ? state.remainingTime
+      : null;
   final formattedTime = (remainingTime != null)
       ? _formatDuration(remainingTime)
       : null;
@@ -107,6 +112,8 @@ Widget startTripSection(
           ],
         ),
         verticalSpace(12),
+        const LiveEtaWidget(toPickup: false),
+        verticalSpace(10),
         driverDataWidget(currentTrip: currentTrip, context: context),
         paymentOptionsSection(context, tripState, currentTrip: currentTrip),
       ],

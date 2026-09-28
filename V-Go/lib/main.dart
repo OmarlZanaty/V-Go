@@ -7,6 +7,7 @@ import 'package:intl/date_symbol_data_local.dart';
 
 import 'core/cache/cache_helper.dart';
 import 'core/di/di.dart';
+import 'core/services/device_token_sync.dart';
 import 'core/services/firebase_notification_service.dart';
 import 'core/services/flutter_local_notification_service.dart';
 import 'core/services/hive_service.dart';
@@ -47,6 +48,10 @@ void main() async {
   } catch (e) {
     debugPrint('App initialization step failed: $e');
   }
+
+  // After both the JWT and the FCM token are loaded: re-register this phone
+  // for push if signed in, and keep doing so when Firebase rotates the token.
+  DeviceTokenSync.start();
 
   runApp(const MyApp());
 }

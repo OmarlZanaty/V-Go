@@ -30,6 +30,11 @@ class MapState extends Equatable {
   final bool showFakeScooters;
   // Live captain location during an active trip (null otherwise).
   final LocationModel? driverLocation;
+  // What's left of the captain's live route (to the pickup, then to the
+  // destination): road meters and estimated seconds. Null until the first
+  // captain route is computed; cleared with the driver location.
+  final double? driverRemainingMeters;
+  final double? driverRemainingSeconds;
 
   const MapState({
     this.currentLocation,
@@ -55,6 +60,8 @@ class MapState extends Equatable {
     this.fakeScooterLocations = const [],
     this.showFakeScooters = false,
     this.driverLocation,
+    this.driverRemainingMeters,
+    this.driverRemainingSeconds,
   });
 
   MapState copyWith({
@@ -82,6 +89,8 @@ class MapState extends Equatable {
     bool? showFakeScooters,
     LocationModel? driverLocation,
     bool clearDriverLocation = false,
+    double? driverRemainingMeters,
+    double? driverRemainingSeconds,
   }) {
     return MapState(
       currentLocation: currentLocation ?? this.currentLocation,
@@ -110,6 +119,12 @@ class MapState extends Equatable {
       showFakeScooters: showFakeScooters ?? this.showFakeScooters,
       driverLocation:
           clearDriverLocation ? null : (driverLocation ?? this.driverLocation),
+      driverRemainingMeters: clearDriverLocation
+          ? null
+          : (driverRemainingMeters ?? this.driverRemainingMeters),
+      driverRemainingSeconds: clearDriverLocation
+          ? null
+          : (driverRemainingSeconds ?? this.driverRemainingSeconds),
     );
   }
 
@@ -135,5 +150,7 @@ class MapState extends Equatable {
     fakeScooterLocations,
     showFakeScooters,
     driverLocation,
+    driverRemainingMeters,
+    driverRemainingSeconds,
   ];
 }

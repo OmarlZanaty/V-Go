@@ -22,6 +22,10 @@ namespace Masafet_Elseka.Application.Interfaces.ITripService
         // (Accepted/Arrived/InProgress), or empty. Used to relay live driver
         // location to the rider during a trip.
         public Task<string> GetActiveTripClientIdAsync(string driverId);
+        // Reverse lookup: the driver id of the client's trip that is still heading
+        // to the pickup (Accepted/Arrived), or empty. Used to relay the rider's
+        // live location to the captain so they can find them.
+        public Task<string> GetPickupTripDriverIdAsync(string clientId);
         public Task SetTripToCache(TripResponseDTO trip);
         public Task UpdateTripStateInCache(string tripId, TripStatus newStatus);
         public Task<List<TripResponseDTO>> GetAllTripsFromCache();

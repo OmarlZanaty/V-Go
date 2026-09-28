@@ -1,10 +1,13 @@
 import 'dart:async';
+import 'dart:math' as math;
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:url_launcher/url_launcher.dart';
+import 'package:wakelock_plus/wakelock_plus.dart';
 
 import '../../../core/services/location_service.dart';
 import '../../../core/theming/app_colors.dart';
@@ -12,7 +15,6 @@ import '../../../core/theming/app_style.dart';
 import '../services/navigation_engine.dart';
 import '../services/routes_api_service.dart';
 import '../services/tts_service.dart';
-import '../utils/distance_helper.dart';
 import '../widgets/eta_bar.dart';
 import '../widgets/instruction_banner.dart';
 import '../widgets/maneuver_icon.dart';
@@ -31,12 +33,19 @@ class NavigationScreen extends StatefulWidget {
     required this.destination,
     required this.destinationName,
     required this.phase, // "pickup" | "dropoff"
+    this.initialClientLocation,
+    this.clientLocationStream,
   });
 
   final LatLng origin;
   final LatLng destination;
   final String destinationName;
   final String phase;
+
+  /// Rider's live GPS (pickup leg only), shown as its own marker so the
+  /// captain can find a rider who isn't standing at the pin.
+  final LatLng? initialClientLocation;
+  final Stream<LatLng?>? clientLocationStream;
 
   bool get isPickup => phase == 'pickup';
 
@@ -52,11 +61,39 @@ class _NavigationScreenState extends State<NavigationScreen> {
   final Completer<GoogleMapController> _mapController = Completer();
 
   StreamSubscription<Position>? _posSub;
+  StreamSubscription<LatLng?>? _clientSub;
+  LatLng? _clientLive;
+
+  /// On-screen rotation of the follow arrow (0 in heading-up mode, where the
+  /// map itself turns).
+  final ValueNotifier<double> _overlayRotation = ValueNotifier(0);
+  static const double _mapTopPad = 170, _mapBottomPad = 120;
+  static const double _followArrowSize = 44;
 
   NavUpdate? _update;
-  LatLng _captain = const LatLng(0, 0);
-  double _heading = 0;
+  LatLng _captain = const LatLng(0, 0); // raw GPS fix
   double _speed = 0; // m/s
+
+  // What the map shows. The arrow glides from fix to fix (snapped onto the
+  // route line) and its heading eases toward the direction of travel, so the
+  // map never jumps or spins when GPS heading is noisy.
+  LatLng _shown = const LatLng(0, 0);
+  double _shownHeading = 0;
+  double _targetHeading = 0;
+  double _shownZoom = 17.5;
+  LatLng _glideFrom = const LatLng(0, 0);
+  LatLng _glideTo = const LatLng(0, 0);
+  DateTime _glideStart = DateTime.now();
+  Duration _glideDuration = Duration.zero;
+  Timer? _glideTimer;
+  DateTime? _prevFixAt;
+
+  /// Camera follows the captain until they pan the map; the recenter button
+  /// turns it back on.
+  bool _following = true;
+
+  /// false = map rotates with the direction of travel; true = north stays up.
+  bool _northUp = false;
 
   BitmapDescriptor? _arrowIcon;
   List<LatLng> _routePoints = const [];
@@ -64,6 +101,7 @@ class _NavigationScreenState extends State<NavigationScreen> {
   bool _loading = true;
   String? _error; // route load failure → retry banner
   bool _rerouting = false;
+  DateTime? _lastRerouteAt;
   bool _offlineWarning = false;
   bool _arrivedHandled = false;
   DateTime _lastFix = DateTime.now();
@@ -76,15 +114,25 @@ class _NavigationScreenState extends State<NavigationScreen> {
   void initState() {
     super.initState();
     _captain = widget.origin;
+    _shown = widget.origin;
+    _clientLive = widget.initialClientLocation;
+    _clientSub = widget.clientLocationStream?.listen((p) {
+      if (mounted) setState(() => _clientLive = p);
+    });
     _bootstrap();
   }
 
   Future<void> _bootstrap() async {
-    await _tts.init();
-    _arrowIcon = await _buildArrowDescriptor();
-    if (mounted) setState(() {});
+    // Keep the screen on while navigating.
+    WakelockPlus.enable();
+    // Voice, arrow icon, GPS and route all start together so the map is
+    // usable as soon as the route arrives (speak() waits for TTS init itself).
+    _tts.init();
+    _buildArrowDescriptor().then((icon) {
+      if (mounted) setState(() => _arrowIcon = icon);
+    });
+    _startLocationStream();
     await _loadRoute(from: widget.origin);
-    await _startLocationStream();
     // Re-paint periodically so the "searching for GPS" banner appears if fixes stop.
     _gpsWatchdog = Timer.periodic(const Duration(seconds: 3), (_) {
       if (mounted) setState(() {});
@@ -104,13 +152,15 @@ class _NavigationScreenState extends State<NavigationScreen> {
         destination: widget.destination,
       );
       _engine.setRoute(result);
+      final upd = _engine.update(_captain);
       setState(() {
         _routePoints = result.polyline;
-        _update = _engine.update(_captain);
+        _update = upd;
         _loading = false;
         _offlineWarning = false;
       });
-      _frameRoute();
+      // Face the way the route starts right away, before the captain moves.
+      _placeArrow(upd, const Duration(milliseconds: 600));
       _tts.resetDedupe();
       _tts.speak(widget.isPickup
           ? 'بدء التوجه إلى الراكب'
@@ -136,6 +186,13 @@ class _NavigationScreenState extends State<NavigationScreen> {
   /// so we don't fire overlapping requests on consecutive off-route fixes.
   Future<void> _reroute() async {
     if (_rerouting) return;
+    // Cool-down: while offline every fix is "off route"; don't nag each time.
+    final now = DateTime.now();
+    if (_lastRerouteAt != null &&
+        now.difference(_lastRerouteAt!) < const Duration(seconds: 8)) {
+      return;
+    }
+    _lastRerouteAt = now;
     _rerouting = true;
     _tts.speak('جارٍ إعادة حساب المسار');
     await _loadRoute(from: _captain);
@@ -152,25 +209,35 @@ class _NavigationScreenState extends State<NavigationScreen> {
       }
       return;
     }
-    _posSub = _location.positionStream().listen(_onPosition);
+    _posSub =
+        _location.positionStream(distanceFilter: 2).listen(_onPosition);
   }
 
   void _onPosition(Position pos) {
-    _lastFix = DateTime.now();
+    final now = DateTime.now();
+    // Drop a very inaccurate fix (e.g. between tall buildings) unless it's all
+    // we've had for a while — it would only make the arrow jump.
+    final recentGoodFix = _prevFixAt != null &&
+        now.difference(_prevFixAt!) < const Duration(seconds: 5);
+    if (pos.accuracy > 50 && recentGoodFix) return;
+
+    final sincePrev = _prevFixAt == null
+        ? const Duration(seconds: 1)
+        : now.difference(_prevFixAt!);
+    _prevFixAt = now;
+    _lastFix = now;
     _captain = LatLng(pos.latitude, pos.longitude);
     _speed = pos.speed.isFinite && pos.speed > 0 ? pos.speed : 0;
-    // Use GPS heading while moving; fall back to course toward the next step.
-    if (pos.heading.isFinite && _speed > 1) {
-      _heading = pos.heading;
-    } else if (_update?.currentStep != null) {
-      _heading = DistanceHelper.bearing(_captain, _update!.currentStep!.location);
-    }
 
-    final upd = _engine.update(_captain);
+    final upd =
+        _engine.update(_captain, accuracy: pos.accuracy, speed: _speed);
     setState(() => _update = upd);
 
+    // Glide over roughly the gap between fixes so the arrow moves continuously.
+    final ms = sincePrev.inMilliseconds.clamp(300, 1500);
+    _placeArrow(upd, Duration(milliseconds: ms), gpsHeading: pos.heading);
+
     _handleVoice(upd);
-    _followCamera();
 
     if (upd.deviated) {
       _reroute();
@@ -185,15 +252,16 @@ class _NavigationScreenState extends State<NavigationScreen> {
   void _handleVoice(NavUpdate upd) {
     final step = upd.currentStep;
     if (step == null) return;
-    final phrase = step.instruction.isNotEmpty
-        ? step.instruction
-        : ManeuverIcon.arabicPhrase(step.maneuver);
+    var phrase = _phrase(step);
+    // Two maneuvers back to back: announce both, like "turn right, then left".
+    final next = upd.nextStep;
+    if (next != null && upd.distanceToNext <= 80) {
+      phrase = '$phrase، ثم ${_phrase(next)}';
+    }
     switch (upd.cue) {
       case VoiceCue.far:
-        _tts.speak('بعد ٣٠٠ متر، $phrase');
-        break;
       case VoiceCue.near:
-        _tts.speak('بعد ١٠٠ متر، $phrase');
+        _tts.speak('بعد ${_spokenDistance(upd.distanceToManeuver)}، $phrase');
         break;
       case VoiceCue.now:
         _tts.speak(phrase);
@@ -203,28 +271,136 @@ class _NavigationScreenState extends State<NavigationScreen> {
     }
   }
 
-  // ---- Camera ---------------------------------------------------------------
+  String _phrase(NavStep step) => step.instruction.isNotEmpty
+      ? step.instruction
+      : ManeuverIcon.arabicPhrase(step.maneuver);
 
-  Future<void> _followCamera() async {
-    if (!_mapController.isCompleted) return;
-    final controller = await _mapController.future;
-    controller.animateCamera(
-      CameraUpdate.newCameraPosition(
-        CameraPosition(
-          target: _captain,
-          zoom: _zoomForSpeed(_speed),
-          tilt: 45, // 3D driving view
-          bearing: _heading,
-        ),
-      ),
-    );
+  /// "٢٥٠ متر" / "١٫٥ كيلو" — rounded the way a person would say it.
+  String _spokenDistance(double meters) {
+    final text = meters >= 1000
+        ? '${(meters / 1000).toStringAsFixed(1).replaceAll('.0', '')} كيلو'
+        : '${math.max(50, (meters / 50).round() * 50)} متر';
+    const digits = '٠١٢٣٤٥٦٧٨٩';
+    return text
+        .replaceAll('.', '٫')
+        .replaceAllMapped(RegExp('[0-9]'), (m) => digits[int.parse(m[0]!)]);
   }
 
-  /// Closer zoom at low speed (junctions), wider when cruising.
-  double _zoomForSpeed(double speed) {
-    if (speed < 4) return 18.0; // ~<14 km/h
-    if (speed < 12) return 17.0; // city
-    return 16.5; // highway
+  // ---- Arrow & camera -------------------------------------------------------
+
+  /// Start gliding the arrow to the latest position — snapped onto the route
+  /// line while the captain is on it. Heading comes from the route itself when
+  /// on it (stable, ignores how the phone is held), else from GPS course once
+  /// really moving.
+  void _placeArrow(NavUpdate upd, Duration duration, {double? gpsHeading}) {
+    if (upd.routeBearing != null) {
+      _targetHeading = upd.routeBearing!;
+    } else if (gpsHeading != null && gpsHeading.isFinite && _speed > 2.5) {
+      _targetHeading = gpsHeading;
+    }
+
+    _glideFrom = _shown;
+    _glideTo = upd.snapped ?? _captain;
+    _glideStart = DateTime.now();
+    _glideDuration = duration;
+    // ~20 fps: smooth enough for driving, light on low-end phones.
+    _glideTimer ??=
+        Timer.periodic(const Duration(milliseconds: 50), (_) => _glideTick());
+  }
+
+  void _glideTick() {
+    if (!mounted) return;
+    final elapsed = DateTime.now().difference(_glideStart).inMilliseconds;
+    final total = _glideDuration.inMilliseconds;
+    final t = total <= 0 ? 1.0 : (elapsed / total).clamp(0.0, 1.0);
+
+    _shown = LatLng(
+      _glideFrom.latitude + (_glideTo.latitude - _glideFrom.latitude) * t,
+      _glideFrom.longitude + (_glideTo.longitude - _glideFrom.longitude) * t,
+    );
+    final turn = _angleDiff(_shownHeading, _targetHeading);
+    _shownHeading = (_shownHeading + turn * 0.2 + 360) % 360;
+    final zoomGap = _targetZoom() - _shownZoom;
+    _shownZoom += zoomGap * 0.1;
+
+    // Rebuilding the whole screen (and the map widget with its route lines)
+    // 20×/s is what made the arrow stutter on mid/low-end phones. While
+    // following, the arrow sits still on screen and only the camera moves;
+    // the screen rebuilds only when the captain has panned away and the arrow
+    // is a real marker.
+    if (_following) {
+      _moveCamera();
+      _overlayRotation.value = _northUp ? _shownHeading : 0;
+    } else {
+      setState(() {});
+    }
+
+    if (t >= 1 && turn.abs() < 0.5 && zoomGap.abs() < 0.02) {
+      _glideTimer?.cancel();
+      _glideTimer = null;
+    }
+  }
+
+  /// Signed shortest turn from [from] to [to], in -180..180 degrees.
+  double _angleDiff(double from, double to) =>
+      ((to - from + 540) % 360) - 180;
+
+  CameraPosition get _followPosition => CameraPosition(
+        target: _shown,
+        zoom: _shownZoom,
+        tilt: _northUp ? 0 : 45, // 3D driving view when heading-up
+        bearing: _northUp ? 0 : _shownHeading,
+      );
+
+  Future<void> _moveCamera() async {
+    if (!_mapController.isCompleted) return;
+    final controller = await _mapController.future;
+    controller.moveCamera(CameraUpdate.newCameraPosition(_followPosition));
+  }
+
+  Future<void> _recenter() async {
+    setState(() => _following = true);
+    if (!_mapController.isCompleted) return;
+    final controller = await _mapController.future;
+    controller
+        .animateCamera(CameraUpdate.newCameraPosition(_followPosition));
+  }
+
+  void _toggleNorthUp() {
+    setState(() => _northUp = !_northUp);
+    _recenter();
+  }
+
+  void _showOverview() {
+    setState(() => _following = false);
+    _frameRoute();
+  }
+
+  /// Hand the leg to the Google Maps app (motorcycle mode), falling back to
+  /// the web directions page if the app isn't installed.
+  Future<void> _openGoogleMaps() async {
+    final d = widget.destination;
+    final app = Uri.parse(
+        'google.navigation:q=${d.latitude},${d.longitude}&mode=l');
+    final web = Uri.parse('https://www.google.com/maps/dir/?api=1'
+        '&destination=${d.latitude},${d.longitude}&travelmode=driving');
+    try {
+      if (await launchUrl(app, mode: LaunchMode.externalApplication)) return;
+    } catch (_) {}
+    try {
+      await launchUrl(web, mode: LaunchMode.externalApplication);
+    } catch (_) {}
+  }
+
+  /// Closer zoom at low speed and right before a turn, wider when cruising.
+  double _targetZoom() {
+    final base = _speed < 4
+        ? 18.0 // ~<14 km/h
+        : _speed < 12
+            ? 17.0 // city
+            : 16.5; // highway
+    final nearTurn = (_update?.distanceToManeuver ?? double.infinity) < 120;
+    return nearTurn ? math.max(base, 17.8) : base;
   }
 
   Future<void> _frameRoute() async {
@@ -363,14 +539,12 @@ class _NavigationScreenState extends State<NavigationScreen> {
 
   // ---- Captain arrow marker (drawn at runtime, no asset needed) -------------
 
-  Future<BitmapDescriptor> _buildArrowDescriptor() async {
-    const size = 96.0;
-    final recorder = ui.PictureRecorder();
-    final canvas = Canvas(recorder);
-
+  /// Shared by the map marker and the on-screen follow arrow so both look
+  /// the same.
+  static void _paintArrow(Canvas canvas, double size) {
     // White circular halo so the arrow reads on any map background.
     final halo = Paint()..color = Colors.white;
-    canvas.drawCircle(const Offset(size / 2, size / 2), size / 2.4, halo);
+    canvas.drawCircle(Offset(size / 2, size / 2), size / 2.4, halo);
 
     final arrow = Paint()
       ..color = AppColors.primaryOrange
@@ -382,6 +556,48 @@ class _NavigationScreenState extends State<NavigationScreen> {
       ..lineTo(size * 0.22, size * 0.82)
       ..close();
     canvas.drawPath(path, arrow);
+  }
+
+  /// The captain arrow while the camera follows: pinned where the camera
+  /// target lands (centre of the padded map area), so moving the camera is
+  /// all it takes to "move" the captain.
+  Widget _followArrowOverlay() {
+    return Positioned.fill(
+      child: IgnorePointer(
+        child: LayoutBuilder(
+          builder: (context, c) {
+            final top = _mapTopPad.h, bottom = _mapBottomPad.h;
+            final cy = top + (c.maxHeight - top - bottom) / 2;
+            return Stack(
+              children: [
+                Positioned(
+                  left: c.maxWidth / 2 - _followArrowSize / 2,
+                  top: cy - _followArrowSize / 2,
+                  child: ValueListenableBuilder<double>(
+                    valueListenable: _overlayRotation,
+                    builder: (_, deg, child) => Transform.rotate(
+                      angle: deg * math.pi / 180,
+                      child: child,
+                    ),
+                    child: const CustomPaint(
+                      size: Size.square(_followArrowSize),
+                      painter: _ArrowPainter(),
+                    ),
+                  ),
+                ),
+              ],
+            );
+          },
+        ),
+      ),
+    );
+  }
+
+  Future<BitmapDescriptor> _buildArrowDescriptor() async {
+    const size = 96.0;
+    final recorder = ui.PictureRecorder();
+    final canvas = Canvas(recorder);
+    _paintArrow(canvas, size);
 
     final picture = recorder.endRecording();
     final image = await picture.toImage(size.toInt(), size.toInt());
@@ -391,14 +607,17 @@ class _NavigationScreenState extends State<NavigationScreen> {
 
   Set<Marker> _markers() {
     return {
-      Marker(
-        markerId: const MarkerId('captain'),
-        position: _captain,
-        icon: _arrowIcon ?? BitmapDescriptor.defaultMarker,
-        rotation: _heading,
-        anchor: const Offset(0.5, 0.5),
-        flat: true,
-      ),
+      // While following, the arrow is the fixed screen overlay instead (see
+      // _followArrowOverlay) — no marker moving 20×/s through the plugin.
+      if (!_following)
+        Marker(
+          markerId: const MarkerId('captain'),
+          position: _shown,
+          icon: _arrowIcon ?? BitmapDescriptor.defaultMarker,
+          rotation: _shownHeading,
+          anchor: const Offset(0.5, 0.5),
+          flat: true,
+        ),
       Marker(
         markerId: const MarkerId('destination'),
         position: widget.destination,
@@ -409,17 +628,63 @@ class _NavigationScreenState extends State<NavigationScreen> {
         ),
         infoWindow: InfoWindow(title: widget.destinationName),
       ),
+      if (widget.isPickup && _clientLive != null)
+        Marker(
+          markerId: const MarkerId('client-live'),
+          position: _clientLive!,
+          icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueAzure),
+          infoWindow: const InfoWindow(title: 'موقع العميل الحالي'),
+        ),
     };
   }
 
+  /// The part of the route still ahead of the captain (cached per fix; the
+  /// map rebuilds ~20×/s while the arrow glides).
+  List<LatLng> get _routeAhead {
+    final upd = _update;
+    final key = (_routePoints, upd?.segment, upd?.snapped);
+    if (key == _routeAheadKey) return _routeAheadCache;
+    _routeAheadKey = key;
+    final snapped = upd?.snapped;
+    _routeAheadCache = snapped == null
+        ? _routePoints
+        : [snapped, ..._routePoints.skip(upd!.segment + 1)];
+    return _routeAheadCache;
+  }
+
+  Object? _routeAheadKey;
+  List<LatLng> _routeAheadCache = const [];
+
+  /// Driven part greyed out, the rest in brand colour with a dark casing so it
+  /// reads on any map background — the line stays put, the arrow moves on it.
   Set<Polyline> _polylines() {
     if (_routePoints.isEmpty) return const {};
+    final ahead = _routeAhead;
     return {
       Polyline(
-        polylineId: const PolylineId('route'),
+        polylineId: const PolylineId('driven'),
         points: _routePoints,
+        color: Colors.grey.shade500,
+        width: 8,
+        zIndex: 0,
+        jointType: JointType.round,
+      ),
+      Polyline(
+        polylineId: const PolylineId('route-casing'),
+        points: ahead,
+        color: Colors.black.withValues(alpha: 0.55),
+        width: 12,
+        zIndex: 1,
+        startCap: Cap.roundCap,
+        endCap: Cap.roundCap,
+        jointType: JointType.round,
+      ),
+      Polyline(
+        polylineId: const PolylineId('route'),
+        points: ahead,
         color: AppColors.primary,
         width: 8,
+        zIndex: 2,
         startCap: Cap.roundCap,
         endCap: Cap.roundCap,
         jointType: JointType.round,
@@ -434,8 +699,12 @@ class _NavigationScreenState extends State<NavigationScreen> {
 
   @override
   void dispose() {
+    WakelockPlus.disable();
     _gpsWatchdog?.cancel();
+    _glideTimer?.cancel();
     _posSub?.cancel();
+    _clientSub?.cancel();
+    _overlayRotation.dispose();
     _tts.dispose();
     _routes.dispose();
     super.dispose();
@@ -451,25 +720,39 @@ class _NavigationScreenState extends State<NavigationScreen> {
       child: Scaffold(
         body: Stack(
           children: [
-            GoogleMap(
-              initialCameraPosition: CameraPosition(
-                target: widget.origin,
-                zoom: 16.5,
-                tilt: 45,
-              ),
-              markers: _markers(),
-              polylines: _polylines(),
-              myLocationEnabled: false,
-              myLocationButtonEnabled: false,
-              zoomControlsEnabled: false,
-              compassEnabled: false,
-              mapToolbarEnabled: false,
-              trafficEnabled: false,
-              style: _isNight ? _darkMapStyle : null,
-              onMapCreated: (c) {
-                if (!_mapController.isCompleted) _mapController.complete(c);
+            // Any touch on the map means the captain is looking around: stop
+            // following until they tap recenter.
+            Listener(
+              onPointerDown: (_) {
+                if (_following) setState(() => _following = false);
               },
+              child: GoogleMap(
+                initialCameraPosition: CameraPosition(
+                  target: widget.origin,
+                  zoom: _shownZoom,
+                  tilt: 45,
+                ),
+                // Keeps the arrow below the instruction banner and leaves
+                // more road visible ahead of it.
+                padding: EdgeInsets.only(
+                  top: _mapTopPad.h,
+                  bottom: _mapBottomPad.h,
+                ),
+                markers: _markers(),
+                polylines: _polylines(),
+                myLocationEnabled: false,
+                myLocationButtonEnabled: false,
+                zoomControlsEnabled: false,
+                compassEnabled: false,
+                mapToolbarEnabled: false,
+                trafficEnabled: false,
+                style: _isNight ? _darkMapStyle : null,
+                onMapCreated: (c) {
+                  if (!_mapController.isCompleted) _mapController.complete(c);
+                },
+              ),
             ),
+            if (_following) _followArrowOverlay(),
 
             // Top: instruction banner (or route-error / loading states).
             SafeArea(
@@ -501,20 +784,92 @@ class _NavigationScreenState extends State<NavigationScreen> {
               ),
             ),
 
-            // Recenter button.
+            // Current speed.
+            Positioned(
+              left: 16.w,
+              bottom: 150.h,
+              child: Container(
+                width: 64.r,
+                height: 64.r,
+                decoration: BoxDecoration(
+                  color: AppColors.darkGrey,
+                  shape: BoxShape.circle,
+                  border: Border.all(color: AppColors.primary, width: 2),
+                ),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Text('${(_speed * 3.6).round()}',
+                        style: AppStyle.title.copyWith(height: 1)),
+                    Text('كم/س', style: AppStyle.body.copyWith(fontSize: 10.sp)),
+                  ],
+                ),
+              ),
+            ),
+
+            // Map controls.
             Positioned(
               right: 16.w,
               bottom: 150.h,
-              child: FloatingActionButton.small(
-                backgroundColor: AppColors.darkGrey,
-                foregroundColor: AppColors.primary,
-                onPressed: _followCamera,
-                child: const Icon(Icons.my_location),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  _mapButton(
+                    icon: Icons.map_outlined,
+                    tooltip: 'فتح في خرائط جوجل',
+                    onPressed: _openGoogleMaps,
+                  ),
+                  SizedBox(height: 10.h),
+                  _mapButton(
+                    icon: Icons.alt_route,
+                    tooltip: 'عرض المسار كاملًا',
+                    onPressed: _showOverview,
+                  ),
+                  SizedBox(height: 10.h),
+                  _mapButton(
+                    icon: _northUp ? Icons.explore : Icons.navigation,
+                    tooltip: _northUp ? 'الشمال لأعلى' : 'باتجاه الحركة',
+                    onPressed: _toggleNorthUp,
+                  ),
+                  SizedBox(height: 10.h),
+                  if (_following)
+                    _mapButton(
+                      icon: Icons.my_location,
+                      tooltip: 'إعادة التمركز',
+                      onPressed: _recenter,
+                    )
+                  else
+                    FloatingActionButton.extended(
+                      heroTag: null,
+                      backgroundColor: AppColors.primary,
+                      foregroundColor: AppColors.black,
+                      onPressed: _recenter,
+                      icon: const Icon(Icons.navigation),
+                      label: Text('إعادة التمركز',
+                          style: AppStyle.button
+                              .copyWith(color: AppColors.black)),
+                    ),
+                ],
               ),
             ),
           ],
         ),
       ),
+    );
+  }
+
+  Widget _mapButton({
+    required IconData icon,
+    required String tooltip,
+    required VoidCallback onPressed,
+  }) {
+    return FloatingActionButton.small(
+      heroTag: null,
+      tooltip: tooltip,
+      backgroundColor: AppColors.darkGrey,
+      foregroundColor: AppColors.primary,
+      onPressed: onPressed,
+      child: Icon(icon),
     );
   }
 
@@ -615,3 +970,14 @@ const String _darkMapStyle = '''
   {"featureType":"water","elementType":"labels.text.fill","stylers":[{"color":"#3d3d3d"}]}
 ]
 ''';
+
+class _ArrowPainter extends CustomPainter {
+  const _ArrowPainter();
+
+  @override
+  void paint(Canvas canvas, Size size) =>
+      _NavigationScreenState._paintArrow(canvas, size.shortestSide);
+
+  @override
+  bool shouldRepaint(_ArrowPainter oldDelegate) => false;
+}

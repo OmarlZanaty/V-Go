@@ -2,6 +2,19 @@ import 'dart:math' as math;
 
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 
+/// Result of [DistanceHelper.snapToPath].
+class PathSnap {
+  final LatLng point; // closest point on the path
+  final int segment; // index of the segment start vertex
+  final double distance; // meters from the raw position to [point]
+
+  const PathSnap({
+    required this.point,
+    required this.segment,
+    required this.distance,
+  });
+}
+
 /// Geo math used by the navigation engine: distances (Haversine), bearings, and
 /// point-to-polyline projection for deviation detection. Pure functions, no state.
 class DistanceHelper {
@@ -51,6 +64,59 @@ class DistanceHelper {
       if (d < best) best = d;
     }
     return best;
+  }
+
+  /// Closest point on [path] to [p]: where the captain arrow is drawn so it
+  /// rides on the route line instead of jittering beside it. [from]/[to]
+  /// limit the search to segments `from..to` (vertex indices).
+  static PathSnap? snapToPath(LatLng p, List<LatLng> path,
+      {int from = 0, int? to}) {
+    if (path.length < 2) return null;
+    final last = math.min(to ?? path.length - 1, path.length - 1);
+    PathSnap? best;
+    for (var i = math.max(0, from); i < last; i++) {
+      final a = path[i], b = path[i + 1];
+      final t = _projectionFactor(p, a, b);
+      final point = LatLng(
+        a.latitude + (b.latitude - a.latitude) * t,
+        a.longitude + (b.longitude - a.longitude) * t,
+      );
+      final d = haversine(p, point);
+      if (best == null || d < best.distance) {
+        best = PathSnap(point: point, segment: i, distance: d);
+      }
+    }
+    return best;
+  }
+
+  /// Direction of travel along [path] at [snap], measured to a point
+  /// [lookAheadM] further along. Stable where GPS heading is noisy (slow
+  /// speeds, standing at a light), and never follows the phone's rotation.
+  static double bearingAlongPath(List<LatLng> path, PathSnap snap,
+      {double lookAheadM = 30}) {
+    var from = snap.point;
+    var remaining = lookAheadM;
+    for (var i = snap.segment + 1; i < path.length; i++) {
+      final leg = haversine(from, path[i]);
+      if (leg >= remaining || i == path.length - 1) {
+        return bearing(snap.point, path[i]);
+      }
+      remaining -= leg;
+      from = path[i];
+    }
+    return bearing(path[path.length - 2], path.last);
+  }
+
+  /// Projection factor t (0..1) of [p] onto segment [a]-[b].
+  static double _projectionFactor(LatLng p, LatLng a, LatLng b) {
+    final latRef = _deg2rad(a.latitude);
+    final bx = _deg2rad(b.longitude - a.longitude) * math.cos(latRef);
+    final by = _deg2rad(b.latitude - a.latitude);
+    final px = _deg2rad(p.longitude - a.longitude) * math.cos(latRef);
+    final py = _deg2rad(p.latitude - a.latitude);
+    final segLenSq = bx * bx + by * by;
+    if (segLenSq == 0) return 0;
+    return ((px * bx + py * by) / segLenSq).clamp(0.0, 1.0);
   }
 
   /// Distance (meters) from [p] to the segment [a]-[b]. Uses a local

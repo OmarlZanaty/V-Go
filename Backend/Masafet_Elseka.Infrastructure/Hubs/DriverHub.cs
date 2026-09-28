@@ -32,6 +32,10 @@ namespace Masafet_Elseka.Infrastructure.Hubs
         // Cache of driver -> active-trip client id, so we don't hit the DB on
         // every location tick. Cleared when the driver becomes available again.
         private static readonly ConcurrentDictionary<string, string> _driverActiveClient = new();
+        // Cache of driver -> gender/photo for UpdateDriverStatus; short TTL so a
+        // profile photo change shows up without a redeploy.
+        private static readonly ConcurrentDictionary<string, (string? Gender, string? ProfilePhoto, DateTime CachedAt)> _driverProfiles = new();
+        private static readonly TimeSpan DriverProfileTtl = TimeSpan.FromMinutes(10);
         private readonly ITripService _tripService;
         private readonly UserManager<ApplicationUser> _userManager;
         private readonly IHubContext<TripHub> _tripHubContext;
@@ -84,9 +88,17 @@ namespace Masafet_Elseka.Infrastructure.Hubs
             status.DriverId = driverId;
             if (string.IsNullOrEmpty(status.DriverGender))
             {
-                var driver= await _userManager.FindByIdAsync(driverId);
-                status.DriverGender = driver?.Gender;
-                status.ProfilePhoto = driver?.ProfilePicture;
+                // The app never sends these, so without the cache every location
+                // tick costs a user lookup in the DB.
+                if (!_driverProfiles.TryGetValue(driverId, out var profile)
+                    || DateTime.UtcNow - profile.CachedAt > DriverProfileTtl)
+                {
+                    var driver = await _userManager.FindByIdAsync(driverId);
+                    profile = (driver?.Gender, driver?.ProfilePicture, DateTime.UtcNow);
+                    _driverProfiles[driverId] = profile;
+                }
+                status.DriverGender = profile.Gender;
+                status.ProfilePhoto = profile.ProfilePhoto;
             }
 
             _driversIds[Context.ConnectionId] = driverId;

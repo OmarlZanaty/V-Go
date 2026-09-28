@@ -8,6 +8,7 @@ import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:hugeicons/hugeicons.dart';
 
 import '../../../../core/helpers/extensions.dart';
+import '../../../../core/helpers/geo_utils.dart';
 import '../../../../core/helpers/trip_fare_helper.dart';
 import '../../../../core/helpers/set_map_style.dart';
 import '../../../../core/helpers/spacing.dart';
@@ -35,6 +36,7 @@ import '../logic/map_bloc/map_state.dart';
 import '../widgets/arrived_driver_section.dart';
 import '../widgets/payment_options_section.dart';
 import '../widgets/driver_data_widget.dart';
+import '../widgets/live_eta_widget.dart';
 import '../widgets/start_trip_section.dart';
 import '../widgets/trip_duration_widget.dart';
 import '../../../../core/helpers/location_helper.dart';
@@ -53,7 +55,56 @@ class ClientMapView extends StatefulWidget {
   State<ClientMapView> createState() => _ClientMapViewState();
 }
 
+/// What the rider picked when the pickup pin is far from their GPS.
+enum _PickupChoice { keepPin, useGps }
+
 class _ClientMapViewState extends State<ClientMapView> {
+  /// A pin further than this from the rider's GPS triggers a confirmation.
+  static const double _farPickupMeters = 150;
+
+  /// Returns [_PickupChoice.keepPin] straight away when the pin is near the
+  /// rider; otherwise asks. Null means the rider dismissed the dialog.
+  Future<_PickupChoice?> _confirmFarPickup(
+    LocationModel pin,
+    LocationModel gps,
+  ) async {
+    final meters = GeoUtils.haversine(
+      LatLng(pin.latitude, pin.longitude),
+      LatLng(gps.latitude, gps.longitude),
+    );
+    if (meters <= _farPickupMeters) return _PickupChoice.keepPin;
+
+    return showDialog<_PickupChoice>(
+      context: context,
+      builder: (ctx) => Directionality(
+        textDirection: TextDirection.rtl,
+        child: AlertDialog(
+          title: Text('نقطة الانطلاق بعيدة عنك', style: AppStyle.styleMedium18),
+          content: Text(
+            'نقطة الانطلاق على بعد ${meters.round()} متر من موقعك الحالي، '
+            'والكابتن هيروح للنقطة دي. متأكد إنها المكان الصح؟',
+            style: AppStyle.styleRegular14,
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, _PickupChoice.useGps),
+              child: Text('استخدم موقعي الحالي', style: AppStyle.styleMedium14),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, _PickupChoice.keepPin),
+              child: Text(
+                'تأكيد النقطة',
+                style: AppStyle.styleMedium14.copyWith(
+                  color: AppColors.primaryOrange,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   BitmapDescriptor? _customMarkerIcon;
   BitmapDescriptor? _fakeScooterIcon;
   Offset? _etaBubblePosition;
@@ -85,6 +136,58 @@ class _ClientMapViewState extends State<ClientMapView> {
   // us tell our own animations apart from those manual gestures.
   DateTime? _manualPanUntil;
   bool _programmaticCameraMove = false;
+
+  // Captain marker glides between live updates instead of jumping. Only the
+  // map listens to it, so the ~20 fps animation doesn't rebuild the sheet.
+  final ValueNotifier<LatLng?> _captainShown = ValueNotifier(null);
+  LatLng? _captainFrom;
+  LatLng? _captainTo;
+  DateTime _captainGlideStart = DateTime.now();
+  Duration _captainGlideDuration = Duration.zero;
+  DateTime? _lastCaptainFixAt;
+  Timer? _captainGlideTimer;
+
+  void _glideCaptainTo(LatLng to) {
+    final now = DateTime.now();
+    // Spread the move over roughly the gap between captain updates.
+    final gap = _lastCaptainFixAt == null
+        ? 0
+        : now.difference(_lastCaptainFixAt!).inMilliseconds.clamp(500, 3000);
+    _lastCaptainFixAt = now;
+    _captainFrom = _captainShown.value ?? to;
+    _captainTo = to;
+    _captainGlideStart = now;
+    _captainGlideDuration = Duration(milliseconds: gap);
+    _captainGlideTimer ??= Timer.periodic(
+      const Duration(milliseconds: 50),
+      (_) => _captainGlideTick(),
+    );
+  }
+
+  void _captainGlideTick() {
+    final from = _captainFrom, to = _captainTo;
+    if (!mounted || from == null || to == null) return;
+    final total = _captainGlideDuration.inMilliseconds;
+    final elapsed = DateTime.now()
+        .difference(_captainGlideStart)
+        .inMilliseconds;
+    final t = total <= 0 ? 1.0 : (elapsed / total).clamp(0.0, 1.0);
+    _captainShown.value = LatLng(
+      from.latitude + (to.latitude - from.latitude) * t,
+      from.longitude + (to.longitude - from.longitude) * t,
+    );
+    if (t >= 1) {
+      _captainGlideTimer?.cancel();
+      _captainGlideTimer = null;
+    }
+  }
+
+  void _resetCaptainGlide() {
+    _captainGlideTimer?.cancel();
+    _captainGlideTimer = null;
+    _lastCaptainFixAt = null;
+    _captainShown.value = null;
+  }
 
   @override
   void initState() {
@@ -214,6 +317,8 @@ class _ClientMapViewState extends State<ClientMapView> {
   @override
   void dispose() {
     _cameraMoveDebounce?.cancel();
+    _captainGlideTimer?.cancel();
+    _captainShown.dispose();
     controller?.dispose();
     super.dispose();
   }
@@ -333,10 +438,12 @@ class _ClientMapViewState extends State<ClientMapView> {
       markers.add(
         Marker(
           markerId: const MarkerId('captain'),
-          position: LatLng(
-            state.driverLocation!.latitude,
-            state.driverLocation!.longitude,
-          ),
+          position:
+              _captainShown.value ??
+              LatLng(
+                state.driverLocation!.latitude,
+                state.driverLocation!.longitude,
+              ),
           infoWindow: const InfoWindow(title: 'الكابتن'),
           icon:
               _fakeScooterIcon ??
@@ -620,7 +727,8 @@ class _ClientMapViewState extends State<ClientMapView> {
                                 return;
                               }
                               final mapBloc = context.read<MapBloc>();
-                              final target = tripState.tripStatus == 'InProgress'
+                              final target =
+                                  tripState.tripStatus == 'InProgress'
                                   ? mapBloc.state.toLocation
                                   : mapBloc.state.fromLocation;
                               final driverLoc = LocationModel(
@@ -633,6 +741,9 @@ class _ClientMapViewState extends State<ClientMapView> {
                                   target: target,
                                 ),
                               );
+                              _glideCaptainTo(
+                                LatLng(driverLoc.latitude, driverLoc.longitude),
+                              );
                               // Re-frame the camera so the moving captain (and the
                               // live route) stay on screen — the whole point of
                               // live tracking. Respects a manual pan.
@@ -643,82 +754,87 @@ class _ClientMapViewState extends State<ClientMapView> {
                             },
                             child: const SizedBox.shrink(),
                           ),
-                          GoogleMap(
-                            cameraTargetBounds: CameraTargetBounds(egyptBounds),
-                            minMaxZoomPreference: const MinMaxZoomPreference(
-                              6,
-                              18,
-                            ),
-                            trafficEnabled: false,
-                            myLocationEnabled: true,
-                            padding: const EdgeInsets.only(top: 30),
-                            myLocationButtonEnabled: false,
-                            zoomControlsEnabled: false,
-                            initialCameraPosition: initpos,
-                            polylines: _buildPolylines(state),
-                            markers: _buildMarkers(state),
-                            onTap: (latLng) {
-                              context.read<MapBloc>().add(
-                                SelectLocationFromMap(
-                                  location: LocationModel(
-                                    latitude: latLng.latitude,
-                                    longitude: latLng.longitude,
+                          ValueListenableBuilder<LatLng?>(
+                            valueListenable: _captainShown,
+                            builder: (context, _, __) => GoogleMap(
+                              cameraTargetBounds: CameraTargetBounds(
+                                egyptBounds,
+                              ),
+                              minMaxZoomPreference: const MinMaxZoomPreference(
+                                6,
+                                18,
+                              ),
+                              trafficEnabled: false,
+                              myLocationEnabled: true,
+                              padding: const EdgeInsets.only(top: 30),
+                              myLocationButtonEnabled: false,
+                              zoomControlsEnabled: false,
+                              initialCameraPosition: initpos,
+                              polylines: _buildPolylines(state),
+                              markers: _buildMarkers(state),
+                              onTap: (latLng) {
+                                context.read<MapBloc>().add(
+                                  SelectLocationFromMap(
+                                    location: LocationModel(
+                                      latitude: latLng.latitude,
+                                      longitude: latLng.longitude,
+                                    ),
+                                    isFrom: state.isFromFieldFocused,
                                   ),
-                                  isFrom: state.isFromFieldFocused,
-                                ),
-                              );
-                            },
-                            onCameraMoveStarted: () {
-                              // A real drag/zoom (not one of our own animations)
-                              // pauses auto-follow for a few seconds so the rider
-                              // can look around without the camera yanking back.
-                              if (!_programmaticCameraMove) {
-                                _manualPanUntil = DateTime.now().add(
-                                  const Duration(seconds: 6),
                                 );
-                              }
-                            },
-                            onCameraMove: (pos) {
-                              // Track the live centre for the pin picker.
-                              _cameraTarget = pos.target;
-                              // نتجنّب عمل update في كل فريم — نستخدم debounce
-                              _cameraMoveDebounce?.cancel();
-                              _cameraMoveDebounce = Timer(
-                                const Duration(milliseconds: 250),
-                                () {
-                                  _updateEtaBubblePosition(
-                                    context.read<MapBloc>().state,
+                              },
+                              onCameraMoveStarted: () {
+                                // A real drag/zoom (not one of our own animations)
+                                // pauses auto-follow for a few seconds so the rider
+                                // can look around without the camera yanking back.
+                                if (!_programmaticCameraMove) {
+                                  _manualPanUntil = DateTime.now().add(
+                                    const Duration(seconds: 6),
                                   );
-                                },
-                              );
-                            },
-                            onCameraIdle: () {
-                              _updateEtaBubblePosition(
-                                context.read<MapBloc>().state,
-                              );
-                            },
-                            onMapCreated: (map) {
-                              if (!completer.isCompleted)
-                                completer.complete(map);
-                              controller = map;
-                              setMapStyle(context, controller!);
-                              if (context
+                                }
+                              },
+                              onCameraMove: (pos) {
+                                // Track the live centre for the pin picker.
+                                _cameraTarget = pos.target;
+                                // نتجنّب عمل update في كل فريم — نستخدم debounce
+                                _cameraMoveDebounce?.cancel();
+                                _cameraMoveDebounce = Timer(
+                                  const Duration(milliseconds: 250),
+                                  () {
+                                    _updateEtaBubblePosition(
+                                      context.read<MapBloc>().state,
+                                    );
+                                  },
+                                );
+                              },
+                              onCameraIdle: () {
+                                _updateEtaBubblePosition(
+                                  context.read<MapBloc>().state,
+                                );
+                              },
+                              onMapCreated: (map) {
+                                if (!completer.isCompleted)
+                                  completer.complete(map);
+                                controller = map;
+                                setMapStyle(context, controller!);
+                                if (context
+                                        .read<MapBloc>()
+                                        .state
+                                        .currentLocation !=
+                                    null) {
+                                  final cur = context
                                       .read<MapBloc>()
                                       .state
-                                      .currentLocation !=
-                                  null) {
-                                final cur = context
-                                    .read<MapBloc>()
-                                    .state
-                                    .currentLocation!;
-                                controller!.animateCamera(
-                                  CameraUpdate.newLatLngZoom(
-                                    LatLng(cur.latitude, cur.longitude),
-                                    16,
-                                  ),
-                                );
-                              }
-                            },
+                                      .currentLocation!;
+                                  controller!.animateCamera(
+                                    CameraUpdate.newLatLngZoom(
+                                      LatLng(cur.latitude, cur.longitude),
+                                      16,
+                                    ),
+                                  );
+                                }
+                              },
+                            ),
                           ),
 
                           // Centre pin overlay while picking a point on the map.
@@ -809,7 +925,13 @@ class _ClientMapViewState extends State<ClientMapView> {
             if (tripState.status.isCurrentTripReceived &&
                 tripState.currentTrip != null) {
               final ct = tripState.currentTrip!;
-              const active = ['Pending', 'Accepted', 'Arrived', 'InProgress', 'Completed'];
+              const active = [
+                'Pending',
+                'Accepted',
+                'Arrived',
+                'InProgress',
+                'Completed',
+              ];
               if (active.contains(ct.tripStatus)) {
                 mapBloc.add(SetTripForClient(trip: ct));
                 if (status != 2) setState(() => status = 2);
@@ -827,7 +949,10 @@ class _ClientMapViewState extends State<ClientMapView> {
               final lastDriver = mapBloc.state.driverLocation;
               if (dest != null && lastDriver != null) {
                 mapBloc.add(
-                  UpdateDriverLocation(driverLocation: lastDriver, target: dest),
+                  UpdateDriverLocation(
+                    driverLocation: lastDriver,
+                    target: dest,
+                  ),
                 );
               }
               _followTripCamera('InProgress', force: true);
@@ -840,6 +965,7 @@ class _ClientMapViewState extends State<ClientMapView> {
                 tripState.tripStatus == 'Canceled') {
               mapBloc.stopEtaTracking();
               mapBloc.add(ClearDriverLocation());
+              _resetCaptainGlide();
             }
             log(
               'Generating fake scooters & status: $status --- ${tripState.tripStatus}',
@@ -877,9 +1003,12 @@ class _ClientMapViewState extends State<ClientMapView> {
                   ? Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        paymentOptionsSection(context, tripState,
-                            currentTrip: ct,
-                            clientSelectedMethod: _selectedPaymentMethod),
+                        paymentOptionsSection(
+                          context,
+                          tripState,
+                          currentTrip: ct,
+                          clientSelectedMethod: _selectedPaymentMethod,
+                        ),
                         verticalSpace(10),
                         acceptedAssignDriverSection(context),
                       ],
@@ -976,8 +1105,9 @@ class _ClientMapViewState extends State<ClientMapView> {
                       onPressed: () => setState(() => _pinMode = null),
                       child: Text(
                         'إلغاء',
-                        style: AppStyle.styleMedium14
-                            .copyWith(color: AppColors.primary),
+                        style: AppStyle.styleMedium14.copyWith(
+                          color: AppColors.primary,
+                        ),
                       ),
                     ),
                   ),
@@ -987,21 +1117,24 @@ class _ClientMapViewState extends State<ClientMapView> {
                       height: 48,
                       text: 'تأكيد الموقع',
                       onPressed: () {
-                        final target = _cameraTarget ??
+                        final target =
+                            _cameraTarget ??
                             (state.currentLocation != null
-                                ? LatLng(state.currentLocation!.latitude,
-                                    state.currentLocation!.longitude)
+                                ? LatLng(
+                                    state.currentLocation!.latitude,
+                                    state.currentLocation!.longitude,
+                                  )
                                 : null);
                         if (target == null) return;
                         context.read<MapBloc>().add(
-                              SelectLocationFromMap(
-                                location: LocationModel(
-                                  latitude: target.latitude,
-                                  longitude: target.longitude,
-                                ),
-                                isFrom: isFrom,
-                              ),
-                            );
+                          SelectLocationFromMap(
+                            location: LocationModel(
+                              latitude: target.latitude,
+                              longitude: target.longitude,
+                            ),
+                            isFrom: isFrom,
+                          ),
+                        );
                         setState(() => _pinMode = null);
                       },
                     ),
@@ -1399,14 +1532,14 @@ class _ClientMapViewState extends State<ClientMapView> {
                                     : Expanded(
                                         child: CustomButton(
                                           text: 'موافق',
-                                          onPressed: () {
+                                          onPressed: () async {
                                             if (tripState
                                                 .status
                                                 .isGetKiloPriceSuccess) {
-                                              final from =
+                                              var from =
                                                   state.fromLocation ??
                                                   state.currentLocation;
-                                              final fromAddress =
+                                              var fromAddress =
                                                   state.fromAddress ??
                                                   state.currentAddress;
                                               final to = state.toLocation;
@@ -1418,6 +1551,28 @@ class _ClientMapViewState extends State<ClientMapView> {
                                                   "لازم تختار نقطة انطلاق ووجهة قبل تأكيد الرحلة",
                                                 );
                                                 return;
+                                              }
+
+                                              // Captains navigate to the pin, so
+                                              // a pin far from the rider means a
+                                              // captain who can't find them.
+                                              final gps = state.currentLocation;
+                                              if (gps != null) {
+                                                final choice =
+                                                    await _confirmFarPickup(
+                                                      from,
+                                                      gps,
+                                                    );
+                                                if (choice == null ||
+                                                    !context.mounted) {
+                                                  return;
+                                                }
+                                                if (choice ==
+                                                    _PickupChoice.useGps) {
+                                                  from = gps;
+                                                  fromAddress =
+                                                      state.currentAddress;
+                                                }
                                               }
 
                                               final tripRequestModel =
@@ -1571,10 +1726,15 @@ class _ClientMapViewState extends State<ClientMapView> {
             ),
           ),
           verticalSpace(12),
+          // Live countdown from the captain's position (the old distance line
+          // used his location at acceptance, so it never changed).
+          const LiveEtaWidget(toPickup: true),
+          verticalSpace(10),
           driverDataWidget(
-            currentTrip: widget.currentTrip,
+            currentTrip:
+                context.read<RealTimeTripCubit>().state.currentTrip ??
+                widget.currentTrip,
             context: context,
-            showDistance: true,
           ),
           verticalSpace(18),
           Align(child: cancelTripButton()),
@@ -1583,8 +1743,12 @@ class _ClientMapViewState extends State<ClientMapView> {
     );
   }
 
-  Widget _payMethodChip(String value, String label, IconData icon,
-      {bool enabled = true}) {
+  Widget _payMethodChip(
+    String value,
+    String label,
+    IconData icon, {
+    bool enabled = true,
+  }) {
     final selected = _selectedPaymentMethod == value;
     // Disabled methods (e.g. Visa, temporarily off) are dimmed and not tappable.
     return Opacity(
@@ -1714,7 +1878,10 @@ class _ClientMapViewState extends State<ClientMapView> {
           verticalSpace(12),
           _tripPriceBanner(tripState),
           verticalSpace(12),
-          driverDataWidget(currentTrip: widget.currentTrip, context: context),
+          driverDataWidget(
+            currentTrip: tripState.currentTrip ?? widget.currentTrip,
+            context: context,
+          ),
           // If the ride completed before the client paid, this is the only place
           // left to settle it — otherwise the trip stays "awaiting payment"
           // forever. Auto-hides once paymentStatus == 'Paid'.
@@ -1771,13 +1938,19 @@ class _ClientMapViewState extends State<ClientMapView> {
                             context.read<RatingCubit>().sendRating(
                               SendRatingModel(
                                 score: rating.ceil(),
+                                // A rider who recovered this trip via resync
+                                // never got TripApproved, so don't rely on it.
                                 tripId:
+                                    tripState.currentTrip?.tripId ??
                                     widget.currentTrip?.tripId ??
-                                    tripState.tripApprovedForClient!.tripId,
+                                    tripState.tripApprovedForClient?.tripId ??
+                                    tripState.tripId,
                                 fromUserId: AppConstants.kUserId,
                                 toUserId:
+                                    tripState.currentTrip?.driverId ??
                                     widget.currentTrip?.driverId ??
-                                    tripState.tripApprovedForClient!.driverId,
+                                    tripState.tripApprovedForClient?.driverId ??
+                                    '',
                               ),
                             );
                           },
@@ -1828,8 +2001,9 @@ class _ClientMapViewState extends State<ClientMapView> {
               ListTile(
                 title: Text(
                   r,
-                  style:
-                      AppStyle.styleMedium14.copyWith(color: AppColors.white),
+                  style: AppStyle.styleMedium14.copyWith(
+                    color: AppColors.white,
+                  ),
                 ),
                 onTap: () => Navigator.pop(ctx, r),
               ),

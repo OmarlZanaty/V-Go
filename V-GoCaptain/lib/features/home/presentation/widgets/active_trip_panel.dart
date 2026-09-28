@@ -307,6 +307,11 @@ class ActiveTripPanel extends StatelessWidget {
       return;
     }
 
+    LatLng? clientOf(CaptainHomeState s) => s.hasClientLocation
+        ? LatLng(s.clientLat!, s.clientLng!)
+        : null;
+    final cubit = context.read<CaptainHomeCubit>();
+
     await Navigator.of(context).push(
       MaterialPageRoute(
         builder: (_) => NavigationScreen(
@@ -314,6 +319,9 @@ class ActiveTripPanel extends StatelessWidget {
           destination: LatLng(target.lat, target.lng),
           destinationName: target.displayAddress,
           phase: isDropoff ? 'dropoff' : 'pickup',
+          initialClientLocation: isDropoff ? null : clientOf(cubit.state),
+          clientLocationStream:
+              isDropoff ? null : cubit.stream.map(clientOf).distinct(),
         ),
       ),
     );

@@ -79,16 +79,34 @@ class RoutesApiService {
       'routes.legs.steps.endLocation,'
       'routes.legs.steps.polyline';
 
+  /// A slower alternative is still preferred when it is shorter and at most
+  /// this much slower than the fastest one (captains want the shortcut).
+  static const double _maxSlowdownForShortcut = 1.15;
+
+  /// Routes for scooters first (TWO_WHEELER takes the shortcuts cars can't,
+  /// and is supported in Egypt), falling back to DRIVE if it fails.
   Future<RouteResult> computeRoute({
     required LatLng origin,
     required LatLng destination,
   }) async {
+    try {
+      return await _computeRoute(origin, destination, 'TWO_WHEELER');
+    } on RoutesApiException {
+      return _computeRoute(origin, destination, 'DRIVE');
+    }
+  }
+
+  Future<RouteResult> _computeRoute(
+    LatLng origin,
+    LatLng destination,
+    String travelMode,
+  ) async {
     final body = {
       'origin': _waypoint(origin),
       'destination': _waypoint(destination),
-      'travelMode': 'DRIVE',
+      'travelMode': travelMode,
       'routingPreference': 'TRAFFIC_AWARE',
-      'computeAlternativeRoutes': false,
+      'computeAlternativeRoutes': true,
       'languageCode': 'ar',
       'regionCode': 'EG',
       'units': 'METRIC',
@@ -132,7 +150,7 @@ class RoutesApiService {
       throw RoutesApiException('لا يوجد مسار متاح');
     }
 
-    final route = routes.first as Map<String, dynamic>;
+    final route = _pickShortest(routes.cast<Map<String, dynamic>>());
     final polyline = PolylineDecoder.decode(
       (route['polyline'] as Map?)?['encodedPolyline'] as String?,
     );
@@ -157,6 +175,22 @@ class RoutesApiService {
       distanceMeters: (route['distanceMeters'] as num?)?.toDouble() ?? 0,
       durationSeconds: _parseDuration(route['duration']),
     );
+  }
+
+  /// Shortest route whose duration is within [_maxSlowdownForShortcut] of the
+  /// fastest; Google's default pick favours speed and often takes long detours.
+  Map<String, dynamic> _pickShortest(List<Map<String, dynamic>> routes) {
+    double dist(Map r) => (r['distanceMeters'] as num?)?.toDouble() ?? double.infinity;
+    final fastest = routes
+        .map((r) => _parseDuration(r['duration']))
+        .reduce((a, b) => a < b ? a : b);
+    var best = routes.first;
+    for (final r in routes) {
+      final acceptable =
+          _parseDuration(r['duration']) <= fastest * _maxSlowdownForShortcut;
+      if (acceptable && dist(r) < dist(best)) best = r;
+    }
+    return best;
   }
 
   Map<String, dynamic> _waypoint(LatLng p) => {

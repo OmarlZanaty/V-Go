@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:developer';
 
 import 'package:equatable/equatable.dart';
 import 'package:flutter/widgets.dart';
@@ -33,7 +34,17 @@ class CaptainHomeCubit extends Cubit<CaptainHomeState> with WidgetsBindingObserv
     _realtime.onConnectionLost = _handleConnectionLost;
     _realtime.onReconnected = _handleReconnected;
     _realtime.onPaymentUpdated = _handlePaymentUpdated;
+    _realtime.onClientLocation = _handleClientLocation;
     WidgetsBinding.instance.addObserver(this);
+  }
+
+  /// Rider's live GPS — only useful until pickup; ignored once the ride starts.
+  void _handleClientLocation(double lat, double lng) {
+    if (isClosed || !state.hasActiveTrip) return;
+    if (state.stage != TripStage.accepted && state.stage != TripStage.arrived) {
+      return;
+    }
+    emit(state.copyWith(clientLat: lat, clientLng: lng));
   }
 
   @override
@@ -109,8 +120,13 @@ class CaptainHomeCubit extends Cubit<CaptainHomeState> with WidgetsBindingObserv
     }
 
     try {
+      // Socket + GPS fix in parallel — each can take seconds on mobile. A missing
+      // fix must not block going online; the position stream fills it in.
+      final positionFuture = _location
+          .currentPosition()
+          .then<Position?>((p) => p, onError: (_) => _lastPosition);
       await _realtime.connect();
-      _lastPosition = await _location.currentPosition();
+      _lastPosition = await positionFuture;
       await _realtime.updateDriverStatus(
         isAvailable: true,
         lat: _lastPosition?.latitude,
@@ -123,7 +139,8 @@ class CaptainHomeCubit extends Cubit<CaptainHomeState> with WidgetsBindingObserv
       // strand a ride that can't be ended), then surface any waiting offer.
       await _restoreActiveTrip();
       unawaited(_loadPendingOffer());
-    } catch (_) {
+    } catch (e) {
+      log('goOnline failed: $e', name: 'CaptainHomeCubit');
       await _realtime.disconnect();
       emit(state.copyWith(
         connection: CaptainConnection.offline,
@@ -335,7 +352,11 @@ class CaptainHomeCubit extends Cubit<CaptainHomeState> with WidgetsBindingObserv
           unawaited(_pushActiveTripLocation());
         case TripStage.arrived:
           await _realtime.startTrip(trip.tripId);
-          emit(state.copyWith(stage: TripStage.inProgress, isBusy: false));
+          emit(state.copyWith(
+            stage: TripStage.inProgress,
+            isBusy: false,
+            clearClientLocation: true,
+          ));
           // Trip just started → target flips to the destination; seed a location
           // so the client's route/marker updates right away.
           unawaited(_pushActiveTripLocation());

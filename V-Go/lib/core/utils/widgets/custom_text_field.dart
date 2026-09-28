@@ -45,9 +45,19 @@ class _CustomTextFieldState extends State<CustomTextField> {
       cursorColor: widget.labelColor ?? AppColors.primary,
       cursorRadius: const Radius.circular(10),
       obscureText: _isObscure,
+      // A password field must never be autocorrected. Flutter disables
+      // suggestions while text is obscured, but the moment the eye toggle
+      // reveals it the keyboard re-enables autocorrect and can rewrite the
+      // password (a real V-Go login bug: the API accepted the password but
+      // the app, with the password shown, sent a keyboard-mangled version).
+      // Forced off here whenever the field is a password field, and the
+      // visiblePassword keyboard keeps it off even when revealed.
+      autocorrect: !widget.obscureText,
+      enableSuggestions: !widget.obscureText,
 
       controller: widget.controller,
-      keyboardType: widget.keyboardType,
+      keyboardType: widget.keyboardType ??
+          (widget.obscureText ? TextInputType.visiblePassword : null),
       style: AppStyle.styleMedium16.copyWith(
         color: widget.labelColor ?? AppColors.white,
       ),

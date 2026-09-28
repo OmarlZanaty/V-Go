@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import 'package:pretty_dio_logger/pretty_dio_logger.dart';
@@ -98,6 +100,44 @@ class DioFactory {
 class TokenService {
   Future<String> getAccessToken() =>
       CacheHelper.getSecuredString(AppConstants.token);
+
+  // Shared so concurrent callers (both SignalR hubs) trigger a single refresh —
+  // the backend rotates refresh tokens, so a second parallel refresh would fail.
+  static Future<String>? _refreshing;
+
+  /// Access token that is guaranteed not to be (about to be) expired. Used by
+  /// SignalR, which has no Dio interceptor to refresh on 401.
+  Future<String> getFreshAccessToken() async {
+    final token = await getAccessToken();
+    if (token.isEmpty || !_isExpiring(token)) return token;
+    if ((await getRefreshToken()).isEmpty) return token;
+    _refreshing ??= refreshToken()
+        .then((_) => getAccessToken())
+        .whenComplete(() => _refreshing = null);
+    try {
+      return await _refreshing!;
+    } catch (_) {
+      return token;
+    }
+  }
+
+  static bool _isExpiring(String jwt) {
+    final parts = jwt.split('.');
+    if (parts.length != 3) return false;
+    try {
+      final payload = jsonDecode(
+          utf8.decode(base64Url.decode(base64Url.normalize(parts[1]))));
+      final exp = payload['exp'];
+      if (exp is! num) return false;
+      final expiry =
+          DateTime.fromMillisecondsSinceEpoch(exp.toInt() * 1000, isUtc: true);
+      return DateTime.now()
+          .toUtc()
+          .isAfter(expiry.subtract(const Duration(minutes: 2)));
+    } catch (_) {
+      return false;
+    }
+  }
 
   Future<String> getRefreshToken() =>
       CacheHelper.getSecuredString(AppConstants.refreshToken);

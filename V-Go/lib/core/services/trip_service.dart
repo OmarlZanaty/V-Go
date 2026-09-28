@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:developer';
 
 import 'package:signalr_netcore/signalr_client.dart';
@@ -24,6 +25,7 @@ class TripService {
   Function(List<Object?>?)? tripCanceledForTripDriver;
   Function(List<Object?>?)? receivePendingTrips;
   Function(List<Object?>?)? receiveCurrentTrip;
+  void Function(String message)? noCurrentTrip;
   Function(List<Object?>?)? receiveDriverLocation;
   Function(List<Object?>?)? tripTakenByAnotherDriver;
   Function(List<Object?>?)? tripPaymentUpdated;
@@ -56,6 +58,11 @@ class TripService {
         'TripHub connection closed: ${error?.toString()}',
         name: 'TripService',
       );
+      // withAutomaticReconnect gives up after 4 quick tries (~42s) and then
+      // closes for good — on a phone with a flaky network or a backgrounded
+      // app that left the rider stuck on a stale trip screen (e.g. "captain on
+      // the way" through the whole ride). Keep retrying until we're back.
+      if (!_stopRequested) _scheduleReconnect();
     });
 
     _hubConnection.onreconnected(({connectionId}) {
@@ -84,6 +91,12 @@ class TripService {
     _hubConnection.on('ReceiveDriverLocation', (args) {
       receiveDriverLocation?.call(args);
       log('ReceiveDriverLocation received in Client: $args', name: 'TripService');
+    });
+
+    // Server answer to SendCurrentTrip when the caller has no current trip.
+    _hubConnection.on('ReceiveCurrentTripError', (args) {
+      final msg = (args != null && args.isNotEmpty) ? args.first : null;
+      noCurrentTrip?.call(msg?.toString() ?? '');
     });
 
     //! receiveCurrentTrip Listeners
@@ -166,6 +179,7 @@ class TripService {
   }
 
   Future<void> connect() async {
+    _stopRequested = false;
     if (_isConnected) return;
 
     try {
@@ -178,11 +192,59 @@ class TripService {
     }
   }
 
+  // Set by disconnect() so a deliberate stop isn't undone by the retry loop.
+  bool _stopRequested = false;
+  Timer? _reconnectTimer;
+  int _reconnectAttempt = 0;
+  static const List<int> _reconnectBackoffSeconds = [2, 5, 10, 15, 30];
+
+  void _scheduleReconnect() {
+    if (_reconnectTimer?.isActive ?? false) return;
+    final delay = _reconnectBackoffSeconds[_reconnectAttempt.clamp(
+      0,
+      _reconnectBackoffSeconds.length - 1,
+    )];
+    _reconnectAttempt++;
+    _reconnectTimer = Timer(Duration(seconds: delay), () async {
+      if (_stopRequested || _isConnected) return;
+      try {
+        await _hubConnection.start();
+        _isConnected = true;
+        _reconnectAttempt = 0;
+        log('TripHub re-established after close', name: 'TripService');
+        onReconnected?.call();
+      } catch (e) {
+        log('TripHub reconnect failed: $e', name: 'TripService');
+        _scheduleReconnect();
+      }
+    });
+  }
+
+  /// Reconnect now if the socket is down (e.g. app resumed, push received)
+  /// instead of waiting for the next retry. Never throws.
+  Future<void> ensureConnected() async {
+    if (_isConnected || _stopRequested) return;
+    _reconnectTimer?.cancel();
+    try {
+      await _hubConnection.start();
+      _isConnected = true;
+      _reconnectAttempt = 0;
+      onReconnected?.call();
+    } catch (e) {
+      log('ensureConnected failed: $e', name: 'TripService');
+      _scheduleReconnect();
+    }
+  }
+
   /// Ask the server to (re)push the caller's current trip (ReceiveCurrentTrip).
   /// Called on connect/reconnect/resume so the UI recovers after any missed
   /// events instead of being stuck on the last state it saw.
   Future<void> requestCurrentTrip() async {
-    if (!_isConnected) return;
+    if (!_isConnected) {
+      // A successful reconnect fires onReconnected, which re-requests.
+      await ensureConnected();
+      return;
+    }
     // Backend UserTripRole enum: Client = 1, Driver = 2.
     final role = AppConstants.kRole == 'Driver' ? 2 : 1;
     try {
@@ -273,6 +335,17 @@ class TripService {
     } catch (e) {
       log('Error starting trip: $e', name: 'TripService');
       throw 'حدث خطاء اثناء بدء الرحلة , حاول مره اخرى';
+    }
+  }
+
+  /// Rider's live GPS while waiting for the captain; the server relays it to
+  /// the trip's captain. Best-effort — a dropped tick is simply skipped.
+  Future<void> updateClientLocation(double lat, double lng) async {
+    if (!_isConnected) return;
+    try {
+      await _hubConnection.invoke('UpdateClientLocation', args: [lat, lng]);
+    } catch (e) {
+      log('updateClientLocation failed: $e', name: 'TripService');
     }
   }
 
@@ -380,6 +453,8 @@ class TripService {
   }
 
   Future<void> disconnect() async {
+    _stopRequested = true;
+    _reconnectTimer?.cancel();
     if (!_isConnected) return;
 
     try {

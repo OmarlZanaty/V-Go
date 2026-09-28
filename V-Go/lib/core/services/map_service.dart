@@ -27,6 +27,65 @@ class MapService {
 
   MapService(this.dio);
 
+  static const String _geocodeUrl =
+      'https://maps.googleapis.com/maps/api/geocode/json';
+
+  // Leading plus code ("XG6R+PVH، ") and postal codes add noise, not meaning.
+  static final RegExp _plusCode = RegExp(r'^[A-Z0-9]{4,}\+[A-Z0-9]{2,}[،,]?\s*');
+  static final RegExp _postalCode = RegExp(r'\s*\d{5,}');
+
+  /// Street-level Arabic address for a point, or null if Google has nothing
+  /// more specific than the city/governorate. The device geocoder often
+  /// returns only "Suez Governorate", which tells the captain nothing.
+  Future<String?> reverseGeocode(double lat, double lng) async {
+    try {
+      final response = await dio.get(
+        _geocodeUrl,
+        queryParameters: {
+          'latlng': '$lat,$lng',
+          'language': 'ar',
+          'region': 'eg',
+          'key': _apiKey,
+        },
+      );
+      final results = (response.data['results'] as List?) ?? const [];
+      for (final r in results.cast<Map<String, dynamic>>()) {
+        // Names that only say which city/governorate we're in.
+        final generic = <String>{'مصر'};
+        for (final c in (r['address_components'] as List? ?? const [])) {
+          final types = (c['types'] as List).cast<String>();
+          if (types.contains('locality') ||
+              types.contains('administrative_area_level_1') ||
+              types.contains('administrative_area_level_2') ||
+              types.contains('country')) {
+            generic.add((c['long_name'] as String).trim());
+          }
+        }
+        final parts = (r['formatted_address'] as String? ?? '')
+            .replaceFirst(_plusCode, '')
+            .replaceAll(_postalCode, '')
+            .split(RegExp('[،,]'))
+            .map((p) => p.trim())
+            .where((p) => p.isNotEmpty && !p.contains('+'))
+            .toList();
+        bool isGeneric(String p) =>
+            generic.contains(p) || p.contains('Governorate') || p == 'Egypt';
+        final specific = parts.where((p) => !isGeneric(p)).toList();
+        if (specific.isEmpty) continue;
+        // Most specific bits first, then the city so it still reads naturally.
+        final city = parts.firstWhere(
+          (p) => generic.contains(p) && p != 'مصر',
+          orElse: () => '',
+        );
+        return [...specific.take(2), if (city.isNotEmpty) city].join('، ');
+      }
+      return null;
+    } catch (e) {
+      log('reverseGeocode failed: $e');
+      return null;
+    }
+  }
+
   Future<List<PlaceSuggestionModel>> getPlaceSuggestions(
     String query,
     String sessionToken, {
@@ -120,10 +179,13 @@ class MapService {
     }
   }
 
+  /// [travelMode]: the app routes as TWO_WHEELER (see MapRepo.getRoute), with
+  /// DRIVE as the fallback.
   Future<RouteResultModel> getRouteBetweenLocations(
     LocationModel from,
-    LocationModel to,
-  ) async {
+    LocationModel to, {
+    String travelMode = 'DRIVE',
+  }) async {
     try {
       final response = await dio.post(
         _routesUrl,
@@ -141,7 +203,7 @@ class MapService {
               'latLng': {'latitude': to.latitude, 'longitude': to.longitude},
             },
           },
-          'travelMode': 'DRIVE',
+          'travelMode': travelMode,
           'routingPreference': 'TRAFFIC_AWARE',
         },
         options: Options(
@@ -167,6 +229,9 @@ class MapService {
           points: points,
           distanceKm: distanceKm,
           duration: formatDuration(duration),
+          // Google sends e.g. "754s".
+          durationSeconds:
+              double.tryParse(duration.replaceAll('s', '')) ?? 0,
         );
       } else {
         throw Exception(
@@ -218,8 +283,9 @@ class MapService {
 
   Future<EtaDistanceResult?> getEstimatedTimeOfArrival(
     LocationModel from,
-    LocationModel to,
-  ) async {
+    LocationModel to, {
+    String travelMode = 'DRIVE',
+  }) async {
     try {
       final response = await dio.post(
         _routesUrl,
@@ -237,7 +303,7 @@ class MapService {
               'latLng': {'latitude': to.latitude, 'longitude': to.longitude},
             },
           },
-          'travelMode': 'DRIVE',
+          'travelMode': travelMode,
           'routingPreference': 'TRAFFIC_AWARE',
         },
         options: Options(

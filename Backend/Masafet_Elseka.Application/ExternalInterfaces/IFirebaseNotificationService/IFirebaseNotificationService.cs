@@ -1,4 +1,4 @@
-﻿using Masafet_Elseka.Application.DTOs.PushFireBaseNotificationMessage;
+using Masafet_Elseka.Application.DTOs.PushFireBaseNotificationMessage;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -9,8 +9,13 @@ namespace Masafet_Elseka.Application.ExternalInterfaces.IFirebaseNotificationSer
 {
     public interface IFirebaseNotificationService
     {
-        public Task SendToDeviceAsync(string deviceToken, PushFireBaseNotificationMessage message, CancellationToken ct = default);
-        public Task SendToMultipleDevicesAsync(List<string> deviceTokens, PushFireBaseNotificationMessage message, CancellationToken ct = default);
+        /// <summary>
+        /// Both return the tokens FCM reported as permanently dead (unregistered,
+        /// or issued by another Firebase project) so the caller can deactivate
+        /// them. A transient failure is logged and NOT returned.
+        /// </summary>
+        public Task<IReadOnlyList<string>> SendToDeviceAsync(string deviceToken, PushFireBaseNotificationMessage message, CancellationToken ct = default);
+        public Task<IReadOnlyList<string>> SendToMultipleDevicesAsync(List<string> deviceTokens, PushFireBaseNotificationMessage message, CancellationToken ct = default);
 
     }
 }

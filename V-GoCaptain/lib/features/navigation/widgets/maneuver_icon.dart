@@ -28,12 +28,14 @@ class ManeuverIcon extends StatelessWidget {
     switch (maneuver.toUpperCase()) {
       case 'TURN_LEFT':
       case 'RAMP_LEFT':
-      case 'FORK_LEFT':
         return Icons.turn_left;
       case 'TURN_RIGHT':
       case 'RAMP_RIGHT':
-      case 'FORK_RIGHT':
         return Icons.turn_right;
+      case 'FORK_LEFT':
+        return Icons.fork_left;
+      case 'FORK_RIGHT':
+        return Icons.fork_right;
       case 'TURN_SLIGHT_LEFT':
         return Icons.turn_slight_left;
       case 'TURN_SLIGHT_RIGHT':
@@ -43,13 +45,15 @@ class ManeuverIcon extends StatelessWidget {
       case 'TURN_SHARP_RIGHT':
         return Icons.turn_sharp_right;
       case 'UTURN_LEFT':
-      case 'UTURN_RIGHT':
         return Icons.u_turn_left;
+      case 'UTURN_RIGHT':
+        return Icons.u_turn_right;
       case 'MERGE':
         return Icons.merge;
       case 'ROUNDABOUT_LEFT':
-      case 'ROUNDABOUT_RIGHT':
         return Icons.roundabout_left;
+      case 'ROUNDABOUT_RIGHT':
+        return Icons.roundabout_right;
       case 'DEPART':
         return Icons.my_location;
       case 'DESTINATION':
@@ -106,7 +110,7 @@ class ManeuverIcon extends StatelessWidget {
       case 'DESTINATION':
       case 'DESTINATION_LEFT':
       case 'DESTINATION_RIGHT':
-        return 'لقد وصلت إلى وجهتك';
+        return 'الوصول إلى الوجهة';
       case 'STRAIGHT':
       case 'NAME_CHANGE':
       default:

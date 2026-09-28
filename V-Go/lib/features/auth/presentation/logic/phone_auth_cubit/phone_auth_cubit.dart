@@ -10,6 +10,7 @@ import '../../../../../core/errors/exception.dart';
 import '../../../../../core/utils/app_constants.dart';
 import '../../../data/model/phone_login_response_model.dart';
 import '../../../data/repo/auth_repo.dart';
+import '../../../../../core/services/device_token_sync.dart';
 
 part 'phone_auth_state.dart';
 
@@ -62,8 +63,8 @@ class PhoneAuthCubit extends Cubit<PhoneAuthState> {
     emit(state.copyWith(
         status: PhoneAuthStatus.authenticating, clearError: true));
     try {
-      final fcmToken =
-          (await CacheHelper.getSecuredString(AppConstants.fcmToken)) ?? '';
+      // Saved with CacheHelper.setData (SharedPreferences), not secure storage.
+      final fcmToken = CacheHelper.getString(AppConstants.fcmToken);
       final result = await _authRepo.phoneLogin(
         phone: state.phone,
         password: password,
@@ -72,6 +73,7 @@ class PhoneAuthCubit extends Cubit<PhoneAuthState> {
       );
       if (isClosed) return;
       await _cacheSession(result);
+      unawaited(DeviceTokenSync.sync());
       emit(state.copyWith(status: PhoneAuthStatus.loginSuccess));
     } catch (e) {
       if (isClosed) return;
@@ -92,8 +94,8 @@ class PhoneAuthCubit extends Cubit<PhoneAuthState> {
     emit(state.copyWith(
         status: PhoneAuthStatus.authenticating, clearError: true));
     try {
-      final fcmToken =
-          (await CacheHelper.getSecuredString(AppConstants.fcmToken)) ?? '';
+      // Saved with CacheHelper.setData (SharedPreferences), not secure storage.
+      final fcmToken = CacheHelper.getString(AppConstants.fcmToken);
       final result = await _authRepo.phoneRegister(
         phone: state.phone,
         password: password,
@@ -105,6 +107,7 @@ class PhoneAuthCubit extends Cubit<PhoneAuthState> {
       );
       if (isClosed) return;
       await _cacheSession(result);
+      unawaited(DeviceTokenSync.sync());
       emit(state.copyWith(status: PhoneAuthStatus.loginSuccess));
     } catch (e) {
       if (isClosed) return;

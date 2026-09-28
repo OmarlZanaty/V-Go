@@ -70,7 +70,7 @@ Widget driverDataWidget({
                   children: [
                     const Icon(Icons.star, color: Colors.amber, size: 22),
                     Text(
-                      currentTrip.driverRate!.toStringAsFixed(1),
+                      (currentTrip.driverRate ?? 0).toStringAsFixed(1),
                       style: AppStyle.styleMedium14.copyWith(
                         color: AppColors.white,
                       ),

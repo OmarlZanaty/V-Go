@@ -28,6 +28,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Serilog;
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
 using System.Security.Claims;
@@ -121,6 +122,38 @@ namespace Masafet_Elseka.Infrastructure.Hubs
 
             _logger.LogError("\nSignalR disconnected: " + exception?.Message+"\n");
             await base.OnDisconnectedAsync(exception);
+        }
+
+        // Client -> pickup-trip driver id, so a location tick doesn't hit the DB.
+        // Short TTL: once the trip starts/ends the relay stops on its own.
+        private static readonly ConcurrentDictionary<string, (string DriverId, DateTime CachedAt)> _clientPickupDriver = new();
+        private static readonly TimeSpan ClientPickupDriverTtl = TimeSpan.FromSeconds(30);
+
+        /// <summary>
+        /// Rider's live GPS while waiting for the captain (Accepted/Arrived).
+        /// Relayed to that trip's captain so they can find the rider even when
+        /// the pickup pin isn't where the rider is standing.
+        /// </summary>
+        public async Task UpdateClientLocation(double latitude, double longitude)
+        {
+            var clientId = Context.User?.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+            if (string.IsNullOrEmpty(clientId)) return;
+
+            if (!_clientPickupDriver.TryGetValue(clientId, out var cached)
+                || DateTime.UtcNow - cached.CachedAt > ClientPickupDriverTtl)
+            {
+                cached = (await _tripService.GetPickupTripDriverIdAsync(clientId), DateTime.UtcNow);
+                _clientPickupDriver[clientId] = cached;
+            }
+            if (string.IsNullOrEmpty(cached.DriverId)) return;
+
+            await Clients.Group(HubGroups.Driver(cached.DriverId))
+                .SendAsync(HubEvents.ReceiveClientLocation, new
+                {
+                    ClientId = clientId,
+                    Lat = latitude,
+                    Lng = longitude
+                });
         }
 
 

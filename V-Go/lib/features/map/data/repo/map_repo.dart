@@ -11,7 +11,7 @@ class MapRepo {
 
   MapRepo({required this.locationService, required this.mapService});
 
-  Future<LocationModel> getCurrentLocation() async{
+  Future<LocationModel> getCurrentLocation() async {
     return await locationService.getCurrentLocation();
   }
 
@@ -23,14 +23,28 @@ class MapRepo {
     double latitude,
     double longitude,
   ) async {
+    // Google first (street-level, Arabic); the device geocoder is the fallback.
+    final google = await mapService.reverseGeocode(latitude, longitude);
+    if (google != null) return google;
     return await locationService.getAddressFromCoordinates(latitude, longitude);
   }
 
+  /// Scooter route — the same road the captain app navigates, so the line, the
+  /// distance and the fare (distance × price/km) all match the actual ride.
+  /// Falls back to a car route if two-wheeler routing fails.
   Future<RouteResultModel> getRoute(
     LocationModel from,
     LocationModel to,
   ) async {
-    return await mapService.getRouteBetweenLocations(from, to);
+    try {
+      return await mapService.getRouteBetweenLocations(
+        from,
+        to,
+        travelMode: 'TWO_WHEELER',
+      );
+    } catch (_) {
+      return await mapService.getRouteBetweenLocations(from, to);
+    }
   }
 
   Future<List<PlaceSuggestionModel>> getPlaceSuggestions(
@@ -55,10 +69,12 @@ class MapRepo {
     LocationModel from,
     LocationModel to,
   ) async {
-   
-
-    
-    final routeResult = await mapService.getEstimatedTimeOfArrival(from, to);
-    return routeResult;
+    // Live trip ETA: the captain rides a scooter, so time it as one.
+    return await mapService.getEstimatedTimeOfArrival(
+          from,
+          to,
+          travelMode: 'TWO_WHEELER',
+        ) ??
+        await mapService.getEstimatedTimeOfArrival(from, to);
   }
 }

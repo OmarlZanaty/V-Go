@@ -2,7 +2,7 @@ import 'dart:developer';
 
 import 'package:signalr_netcore/signalr_client.dart';
 
-import '../cache/cache_helper.dart';
+import '../api/dio_factory.dart';
 import '../config/app_config.dart';
 import '../utils/app_constants.dart';
 
@@ -28,6 +28,9 @@ class RealtimeService {
   // confirmed or online checkout completed). Payload carries no tripId, but the
   // captain only serves one trip at a time, so it always refers to the active one.
   void Function()? onPaymentUpdated;
+  // Rider's live GPS while the captain heads to the pickup (relayed by the
+  // backend from the client app).
+  void Function(double lat, double lng)? onClientLocation;
 
   HubConnection _build(String hubPath) {
     return HubConnectionBuilder()
@@ -35,12 +38,11 @@ class RealtimeService {
           AppConfig.hubUrl(hubPath),
           options: HttpConnectionOptions(
             requestTimeout: 60000,
-            // Read the cached token so reconnects always use the freshest one
-            // (Dio refresh updates the cache).
+            // Refresh an expired JWT first — otherwise going online after the
+            // 1-day token lifetime fails with a 401 on negotiate.
             accessTokenFactory: () async {
-              final cached =
-                  await CacheHelper.getSecuredString(AppConstants.token);
-              return cached.isNotEmpty ? cached : AppConstants.kToken;
+              final token = await TokenService().getFreshAccessToken();
+              return token.isNotEmpty ? token : AppConstants.kToken;
             },
           ),
         )
@@ -81,6 +83,15 @@ class RealtimeService {
       tripHub.on('TripPaymentUpdated', (args) {
         onPaymentUpdated?.call();
       });
+      tripHub.on('ReceiveClientLocation', (args) {
+        final data = (args != null && args.isNotEmpty) ? args.first : null;
+        if (data is! Map) return;
+        final lat = data['lat'] ?? data['Lat'];
+        final lng = data['lng'] ?? data['Lng'];
+        if (lat is num && lng is num) {
+          onClientLocation?.call(lat.toDouble(), lng.toDouble());
+        }
+      });
 
       for (final hub in [driverHub, tripHub]) {
         hub.onclose(({error}) {
@@ -99,8 +110,7 @@ class RealtimeService {
         });
       }
 
-      await driverHub.start();
-      await tripHub.start();
+      await Future.wait([driverHub.start()!, tripHub.start()!]);
       _connected = true;
       log('Connected to driverHub + tripHub', name: 'RealtimeService');
     } catch (e) {

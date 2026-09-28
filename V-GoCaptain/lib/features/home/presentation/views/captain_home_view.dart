@@ -152,6 +152,14 @@ class _CaptainMapState extends State<_CaptainMap> {
         infoWindow: const InfoWindow(title: 'الوجهة'),
         icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueOrange),
       ),
+      // Where the rider actually is right now (may differ from the pin).
+      if (widget.state.hasClientLocation)
+        Marker(
+          markerId: const MarkerId('client-live'),
+          position: LatLng(widget.state.clientLat!, widget.state.clientLng!),
+          infoWindow: const InfoWindow(title: 'موقع العميل الحالي'),
+          icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueAzure),
+        ),
     };
   }
 
