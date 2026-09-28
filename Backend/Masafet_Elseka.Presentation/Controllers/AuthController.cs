@@ -496,6 +496,20 @@ namespace Masafet_Elseka.Presentation.Controllers
             return StatusCode(result.StatusCode, result.IsSuccess ? new { data = result.Data, message = result.Message } : (object)result.Message);
         }
 
+        public class SetPhoneDTO { public string Phone { get; set; } = string.Empty; }
+
+        /// Signed-in user sets their own phone number.
+        [Authorize(AuthenticationSchemes = Microsoft.AspNetCore.Authentication.JwtBearer.JwtBearerDefaults.AuthenticationScheme)]
+        [HttpPost("set-phone")]
+        public async Task<IActionResult> SetPhone([FromBody] SetPhoneDTO model)
+        {
+            var userId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+            if (string.IsNullOrEmpty(userId))
+                return Unauthorized();
+            var result = await _authService.SetMyPhoneAsync(userId, model?.Phone ?? "");
+            return StatusCode(result.StatusCode, result.IsSuccess ? new { data = result.Data, message = result.Message } : (object)result.Message);
+        }
+
         #endregion
     }
 }

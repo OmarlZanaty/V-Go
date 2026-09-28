@@ -12,6 +12,7 @@ import '../../../../core/utils/app_constants.dart';
 import '../logic/cubit/captain_home_cubit.dart';
 import '../widgets/active_trip_panel.dart';
 import '../widgets/incoming_trip_card.dart';
+import '../widgets/missing_phone_prompt.dart';
 
 class CaptainHomeView extends StatefulWidget {
   const CaptainHomeView({super.key});
@@ -27,6 +28,9 @@ class _CaptainHomeViewState extends State<CaptainHomeView> {
     // Center the map on the captain as soon as the screen opens (only prompts
     // for permission later, when they actually go online).
     context.read<CaptainHomeCubit>().initLocation();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) promptForMissingPhone(context);
+    });
   }
 
   @override

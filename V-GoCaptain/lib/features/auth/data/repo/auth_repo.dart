@@ -64,6 +64,7 @@ abstract class AuthRepo {
   Future<PhoneLoginResponseModel> googleTokenDriver({
     required String idToken,
     String? fullName,
+    String? phone,
     String? gender,
     String? nationalId,
     String? driverLicense,

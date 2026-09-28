@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:hugeicons/hugeicons.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../../../core/helpers/calculate_distance.dart';
 import '../../../../core/helpers/spacing.dart';
@@ -37,7 +38,7 @@ Widget driverDataWidget({
                   ),
                 ),
                 subtitle: SelectableText(
-                  currentTrip.driverPhone,
+                  _phoneLabel(currentTrip.driverPhone),
                   style: AppStyle.styleMedium14.copyWith(
                     color: AppColors.white,
                   ),
@@ -65,17 +66,9 @@ Widget driverDataWidget({
                     );
                   },
                 ),
-                trailing: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    const Icon(Icons.star, color: Colors.amber, size: 22),
-                    Text(
-                      (currentTrip.driverRate ?? 0).toStringAsFixed(1),
-                      style: AppStyle.styleMedium14.copyWith(
-                        color: AppColors.white,
-                      ),
-                    ),
-                  ],
+                trailing: _callAndRate(
+                  phone: currentTrip.driverPhone,
+                  rate: (currentTrip.driverRate ?? 0).toDouble(),
                 ),
               ),
             ),
@@ -114,7 +107,7 @@ Widget driverDataWidget({
                         ),
                       ),
                       subtitle: SelectableText(
-                        state.tripApprovedForClient!.driverPhone,
+                        _phoneLabel(state.tripApprovedForClient!.driverPhone),
                         style: AppStyle.styleMedium14.copyWith(
                           color: AppColors.white,
                         ),
@@ -146,18 +139,10 @@ Widget driverDataWidget({
                           );
                         },
                       ),
-                      trailing: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          const Icon(Icons.star, color: Colors.amber, size: 22),
-                          Text(
-                            state.tripApprovedForClient!.driverRate!
-                                .toStringAsFixed(1),
-                            style: AppStyle.styleMedium14.copyWith(
-                              color: AppColors.white,
-                            ),
-                          ),
-                        ],
+                      trailing: _callAndRate(
+                        phone: state.tripApprovedForClient!.driverPhone,
+                        rate: (state.tripApprovedForClient!.driverRate ?? 0)
+                            .toDouble(),
                       ),
                     ),
                   ),
@@ -180,6 +165,36 @@ Widget driverDataWidget({
             return Container();
           },
         );
+}
+
+String _phoneLabel(String phone) =>
+    phone.trim().isEmpty ? 'رقم الهاتف غير متاح' : phone;
+
+/// Call button (when the captain has a phone) next to the captain's rating.
+Widget _callAndRate({required String phone, required double rate}) {
+  return Row(
+    mainAxisSize: MainAxisSize.min,
+    children: [
+      if (phone.trim().isNotEmpty)
+        IconButton(
+          tooltip: 'اتصال بالسائق',
+          style: IconButton.styleFrom(backgroundColor: AppColors.primary),
+          icon: const Icon(Icons.call, color: AppColors.black, size: 20),
+          onPressed: () => launchUrl(Uri(scheme: 'tel', path: phone.trim())),
+        ),
+      const SizedBox(width: 6),
+      Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          const Icon(Icons.star, color: Colors.amber, size: 22),
+          Text(
+            rate.toStringAsFixed(1),
+            style: AppStyle.styleMedium14.copyWith(color: AppColors.white),
+          ),
+        ],
+      ),
+    ],
+  );
 }
 
 ExpansionTile _scooterData({

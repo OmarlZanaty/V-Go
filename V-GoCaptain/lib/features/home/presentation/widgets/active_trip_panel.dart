@@ -4,6 +4,7 @@ import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:toastification/toastification.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../../../core/services/location_service.dart';
 import '../../../../core/theming/app_colors.dart';
@@ -45,6 +46,8 @@ class ActiveTripPanel extends StatelessWidget {
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
                       _row(Icons.person, trip.client.fullName),
+                      SizedBox(height: 8.h),
+                      _phoneRow(trip.client.phoneNumber),
                       SizedBox(height: 8.h),
                       _row(Icons.my_location, trip.start.displayAddress,
                           color: AppColors.success),
@@ -324,6 +327,44 @@ class ActiveTripPanel extends StatelessWidget {
               isDropoff ? null : cubit.stream.map(clientOf).distinct(),
         ),
       ),
+    );
+  }
+
+  /// Rider's phone with a one-tap call — so the captain can coordinate pickup.
+  Widget _phoneRow(String phone) {
+    final hasPhone = phone.trim().isNotEmpty;
+    return Row(
+      children: [
+        Icon(Icons.phone, size: 20.r, color: AppColors.grey),
+        SizedBox(width: 10.w),
+        Expanded(
+          child: Text(
+            hasPhone ? phone : 'رقم العميل غير متاح',
+            style: AppStyle.body,
+            textDirection: TextDirection.ltr,
+            textAlign: TextAlign.right,
+          ),
+        ),
+        if (hasPhone)
+          SizedBox(
+            height: 36.h,
+            child: ElevatedButton.icon(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.primary,
+                foregroundColor: AppColors.black,
+                padding: EdgeInsets.symmetric(horizontal: 12.w),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12.r),
+                ),
+              ),
+              onPressed: () =>
+                  launchUrl(Uri(scheme: 'tel', path: phone.trim())),
+              icon: Icon(Icons.call, size: 18.r),
+              label: Text('اتصال',
+                  style: AppStyle.body.copyWith(color: AppColors.black)),
+            ),
+          ),
+      ],
     );
   }
 

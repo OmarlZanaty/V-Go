@@ -21,6 +21,7 @@ abstract class EndPoint {
   static const String resetPassword = 'Auth/resetPassword';
   static const String changePassword = 'Auth/changePassword';
   static const String googleLoginDriverToken = 'Auth/google-login-driver-token';
+  static const String setPhone = 'Auth/set-phone';
 
   // Driver
   static const String availableDrivers = 'Driver/availableDriversFromCache';

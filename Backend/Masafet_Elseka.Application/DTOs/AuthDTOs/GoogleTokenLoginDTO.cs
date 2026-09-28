@@ -22,6 +22,8 @@ namespace Masafet_Elseka.Application.DTOs.AuthDTOs
         public string IdToken { get; set; } = string.Empty;
         // Optional — only sent on second call after user fills signup form
         public string? FullName { get; set; }
+        // Required for a new captain so riders can call them.
+        public string? Phone { get; set; }
         public string? Gender { get; set; }
         public string? NationalId { get; set; }
         public string? DriverLicense { get; set; }

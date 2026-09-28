@@ -182,6 +182,7 @@ class AuthRepoImpl implements AuthRepo {
   Future<PhoneLoginResponseModel> googleTokenDriver({
     required String idToken,
     String? fullName,
+    String? phone,
     String? gender,
     String? nationalId,
     String? driverLicense,
@@ -195,6 +196,7 @@ class AuthRepoImpl implements AuthRepo {
       data: {
         'idToken': idToken,
         'fullName': fullName,
+        'phone': phone,
         'gender': gender,
         'nationalId': nationalId,
         'driverLicense': driverLicense,

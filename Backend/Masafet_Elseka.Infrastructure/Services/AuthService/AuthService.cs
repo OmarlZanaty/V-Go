@@ -1200,6 +1200,14 @@ namespace Masafet_Elseka.Infrastructure.Services.AuthService
                     if (!string.IsNullOrEmpty(model.FCMToken))
                         await _notificationService.RegisterDeviceAsync(user.Id, model.FCMToken, model.DeviceType);
 
+                    // Older Google captains were created without a phone — fill it in if sent.
+                    if (string.IsNullOrWhiteSpace(user.PhoneNumber) && !string.IsNullOrWhiteSpace(model.Phone))
+                    {
+                        var existingPhone = NormalizePhone(model.Phone);
+                        if (!await _userManager.Users.AnyAsync(u => u.PhoneNumber == existingPhone && u.Id != user.Id))
+                            user.PhoneNumber = existingPhone;
+                    }
+
                     return await BuildLoginResponse(user, false);
                 }
 
@@ -1220,6 +1228,12 @@ namespace Masafet_Elseka.Infrastructure.Services.AuthService
                 if (scooterType == ScooterType.Gasoline && string.IsNullOrWhiteSpace(model.ScooterLicense))
                     return Response<LoginResponseDTO>.Failure("يرجى إدخال رخصة السكوتر (بنزين)", 400);
 
+                if (string.IsNullOrWhiteSpace(model.Phone))
+                    return Response<LoginResponseDTO>.Failure("يرجى إدخال رقم الهاتف", 400);
+                var captainPhone = NormalizePhone(model.Phone);
+                if (await _userManager.Users.AnyAsync(u => u.PhoneNumber == captainPhone))
+                    return Response<LoginResponseDTO>.Failure("رقم الهاتف مستخدم بالفعل في حساب آخر.", 409);
+
                 if (user == null)
                 {
                     user = new ApplicationUser
@@ -1227,6 +1241,7 @@ namespace Masafet_Elseka.Infrastructure.Services.AuthService
                         UserName = email,
                         Email = email,
                         EmailConfirmed = true,
+                        PhoneNumber = captainPhone,
                         FullName = model.FullName.Trim(),
                         Gender = string.IsNullOrWhiteSpace(model.Gender) ? "Male" : model.Gender,
                         NationalId = model.NationalId,
@@ -1268,6 +1283,37 @@ namespace Masafet_Elseka.Infrastructure.Services.AuthService
             {
                 Log.Error(ex, "GoogleTokenDriver error");
                 return Response<LoginResponseDTO>.Failure("حدث خطأ، يرجى المحاولة لاحقًا.", 500);
+            }
+        }
+
+        /// Lets a signed-in user add/replace their own phone (e.g. Google captains
+        /// created before the phone was required), so the other side of a trip can call them.
+        public async Task<Response<string>> SetMyPhoneAsync(string userId, string phone)
+        {
+            try
+            {
+                if (string.IsNullOrWhiteSpace(phone) || phone.Trim().Length < 8)
+                    return Response<string>.Failure("رقم الهاتف غير صالح", 400);
+
+                var user = await _userManager.FindByIdAsync(userId);
+                if (user == null)
+                    return Response<string>.Failure("المستخدم غير موجود", 404);
+
+                var normalized = NormalizePhone(phone);
+                if (await _userManager.Users.AnyAsync(u => u.PhoneNumber == normalized && u.Id != userId))
+                    return Response<string>.Failure("رقم الهاتف مستخدم بالفعل في حساب آخر.", 409);
+
+                user.PhoneNumber = normalized;
+                var result = await _userManager.UpdateAsync(user);
+                if (!result.Succeeded)
+                    return Response<string>.Failure("تعذّر حفظ رقم الهاتف", 400);
+
+                return Response<string>.Success(normalized, "تم حفظ رقم الهاتف", 200);
+            }
+            catch (Exception ex)
+            {
+                Log.Error(ex, "SetMyPhone error");
+                return Response<string>.Failure("حدث خطأ، يرجى المحاولة لاحقًا.", 500);
             }
         }
 

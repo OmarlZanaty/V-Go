@@ -291,6 +291,7 @@ class PhoneAuthCubit extends Cubit<PhoneAuthState> {
 
   Future<void> registerDriverWithGoogle({
     required String fullName,
+    required String phone,
     String? email,
     String? gender,
     String? nationalId,
@@ -306,6 +307,7 @@ class PhoneAuthCubit extends Cubit<PhoneAuthState> {
       final result = await _authRepo.googleTokenDriver(
         idToken: state.lastCode, // lastCode holds the Google ID token
         fullName: fullName,
+        phone: phone,
         gender: gender,
         nationalId: nationalId,
         driverLicense: driverLicense,

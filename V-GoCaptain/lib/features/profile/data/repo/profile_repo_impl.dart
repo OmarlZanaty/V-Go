@@ -10,6 +10,11 @@ class ProfileRepoImpl implements ProfileRepo {
   ProfileRepoImpl({required ApiServices apiServices}) : _api = apiServices;
 
   @override
+  Future<void> setPhone(String phone) async {
+    await _api.post(EndPoint.setPhone, data: {'phone': phone});
+  }
+
+  @override
   Future<DriverProfileModel> getProfile() async {
     final res = await _api.get(EndPoint.getDriverProfile(AppConstants.kUserId));
     // Endpoint returns the DTO directly, but tolerate a {data:{...}} wrapper.

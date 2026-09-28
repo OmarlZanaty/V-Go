@@ -24,6 +24,7 @@ class _PhoneDriverSignupViewState extends State<PhoneDriverSignupView> {
   final _password = TextEditingController();
   final _confirm = TextEditingController();
   final _name = TextEditingController();
+  final _phone = TextEditingController();
   final _email = TextEditingController();
   final _nationalId = TextEditingController();
   final _driverLicense = TextEditingController();
@@ -40,6 +41,7 @@ class _PhoneDriverSignupViewState extends State<PhoneDriverSignupView> {
     _password.dispose();
     _confirm.dispose();
     _name.dispose();
+    _phone.dispose();
     _email.dispose();
     _nationalId.dispose();
     _driverLicense.dispose();
@@ -69,6 +71,9 @@ class _PhoneDriverSignupViewState extends State<PhoneDriverSignupView> {
       }
     }
     if (_name.text.trim().length < 2) return _toast('يرجى إدخال الاسم.');
+    if (_isGoogle && _phone.text.replaceAll(RegExp(r'\D'), '').length < 10) {
+      return _toast('يرجى إدخال رقم هاتف صحيح.');
+    }
     if (_scooterType == 0 && _scooterLicense.text.trim().isEmpty) {
       return _toast('يرجى إدخال رخصة السكوتر (بنزين).');
     }
@@ -82,6 +87,7 @@ class _PhoneDriverSignupViewState extends State<PhoneDriverSignupView> {
       // Came from Google sign-in (no phone number, no password).
       cubit.registerDriverWithGoogle(
         fullName: fullName,
+        phone: _phone.text.trim(),
         email: email,
         gender: _gender,
         nationalId: nationalId,
@@ -142,6 +148,12 @@ class _PhoneDriverSignupViewState extends State<PhoneDriverSignupView> {
                   ],
                   _field(_name, 'الاسم بالكامل', Icons.person_outline),
                   SizedBox(height: 12.h),
+                  if (_isGoogle) ...[
+                    // Riders need it to call the captain during a trip.
+                    _field(_phone, 'رقم الهاتف', Icons.phone_outlined,
+                        keyboard: TextInputType.phone),
+                    SizedBox(height: 12.h),
+                  ],
                   _field(_email, 'البريد الإلكتروني (اختياري)',
                       Icons.email_outlined,
                       keyboard: TextInputType.emailAddress),
