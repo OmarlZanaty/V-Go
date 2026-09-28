@@ -117,6 +117,9 @@ class TokenService {
   Future<void> setTokens(String accessToken, String refreshToken) async {
     await CacheHelper.setSecuredString(AppConstants.token, accessToken);
     await CacheHelper.setSecuredString(AppConstants.refreshToken, refreshToken);
+    // SignalR hubs read kToken — keep it in sync after a refresh, otherwise
+    // they keep negotiating with the expired token and get 401s.
+    AppConstants.kToken = accessToken;
   }
 
   Future<void> clearTokens() async {

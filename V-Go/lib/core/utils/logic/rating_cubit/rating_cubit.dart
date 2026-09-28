@@ -43,9 +43,6 @@ class RatingCubit extends Cubit<RatingState> {
     }
   }
 
-  @override
-  Future<void> close() {
-    _ratingService.dispose();
-    return super.close();
-  }
+  // RatingService is an app-wide singleton shared by several screens, so a
+  // closing screen must not stop the hub another screen is about to use.
 }
