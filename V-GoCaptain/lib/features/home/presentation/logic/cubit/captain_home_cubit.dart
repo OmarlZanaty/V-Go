@@ -225,7 +225,11 @@ class CaptainHomeCubit extends Cubit<CaptainHomeState> with WidgetsBindingObserv
     // Fast fixes so the rider sees the captain move smoothly during a trip;
     // pushes are throttled below so idle captains don't flood the server.
     _positionSub = _location
-        .positionStream(distanceFilter: 3, interval: const Duration(seconds: 1))
+        .positionStream(
+          distanceFilter: 3,
+          interval: const Duration(seconds: 1),
+          keepAliveInBackground: true,
+        )
         .listen((pos) {
       _lastPosition = pos;
       if (!isClosed) emit(state.copyWith(position: pos)); // keep the map following
