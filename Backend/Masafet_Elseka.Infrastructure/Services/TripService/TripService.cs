@@ -367,6 +367,18 @@ namespace Masafet_Elseka.Infrastructure.Services.TripService
             }
         }
 
+        public async Task<OutstandingDebtDTO?> GetOutstandingDebt(string userId)
+        {
+            return await _context.Trips
+                .Where(t => t.Status == TripStatus.Completed &&
+                    t.UserTrips.Any(ut => ut.UserId == userId && ut.Role == UserTripRole.Client) &&
+                    t.Payment.Any(p => p.FailureReason == Payment.ClientRefusedReason) &&
+                    !t.Payment.Any(p => p.Status == PaymentStatus.Paid || p.Status == PaymentStatus.Captured))
+                .OrderBy(t => t.EndTime)
+                .Select(t => new OutstandingDebtDTO { TripId = t.Id, Amount = t.Price, EndTime = t.EndTime })
+                .FirstOrDefaultAsync();
+        }
+
         public async Task<Response<List<TripDetailsDTO>>> GetCurrentTrips(string userId)
         {
             try

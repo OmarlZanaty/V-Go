@@ -600,9 +600,8 @@ namespace Masafet_Elseka.Infrastructure.Services.PaymentService
 
                 await _context.SaveChangesAsync();
 
-                var driverId=payment.Trip.UserTrips
-                    .FirstOrDefault(ut=>ut.UserId!=payment.UserId && ut.Role==UserTripRole.Driver)?.UserId;
-                await NotifyClientAndDriver(payment.UserId, driverId!, payment.Status);
+                var driverId = await DriverToNotifyAsync(payment);
+                await NotifyClientAndDriver(payment.UserId, driverId ?? string.Empty, payment.Status);
 
                 return Response<string>.Success("تم تحديث حالة الدفع", "تم تحديث حالة الدفع", 200);
             }
@@ -746,8 +745,7 @@ namespace Masafet_Elseka.Infrastructure.Services.PaymentService
 
                 await _context.SaveChangesAsync();
 
-                var driverId = payment.Trip?.UserTrips?
-                    .FirstOrDefault(ut => ut.UserId != payment.UserId && ut.Role == UserTripRole.Driver)?.UserId;
+                var driverId = await DriverToNotifyAsync(payment);
                 await NotifyClientAndDriver(payment.UserId, driverId ?? string.Empty, payment.Status);
             }
             catch (Exception ex)
@@ -848,8 +846,7 @@ namespace Masafet_Elseka.Infrastructure.Services.PaymentService
                 }
                 await _context.SaveChangesAsync();
 
-                var driverId = payment.Trip?.UserTrips?
-                    .FirstOrDefault(ut => ut.UserId != payment.UserId && ut.Role == UserTripRole.Driver)?.UserId;
+                var driverId = await DriverToNotifyAsync(payment);
                 await NotifyClientAndDriver(payment.UserId, driverId ?? string.Empty, payment.Status);
 
                 return Response<string>.Success("ok", "تم تأكيد الدفع", 200);
@@ -1128,6 +1125,18 @@ namespace Masafet_Elseka.Infrastructure.Services.PaymentService
         }
 
         //Helpers
+
+        // The trip's captain, or null when this payment settles a refused trip
+        // (a debt paid later): that captain has moved on, and a live payment
+        // event would wrongly mark whatever trip they're on now as paid.
+        private async Task<string?> DriverToNotifyAsync(Payment payment)
+        {
+            if (payment.TripId != null && await _context.Payments.AnyAsync(p =>
+                    p.TripId == payment.TripId && p.FailureReason == Payment.ClientRefusedReason))
+                return null;
+            return payment.Trip?.UserTrips?
+                .FirstOrDefault(ut => ut.UserId != payment.UserId && ut.Role == UserTripRole.Driver)?.UserId;
+        }
         private string BuildTransactionConcatenatedString(PaymobTransactionDTO obj)
         {  
             return

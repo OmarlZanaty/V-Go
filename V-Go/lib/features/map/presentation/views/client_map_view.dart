@@ -24,6 +24,7 @@ import '../../../../core/utils/widgets/app_bar_leading.dart';
 import '../../../../core/utils/widgets/custom_button.dart';
 import '../../../../core/utils/widgets/custom_loading_widget.dart';
 import '../../../../core/utils/widgets/custom_toastification.dart';
+import '../widgets/outstanding_debt_dialog.dart';
 import '../../../trips/data/model/trip_model.dart';
 import '../../../trips/data/model/trip_request_model.dart';
 import '../../../trips/presentation/logic/realtime_trip_cubit/realtime_trip_cubit.dart';
@@ -1535,6 +1536,13 @@ class _ClientMapViewState extends State<ClientMapView> {
                                   );
                                 } else if (realTimeState
                                     .status
+                                    .isRequestTripDebtBlocked) {
+                                  showOutstandingDebtDialog(
+                                    context,
+                                    realTimeState.errorMessage,
+                                  );
+                                } else if (realTimeState
+                                    .status
                                     .isRequestTripSuccess) {
                                   setState(() {
                                     status = -1;
@@ -1982,6 +1990,7 @@ class _ClientMapViewState extends State<ClientMapView> {
 
   bool requestTripBuildAndListenWhen(RealTimeTripState state) {
     return state.status.isRequestTripFailure ||
+        state.status.isRequestTripDebtBlocked ||
         state.status.isRequestTripLoading ||
         state.status.isRequestTripSuccess;
   }

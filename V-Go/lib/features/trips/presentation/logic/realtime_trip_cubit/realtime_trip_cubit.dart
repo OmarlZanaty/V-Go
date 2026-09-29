@@ -118,6 +118,14 @@ class RealTimeTripCubit extends Cubit<RealTimeTripState>
           tripId: tripId,
         ),
       );
+    } on OutstandingDebtException catch (e) {
+      if (isClosed) return;
+      emit(
+        state.copyWith(
+          status: RealTimeTripStatus.requestTripDebtBlocked,
+          errorMessage: e.message,
+        ),
+      );
     } catch (e) {
       if (isClosed) return;
       emit(
@@ -126,6 +134,15 @@ class RealTimeTripCubit extends Cubit<RealTimeTripState>
           errorMessage: ServerFailure.fromError(e).errMessage,
         ),
       );
+    }
+  }
+
+  /// The rider's unpaid refused trip (null if none or on error).
+  Future<OutstandingDebt?> getOutstandingDebt() async {
+    try {
+      return await _tripService.getOutstandingDebt();
+    } catch (_) {
+      return null;
     }
   }
 

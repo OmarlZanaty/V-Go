@@ -7,6 +7,20 @@ import '../../features/trips/data/model/trip_request_model.dart';
 import '../config/app_config.dart';
 import '../utils/app_constants.dart';
 
+/// RequestTrip was refused because the rider still owes an earlier trip they
+/// refused to pay (server status 402).
+class OutstandingDebtException implements Exception {
+  const OutstandingDebtException(this.message);
+  final String message;
+}
+
+/// An earlier refused trip the rider must pay before requesting a new one.
+class OutstandingDebt {
+  const OutstandingDebt({required this.tripId, required this.amount});
+  final String tripId;
+  final double amount;
+}
+
 class TripService {
   late final HubConnection _hubConnection;
   bool _isConnected = false;
@@ -284,7 +298,12 @@ class TripService {
               as Map<String, dynamic>;
       final isSuccess = response['isSuccess'] as bool;
       if (!isSuccess) {
-        throw '${response['message'] ?? 'حدث خطاء اثناء طلب الرحلة , حاول مره اخرى'}';
+        final message =
+            '${response['message'] ?? 'حدث خطاء اثناء طلب الرحلة , حاول مره اخرى'}';
+        if (response['statusCode'] == 402) {
+          throw OutstandingDebtException(message);
+        }
+        throw message;
       }
       final data = response['data'] as Map<String, dynamic>;
       final tripId = data['id'] as String;
@@ -297,9 +316,23 @@ class TripService {
       log('Error requesting trip: $e', name: 'TripService');
       // Surface the server's business message (e.g. "you already have an active
       // trip") instead of masking it; only generic-fallback for transport errors.
-      if (e is String) rethrow;
+      if (e is String || e is OutstandingDebtException) rethrow;
       throw 'حدث خطاء اثناء طلب الرحلة , حاول مره اخرى';
     }
+  }
+
+  /// The rider's unpaid refused trip, or null when there is none.
+  Future<OutstandingDebt?> getOutstandingDebt() async {
+    if (!_isConnected) await connect();
+    final response =
+        await _hubConnection.invoke('GetOutstandingDebt')
+            as Map<String, dynamic>;
+    if (response['isSuccess'] != true) return null;
+    final data = response['data'] as Map<String, dynamic>;
+    return OutstandingDebt(
+      tripId: data['tripId'] as String,
+      amount: (data['amount'] as num).toDouble(),
+    );
   }
 
   Future<void> approveAndAssignDriverToTrip(

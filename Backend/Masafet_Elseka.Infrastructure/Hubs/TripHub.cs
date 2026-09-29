@@ -157,6 +157,21 @@ namespace Masafet_Elseka.Infrastructure.Hubs
         }
 
 
+        // RequestTrip's status code when the rider has an unpaid refused trip; the
+        // app then calls GetOutstandingDebt to offer paying it.
+        private const int OutstandingDebtStatusCode = 402;
+
+        public async Task<Response<OutstandingDebtDTO>> GetOutstandingDebt()
+        {
+            var userId = Context.User?.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+            if (string.IsNullOrEmpty(userId))
+                return Response<OutstandingDebtDTO>.Failure("غير مصرح", 401);
+            var debt = await _tripService.GetOutstandingDebt(userId);
+            return debt == null
+                ? Response<OutstandingDebtDTO>.Failure("لا توجد مديونية", 404)
+                : Response<OutstandingDebtDTO>.Success(debt, "", 200);
+        }
+
         public async Task<Response<TripResponseDTO>> RequestTrip(TripRequest request)
         {
             try
@@ -175,6 +190,15 @@ namespace Masafet_Elseka.Infrastructure.Hubs
                 bool hasActiveTrip = await _unitOfWork.Trips.AnyAsync(t =>
                     t.UserTrips.Any(ut => ut.UserId == request.UserId &&
                         (t.Status == TripStatus.Pending || t.Status == TripStatus.InProgress)));
+
+                // A rider who refused to pay an earlier trip must settle it first.
+                var debt = await _tripService.GetOutstandingDebt(request.UserId);
+                if (debt != null)
+                {
+                    return Response<TripResponseDTO>.Failure(
+                        $"عليك مبلغ {Math.Ceiling(debt.Amount)} ج.م من رحلة سابقة لم يتم دفعها. ادفعه أولاً لتتمكن من طلب رحلة جديدة.",
+                        OutstandingDebtStatusCode);
+                }
 
                 if (hasActiveTrip)
                 {

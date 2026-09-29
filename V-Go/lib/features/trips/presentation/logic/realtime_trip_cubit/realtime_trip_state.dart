@@ -38,6 +38,7 @@ enum RealTimeTripStatus {
   currentTripReceived,
   tripPaymentUpdatedReceived,
   tripPaymentRefusedReceived,
+  requestTripDebtBlocked,
   driverLocationReceived,
   payTripInCashLoading,
   payTripInCashSuccess,
