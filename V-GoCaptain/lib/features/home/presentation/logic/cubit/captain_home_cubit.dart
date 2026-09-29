@@ -409,11 +409,20 @@ class CaptainHomeCubit extends Cubit<CaptainHomeState> with WidgetsBindingObserv
   /// paid online).
   void finishTrip() => _finishTrip();
 
-  /// Visa escape hatch: the client refused / failed to pay by card. We must
-  /// never trap the captain on the completed screen waiting for a payment that
-  /// isn't coming — so just close out the (already server-completed) trip and
-  /// go available again. The trip stays unpaid (no Paid record is created).
-  void markVisaRefusedAndFinish() => _finishTrip();
+  /// Visa escape hatch: the client refused / failed to pay by card. Report it
+  /// to the server (which releases the rider's app from its payment screen),
+  /// then close out the trip. The trip stays unpaid (no Paid record).
+  Future<void> markVisaRefusedAndFinish() async {
+    final trip = state.activeTrip;
+    if (trip == null || state.isBusy) return;
+    emit(state.copyWith(isBusy: true, clearError: true));
+    try {
+      await _realtime.reportPaymentRefused(trip.tripId);
+      _finishTrip();
+    } catch (_) {
+      emit(state.copyWith(isBusy: false, error: 'تعذّر تسجيل رفض الدفع، حاول مجددا'));
+    }
+  }
 
   /// Clear the served trip, go available again, and refresh history/earnings.
   void _finishTrip() {

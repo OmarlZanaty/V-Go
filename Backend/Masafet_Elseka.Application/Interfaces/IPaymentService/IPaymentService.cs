@@ -39,5 +39,8 @@ namespace Masafet_Elseka.Application.Interfaces.IPaymentService
         // of the trip's client and returns that client id (so the hub can
         // notify the right user). Used by the captain's "payment received" action.
         Task<Response<string>> ConfirmCashPaymentByDriverAsync(string tripId);
+        // Driver reports the client refused to pay a completed Visa trip. Records
+        // the refusal and returns the client id so the hub can release the rider.
+        Task<Response<string>> MarkPaymentRefusedByDriverAsync(string tripId, string driverId);
     }
 }

@@ -60,6 +60,8 @@ extension RealTimeTripStateStatusExtension on RealTimeTripStatus {
 
   bool get isTripPaymentUpdated =>
       this == RealTimeTripStatus.tripPaymentUpdatedReceived;
+  bool get isTripPaymentRefused =>
+      this == RealTimeTripStatus.tripPaymentRefusedReceived;
 
   bool get isDriverLocationReceived =>
       this == RealTimeTripStatus.driverLocationReceived;

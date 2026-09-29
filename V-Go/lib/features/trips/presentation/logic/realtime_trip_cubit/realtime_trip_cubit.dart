@@ -292,6 +292,7 @@ class RealTimeTripCubit extends Cubit<RealTimeTripState>
     _listenForTripCancelledForTripDriver();
     _listenForTripTakenByAnotherDriver();
     _listenForTripPaymentUpdated();
+    _listenForTripPaymentRefused();
     _listenForTripCancelledForClient();
     _listenForReceiveDriverLocation();
     _listenForNoCurrentTrip();
@@ -517,6 +518,11 @@ class RealTimeTripCubit extends Cubit<RealTimeTripState>
       if (!wasPoll || AppConstants.kRole == 'Driver') return;
       // Only the definite "no trip" answer — not a transient server error.
       if (!message.contains('لا توجد رحلة حالية')) return;
+      if (state.tripStatus == 'Completed' &&
+          state.paymentStatusModel?.paymentStatus != 'Paid') {
+        _emitPaymentRefused('تم إغلاق الرحلة من قبل الكابتن');
+        return;
+      }
       const stale = {'Pending', 'Accepted', 'Arrived', 'InProgress'};
       if (!stale.contains(state.tripStatus)) return;
       emit(
@@ -587,6 +593,36 @@ class RealTimeTripCubit extends Cubit<RealTimeTripState>
         ),
       );
     };
+  }
+
+  /// Captain reported that we refused to pay this Visa trip. The server has
+  /// closed it for us, so leave the locked payment screen instead of waiting
+  /// for a payment that will never be confirmed.
+  void _listenForTripPaymentRefused() {
+    _tripService.tripPaymentRefused = (data) {
+      if (AppConstants.kRole == 'Driver') return;
+      final payload = data.isNullOrEmpty()
+          ? const <String, dynamic>{}
+          : data![0] as Map<String, dynamic>;
+      final tripId = (payload['tripId'] ?? payload['TripId']) as String?;
+      final activeId = state.currentTrip?.tripId ?? state.tripId;
+      if (tripId != null && activeId.isNotEmpty && tripId != activeId) return;
+      _emitPaymentRefused(
+        (payload['message'] ?? payload['Message']) as String? ??
+            'أبلغ الكابتن أنك رفضت دفع الرحلة',
+      );
+    };
+  }
+
+  void _emitPaymentRefused(String message) {
+    emit(
+      state.copyWith(
+        status: RealTimeTripStatus.tripPaymentRefusedReceived,
+        errorMessage: message,
+        resetCurrentTrip: true,
+        tripStatus: 'Canceled',
+      ),
+    );
   }
 
   // used in 2 cancel trip and completed trips

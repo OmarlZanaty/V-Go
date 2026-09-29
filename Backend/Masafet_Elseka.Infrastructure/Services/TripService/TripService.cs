@@ -304,7 +304,9 @@ namespace Masafet_Elseka.Infrastructure.Services.TripService
                          t.Status == TripStatus.Arrived ||
                          (t.Status == TripStatus.Completed &&
                           t.EndTime >= recentlyEnded &&
-                          !t.UserRates.Any(r => r.FromUserId == userId))) &&
+                          !t.UserRates.Any(r => r.FromUserId == userId) &&
+                          // Captain reported "client refused to pay" — settled.
+                          !t.Payment.Any(p => p.FailureReason == Payment.ClientRefusedReason))) &&
                         t.UserTrips.Any(ut => ut.UserId == userId && ut.Role == UserTripRole.Client));
                 }
                 else if (role == UserTripRole.Driver)

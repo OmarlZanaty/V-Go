@@ -217,6 +217,12 @@ class RealtimeService {
     await _invokeTrip('ConfirmCashPayment', args: [tripId]);
   }
 
+  /// Tell the server the client refused to pay this (Visa) trip, so the
+  /// rider's app is released from the payment screen too.
+  Future<void> reportPaymentRefused(String tripId) async {
+    await _invokeTrip('ReportPaymentRefused', args: [tripId]);
+  }
+
   Future<void> disconnect() async {
     await _stopQuietly(_driverHub);
     await _stopQuietly(_tripHub);

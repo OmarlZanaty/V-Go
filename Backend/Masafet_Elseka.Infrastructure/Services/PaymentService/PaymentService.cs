@@ -1071,6 +1071,62 @@ namespace Masafet_Elseka.Infrastructure.Services.PaymentService
             }
         }
 
+        public async Task<Response<string>> MarkPaymentRefusedByDriverAsync(string tripId, string driverId)
+        {
+            try
+            {
+                var trip = await _context.Trips
+                    .Include(t => t.Payment)
+                    .Include(t => t.UserTrips)
+                    .FirstOrDefaultAsync(t => t.Id == tripId);
+                if (trip == null)
+                {
+                    return Response<string>.Failure("الرحلة غير موجودة", 404);
+                }
+                if (!trip.UserTrips.Any(ut => ut.UserId == driverId && ut.Role == UserTripRole.Driver))
+                {
+                    return Response<string>.Failure("غير مصرح لك بهذه الرحلة", 403);
+                }
+                var clientId = trip.UserTrips
+                    .FirstOrDefault(ut => ut.Role == UserTripRole.Client)?.UserId;
+                if (string.IsNullOrEmpty(clientId))
+                {
+                    return Response<string>.Failure("لم يتم العثور على عميل لهذه الرحلة", 404);
+                }
+                if (trip.Status != TripStatus.Completed)
+                {
+                    return Response<string>.Failure("لا يمكن الإبلاغ عن رفض الدفع قبل انتهاء الرحلة", 400);
+                }
+                if (trip.Payment.Any(p => p.Status == PaymentStatus.Paid || p.Status == PaymentStatus.Captured))
+                {
+                    return Response<string>.Failure("تم دفع هذه الرحلة بالفعل", 400);
+                }
+                // Idempotent: a retry after a dropped ack must not add a second row.
+                if (!trip.Payment.Any(p => p.FailureReason == Payment.ClientRefusedReason))
+                {
+                    _context.Payments.Add(new Payment
+                    {
+                        Amount = trip.Price,
+                        Currency = "EGP",
+                        Method = trip.PaymentMethod,
+                        Status = PaymentStatus.Failed,
+                        FailureReason = Payment.ClientRefusedReason,
+                        CreatedAt = DateTime.Now.ToEgyptTime(),
+                        UpdatedAt = DateTime.Now.ToEgyptTime(),
+                        UserId = clientId,
+                        TripId = tripId
+                    });
+                    await _context.SaveChangesAsync();
+                }
+                return Response<string>.Success(clientId, "تم تسجيل رفض العميل للدفع", 200);
+            }
+            catch (Exception ex)
+            {
+                Log.Error(ex, "PaymentService mark payment refused error");
+                return Response<string>.Failure("حدث خطأ أثناء تسجيل رفض الدفع", "حدث خطأ أثناء تسجيل رفض الدفع", 500);
+            }
+        }
+
         //Helpers
         private string BuildTransactionConcatenatedString(PaymobTransactionDTO obj)
         {  

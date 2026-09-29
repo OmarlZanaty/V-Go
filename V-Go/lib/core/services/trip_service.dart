@@ -29,6 +29,7 @@ class TripService {
   Function(List<Object?>?)? receiveDriverLocation;
   Function(List<Object?>?)? tripTakenByAnotherDriver;
   Function(List<Object?>?)? tripPaymentUpdated;
+  Function(List<Object?>?)? tripPaymentRefused;
 
   /// Fired after the socket transparently reconnects, so callers can re-sync the
   /// current trip (SignalR never replays messages missed while disconnected).
@@ -166,6 +167,12 @@ class TripService {
     _hubConnection.on('TripTakenByAnotherDriver', (args) {
       tripTakenByAnotherDriver?.call(args);
       log('TripTakenByDriver received in Drivers: $args', name: 'TripService');
+    });
+
+    // Captain reported the rider refused to pay a completed Visa trip.
+    _hubConnection.on('TripPaymentRefused', (args) {
+      tripPaymentRefused?.call(args);
+      log('TripPaymentRefused received in Client: $args', name: 'TripService');
     });
 
     //! TripPaymentUpdated Listeners

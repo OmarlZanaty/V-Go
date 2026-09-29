@@ -919,6 +919,21 @@ class _ClientMapViewState extends State<ClientMapView> {
           listener: (context, tripState) {
             final mapBloc = context.read<MapBloc>();
 
+            // Captain reported a refused Visa payment: the trip is closed on
+            // the server, so leave the locked payment screen.
+            if (tripState.status.isTripPaymentRefused) {
+              mapBloc.stopEtaTracking();
+              mapBloc.add(ClearDriverLocation());
+              _resetCaptainGlide();
+              warningToast(
+                context,
+                'لم يتم دفع الرحلة',
+                tripState.errorMessage,
+              );
+              if (Navigator.of(context).canPop()) context.pop();
+              return;
+            }
+
             // Recover the trip screen after an app restart / leaving the map:
             // when the server re-sends our current trip, restore the route and
             // switch out of the search view so the user can continue/end/pay it.
@@ -2075,6 +2090,7 @@ class _ClientMapViewState extends State<ClientMapView> {
         // Rebuild the completion screen when payment settles so the lock lifts,
         // and on re-sync so a recovered trip renders correctly.
         state.status.isTripPaymentUpdated ||
+        state.status.isTripPaymentRefused ||
         state.status.isCurrentTripReceived;
   }
 }

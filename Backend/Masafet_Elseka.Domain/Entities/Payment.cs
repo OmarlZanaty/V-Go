@@ -10,6 +10,11 @@ namespace Masafet_Elseka.Domain.Entities
 {
     public class Payment
     {
+        // FailureReason tag for a Visa trip the captain reported as "client
+        // refused to pay". Such a trip is settled (unpaid) and must no longer be
+        // the rider's current trip.
+        public const string ClientRefusedReason = "ClientRefused";
+
         public string Id { get; set; } = Guid.NewGuid().ToString();
         public decimal Amount { get; set; }
         public string Currency { get; set; } = "EGP";

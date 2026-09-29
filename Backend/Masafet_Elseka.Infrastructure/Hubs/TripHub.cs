@@ -619,6 +619,46 @@ namespace Masafet_Elseka.Infrastructure.Hubs
             }
         }
 
+        // Driver reports the rider refused to pay a completed Visa trip. Records
+        // the refusal so the trip stops being the rider's current trip, and tells
+        // the rider's app to leave the (otherwise locked) payment screen.
+        public async Task<Response<object>> ReportPaymentRefused(string tripId)
+        {
+            try
+            {
+                var driverId = Context.User?.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+                if (string.IsNullOrEmpty(tripId) || string.IsNullOrEmpty(driverId))
+                    return Response<object>.Failure("معرف الرحلة غير صالح", 400);
+
+                var result = await _paymentService.MarkPaymentRefusedByDriverAsync(tripId, driverId);
+                if (!result.IsSuccess)
+                    return Response<object>.Failure(result.Message, result.StatusCode, result.Errors);
+
+                var clientId = result.Data!;
+                await Clients.Group(HubGroups.User(clientId))
+                    .SendAsync(HubEvents.TripPaymentRefused, new
+                    {
+                        TripId = tripId,
+                        Message = "أبلغ الكابتن أنك رفضت دفع الرحلة"
+                    });
+                try
+                {
+                    await _notificationService.SendNotificationToUserAsync(clientId,
+                        "لم يتم دفع الرحلة", "أبلغ الكابتن أنك رفضت دفع الرحلة.");
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Push failed for refused payment on trip {TripId}", tripId);
+                }
+                return Response<object>.Success(result.Message, result.Message, 200);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error in ReportPaymentRefused for trip {TripId}", tripId);
+                return Response<object>.Failure("حدث خطأ أثناء تسجيل رفض الدفع", "حدث خطأ غير متوقع، يرجى المحاولة لاحقًا", 500);
+            }
+        }
+
         // Private Helper Functions "Events"
         #region Helpers
 
