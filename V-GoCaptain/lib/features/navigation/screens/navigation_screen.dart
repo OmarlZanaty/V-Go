@@ -70,6 +70,9 @@ class _NavigationScreenState extends State<NavigationScreen> {
   static const double _mapTopPad = 170, _mapBottomPad = 120;
   static const double _followArrowSize = 44;
 
+  /// Rider live position this close to the pickup pin counts as "at the pin".
+  static const double _sameSpotMeters = 30;
+
   NavUpdate? _update;
   LatLng _captain = const LatLng(0, 0); // raw GPS fix
   double _speed = 0; // m/s
@@ -700,7 +703,11 @@ class _NavigationScreenState extends State<NavigationScreen> {
         ),
         infoWindow: InfoWindow(title: widget.destinationName),
       ),
-      if (widget.isPickup && _clientLive != null)
+      // Only when the rider is away from the pickup pin; otherwise it's just a
+      // second pin on the same spot.
+      if (widget.isPickup &&
+          _clientLive != null &&
+          _distance(_clientLive!, widget.destination) > _sameSpotMeters)
         Marker(
           markerId: const MarkerId('client-live'),
           position: _clientLive!,

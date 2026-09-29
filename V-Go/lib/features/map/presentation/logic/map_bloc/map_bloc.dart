@@ -26,6 +26,16 @@ class MapBloc extends Bloc<MapEvent, MapState> {
   // at most once, instead of awaiting GPS on every keystroke (which froze search).
   bool _searchOriginRequested = false;
 
+  // The pickup starts as the first GPS fix, which is often coarse (indoors,
+  // cold GPS) and can be ~100 m off. Until the rider chooses a pickup
+  // themselves, keep it following the refined GPS so the captain is sent to
+  // where the rider really is.
+  bool _pickupFollowsGps = false;
+  LocationModel? _pickupGeocodedAt;
+
+  /// Moves smaller than this don't shift the pickup (avoids route/price churn).
+  static const double _pickupRefineMeters = 15;
+
   MapBloc({required this.mapRepo}) : super(const MapState()) {
     on<LoadInitialLocation>(_onLoadInitialLocation);
     on<SearchLocation>(
@@ -93,6 +103,8 @@ class MapBloc extends Bloc<MapEvent, MapState> {
           fromAddress: address,
         ),
       );
+      _pickupFollowsGps = true;
+      _pickupGeocodedAt = location;
     } catch (e) {
       if (isClosed) return;
       emit(state.copyWith(error: e.toString()));
@@ -134,6 +146,7 @@ class MapBloc extends Bloc<MapEvent, MapState> {
   Future<void> _onSelectPlace(SelectPlace event, Emitter<MapState> emit) async {
     try {
       if (event.isFrom) {
+        _pickupFollowsGps = false;
         emit(
           state.copyWith(
             fromLocation: LocationModel(
@@ -176,6 +189,10 @@ class MapBloc extends Bloc<MapEvent, MapState> {
         event.location.longitude,
       );
       if (event.isFrom) {
+        // "Use my location" passes the live GPS fix itself — keep following
+        // it; a point the rider chose on the map is final.
+        _pickupFollowsGps = identical(event.location, state.currentLocation);
+        _pickupGeocodedAt = event.location;
         emit(
           state.copyWith(
             fromLocation: event.location,
@@ -225,10 +242,10 @@ class MapBloc extends Bloc<MapEvent, MapState> {
     }
   }
 
-  void _onUpdateCurrentLocation(
+  Future<void> _onUpdateCurrentLocation(
     UpdateCurrentLocation event,
     Emitter<MapState> emit,
-  ) {
+  ) async {
     List<LocationModel> fakeLocations = state.fakeScooterLocations;
 
     // If we are supposed to show fake scooters but haven't generated them yet (e.g. location was null)
@@ -242,6 +259,46 @@ class MapBloc extends Bloc<MapEvent, MapState> {
         fakeScooterLocations: fakeLocations,
       ),
     );
+
+    await _refinePickup(event.location, emit);
+  }
+
+  /// Move an auto (GPS) pickup to a newer, better fix. See [_pickupFollowsGps].
+  Future<void> _refinePickup(
+    LocationModel fix,
+    Emitter<MapState> emit,
+  ) async {
+    final from = state.fromLocation;
+    if (!_pickupFollowsGps || from == null) return;
+    final moved = GeoUtils.haversine(
+      LatLng(from.latitude, from.longitude),
+      LatLng(fix.latitude, fix.longitude),
+    );
+    if (moved < _pickupRefineMeters) return;
+
+    emit(state.copyWith(fromLocation: fix));
+    if (state.toLocation != null) await _maybeCalculateRoutes(emit);
+
+    // Re-geocode only after a real move, not for every refinement.
+    final last = _pickupGeocodedAt;
+    if (last != null &&
+        GeoUtils.haversine(
+              LatLng(last.latitude, last.longitude),
+              LatLng(fix.latitude, fix.longitude),
+            ) <
+            50) {
+      return;
+    }
+    _pickupGeocodedAt = fix;
+    try {
+      final address = await mapRepo.getAddressFromCoordinates(
+        fix.latitude,
+        fix.longitude,
+      );
+      // Still the same auto pickup (the rider didn't pick one meanwhile)?
+      if (isClosed || !_pickupFollowsGps || state.fromLocation != fix) return;
+      emit(state.copyWith(fromAddress: address));
+    } catch (_) {}
   }
 
   void _onUpdateCurrentLocationError(
@@ -525,6 +582,7 @@ class MapBloc extends Bloc<MapEvent, MapState> {
   }
 
   Future<void> _onSetTrip(SetTrip event, Emitter<MapState> emit) async {
+    _pickupFollowsGps = false;
     emit(
       state.copyWith(
         toAddress: event.trip.endLocation.address,
@@ -546,6 +604,8 @@ class MapBloc extends Bloc<MapEvent, MapState> {
     Emitter<MapState> emit,
   ) async {
     log(event.trip.tripStatus.toString());
+    // The trip exists: its pickup is fixed on the server now.
+    _pickupFollowsGps = false;
 
     // تحويل الحالة بأمان مع orElse
     final status = RideStatus.values.firstWhere(

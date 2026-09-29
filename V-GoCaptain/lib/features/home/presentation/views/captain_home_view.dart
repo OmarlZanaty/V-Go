@@ -9,6 +9,7 @@ import 'package:toastification/toastification.dart';
 import '../../../../core/theming/app_colors.dart';
 import '../../../../core/theming/app_style.dart';
 import '../../../../core/utils/app_constants.dart';
+import '../../../navigation/utils/distance_helper.dart';
 import '../logic/cubit/captain_home_cubit.dart';
 import '../widgets/active_trip_panel.dart';
 import '../widgets/incoming_trip_card.dart';
@@ -156,8 +157,14 @@ class _CaptainMapState extends State<_CaptainMap> {
         infoWindow: const InfoWindow(title: 'الوجهة'),
         icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueOrange),
       ),
-      // Where the rider actually is right now (may differ from the pin).
-      if (widget.state.hasClientLocation)
+      // Where the rider actually is right now — only when it differs from the
+      // pickup pin, so the map doesn't show two pins on the same spot.
+      if (widget.state.hasClientLocation &&
+          DistanceHelper.haversine(
+                LatLng(widget.state.clientLat!, widget.state.clientLng!),
+                LatLng(trip.start.lat, trip.start.lng),
+              ) >
+              30)
         Marker(
           markerId: const MarkerId('client-live'),
           position: LatLng(widget.state.clientLat!, widget.state.clientLng!),
