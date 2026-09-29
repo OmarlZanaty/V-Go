@@ -87,6 +87,11 @@ class _NavigationScreenState extends State<NavigationScreen> {
   DateTime? _prevFixAt;
 
   double? _fixProgress; // route progress at the last on-route fix
+
+  /// Route progress where the drawn line starts (the arrow's position when it
+  /// was last cut); null = draw the whole route.
+  double? _trimAt;
+  DateTime _trimmedAt = DateTime.now();
   DateTime _fixAt = DateTime.now();
   double _fixSpeed = 0;
   double _gpsHeading = -1; // GPS course, <0 when unknown
@@ -175,6 +180,7 @@ class _NavigationScreenState extends State<NavigationScreen> {
       final upd = _engine.update(_captain, speed: _speed);
       setState(() {
         _routePoints = result.polyline;
+        _trimAt = null;
         _update = upd;
         _loading = false;
         _offlineWarning = false;
@@ -336,12 +342,14 @@ class _NavigationScreenState extends State<NavigationScreen> {
 
     // Where the captain should be right now.
     LatLng target = _captain;
+    double? arrowProgress;
     final base = _fixProgress;
     if (base != null) {
       final ahead = _fixSpeed > 0.8
           ? _fixSpeed * math.min(sinceFix, _maxPredictSeconds)
           : 0.0;
-      final p = _engine.pointAlong(base + ahead);
+      arrowProgress = base + ahead;
+      final p = _engine.pointAlong(arrowProgress);
       if (p != null) {
         target = p.point;
         _targetHeading = p.bearing;
@@ -370,7 +378,17 @@ class _NavigationScreenState extends State<NavigationScreen> {
     if (_following) {
       _moveCamera();
       _overlayRotation.value = _northUp ? _shownHeading : 0;
+      // Erase the line behind the arrow as it moves — a few times a second is
+      // enough (the arrow covers the few meters in between) and keeps the
+      // map rebuilds cheap.
+      if (arrowProgress != null &&
+          (arrowProgress - (_trimAt ?? 0)).abs() > 4 &&
+          DateTime.now().difference(_trimmedAt).inMilliseconds >= 300) {
+        _trimmedAt = DateTime.now();
+        setState(() => _trimAt = arrowProgress);
+      }
     } else {
+      if (arrowProgress != null) _trimAt = arrowProgress;
       setState(() {});
     }
 
@@ -692,39 +710,26 @@ class _NavigationScreenState extends State<NavigationScreen> {
     };
   }
 
-  /// The part of the route still ahead of the captain. Cached per route
-  /// segment, not per fix: a new list every fix re-sent the whole polyline to
-  /// the map plugin each second for no visible gain (the arrow covers the
-  /// short gap back to the last vertex).
+  /// The part of the route still ahead of the arrow. Cached per cut so
+  /// rebuilds for other reasons don't re-send an identical polyline.
   List<LatLng> get _routeAhead {
-    final upd = _update;
-    final key = (_routePoints, upd?.segment, upd?.snapped == null);
+    final key = (_routePoints, _trimAt);
     if (key == _routeAheadKey) return _routeAheadCache;
     _routeAheadKey = key;
-    final snapped = upd?.snapped;
-    _routeAheadCache = snapped == null
-        ? _routePoints
-        : [snapped, ..._routePoints.skip(upd!.segment + 1)];
+    final trim = _trimAt;
+    _routeAheadCache = trim == null ? _routePoints : _engine.pathAhead(trim);
     return _routeAheadCache;
   }
 
   Object? _routeAheadKey;
   List<LatLng> _routeAheadCache = const [];
 
-  /// Driven part greyed out, the rest in brand colour with a dark casing so it
-  /// reads on any map background — the line stays put, the arrow moves on it.
+  /// Only the road still ahead, in brand colour with a dark casing so it
+  /// reads on any map background; the driven part is erased behind the arrow.
   Set<Polyline> _polylines() {
     if (_routePoints.isEmpty) return const {};
     final ahead = _routeAhead;
     return {
-      Polyline(
-        polylineId: const PolylineId('driven'),
-        points: _routePoints,
-        color: Colors.grey.shade500,
-        width: 8,
-        zIndex: 0,
-        jointType: JointType.round,
-      ),
       Polyline(
         polylineId: const PolylineId('route-casing'),
         points: ahead,

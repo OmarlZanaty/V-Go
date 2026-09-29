@@ -112,6 +112,21 @@ void main() {
     expect(engine.pointAlong(99999)!.point.longitude, closeTo(31.2320, 1e-6));
   });
 
+  test('pathAhead drops everything behind the given distance', () {
+    final engine = NavigationEngine()..setRoute(route());
+    // Mid first leg: starts at the cut point, then the corner and the end.
+    final mid = engine.pathAhead(111);
+    expect(mid.length, 3);
+    expect(mid.first.latitude, closeTo(30.0410, 1e-5));
+    expect(mid[1], b);
+    expect(mid.last, c);
+    // Past the corner: the first leg is gone entirely.
+    final after = engine.pathAhead(300);
+    expect(after.length, 2);
+    expect(after.first.latitude, closeTo(30.0420, 1e-6));
+    expect(after.last, c);
+  });
+
   test('voice cues fire once each on approach', () {
     final engine = NavigationEngine()..setRoute(route());
     final cues = <VoiceCue>[];

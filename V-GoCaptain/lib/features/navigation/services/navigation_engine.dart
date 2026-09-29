@@ -122,6 +122,24 @@ class NavigationEngine {
   /// Point and direction of travel [distance] meters along the route —
   /// lets the screen extrapolate the arrow between GPS fixes.
   ({LatLng point, double bearing})? pointAlong(double distance) {
+    final at = _locate(distance);
+    if (at == null) return null;
+    final bearing = DistanceHelper.bearingAlongPath(
+        _route!.polyline, PathSnap(point: at.point, segment: at.segment, distance: 0));
+    return (point: at.point, bearing: bearing);
+  }
+
+  /// The route still ahead of [distance] meters along it — the line drawn in
+  /// front of the arrow, with everything behind it cut off.
+  List<LatLng> pathAhead(double distance) {
+    final path = _route?.polyline ?? const <LatLng>[];
+    final at = _locate(distance);
+    if (at == null) return path;
+    return [at.point, ...path.skip(at.segment + 1)];
+  }
+
+  /// Point [distance] meters along the route and the segment it lies on.
+  ({LatLng point, int segment})? _locate(double distance) {
     final path = _route?.polyline;
     if (path == null || path.length < 2) return null;
     final d = distance.clamp(0.0, _vertexAt.last);
@@ -139,13 +157,13 @@ class NavigationEngine {
     final segLen = _vertexAt[i + 1] - _vertexAt[i];
     final t = segLen <= 0 ? 0.0 : ((d - _vertexAt[i]) / segLen).clamp(0.0, 1.0);
     final a = path[i], b = path[i + 1];
-    final point = LatLng(
-      a.latitude + (b.latitude - a.latitude) * t,
-      a.longitude + (b.longitude - a.longitude) * t,
+    return (
+      point: LatLng(
+        a.latitude + (b.latitude - a.latitude) * t,
+        a.longitude + (b.longitude - a.longitude) * t,
+      ),
+      segment: i,
     );
-    final bearing = DistanceHelper.bearingAlongPath(
-        path, PathSnap(point: point, segment: i, distance: 0));
-    return (point: point, bearing: bearing);
   }
 
   /// Load (or replace, after a reroute) the active route. Resets progress.
