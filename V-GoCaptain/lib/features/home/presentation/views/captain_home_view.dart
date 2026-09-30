@@ -136,8 +136,14 @@ class _CaptainMapState extends State<_CaptainMap> {
   LatLng? get _target {
     final trip = widget.state.activeTrip;
     if (trip == null) return null;
-    final p = widget.state.stage == TripStage.inProgress ? trip.end : trip.start;
-    return LatLng(p.lat, p.lng);
+    if (widget.state.stage == TripStage.inProgress) {
+      return LatLng(trip.end.lat, trip.end.lng);
+    }
+    // Before pickup, lead to where the rider actually is when we know it.
+    if (widget.state.hasClientLocation) {
+      return LatLng(widget.state.clientLat!, widget.state.clientLng!);
+    }
+    return LatLng(trip.start.lat, trip.start.lng);
   }
 
   Set<Marker> _markers() {

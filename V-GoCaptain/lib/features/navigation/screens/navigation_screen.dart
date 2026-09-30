@@ -64,6 +64,20 @@ class _NavigationScreenState extends State<NavigationScreen> {
   StreamSubscription<LatLng?>? _clientSub;
   LatLng? _clientLive;
 
+  /// Where the route leads: the rider's live position while heading to them
+  /// (they may not be standing at the requested pickup), else the destination.
+  LatLng get _target =>
+      widget.isPickup && _clientLive != null ? _clientLive! : widget.destination;
+
+  /// The target the current route was computed to.
+  LatLng? _routedTo;
+  DateTime? _lastRetargetAt;
+
+  /// Re-route to the rider once they're this far from the route's end, at
+  /// most every [_retargetCooldown] (each reroute is a Routes API call).
+  static const double _retargetMeters = 40;
+  static const Duration _retargetCooldown = Duration(seconds: 20);
+
   /// On-screen rotation of the follow arrow (0 in heading-up mode, where the
   /// map itself turns).
   final ValueNotifier<double> _overlayRotation = ValueNotifier(0);
@@ -128,7 +142,9 @@ class _NavigationScreenState extends State<NavigationScreen> {
     _shown = widget.origin;
     _clientLive = widget.initialClientLocation;
     _clientSub = widget.clientLocationStream?.listen((p) {
-      if (mounted) setState(() => _clientLive = p);
+      if (!mounted) return;
+      setState(() => _clientLive = p);
+      _maybeRetargetToClient();
     });
     _bootstrap();
   }
@@ -168,9 +184,10 @@ class _NavigationScreenState extends State<NavigationScreen> {
       _error = null;
     });
     try {
+      final target = _target;
       final result = await _routes.computeRoute(
         origin: from,
-        destination: widget.destination,
+        destination: target,
         heading: heading,
         reroute: reroute,
       );
@@ -180,6 +197,7 @@ class _NavigationScreenState extends State<NavigationScreen> {
       final upd = _engine.update(_captain, speed: _speed);
       setState(() {
         _routePoints = result.polyline;
+        _routedTo = target;
         _trimAt = null;
         _update = upd;
         _loading = false;
@@ -231,6 +249,30 @@ class _NavigationScreenState extends State<NavigationScreen> {
       reroute: true,
     );
     if (mounted) setState(() => _rerouting = false);
+  }
+
+  /// The rider moved away from where the route ends: lead the captain to
+  /// where they are now instead.
+  void _maybeRetargetToClient() {
+    final client = _clientLive;
+    final routedTo = _routedTo;
+    if (!widget.isPickup || client == null || routedTo == null) return;
+    if (_loading || _rerouting || _arrivedHandled) return;
+    if (_distance(client, routedTo) < _retargetMeters) return;
+    final now = DateTime.now();
+    if (_lastRetargetAt != null &&
+        now.difference(_lastRetargetAt!) < _retargetCooldown) {
+      return;
+    }
+    _lastRetargetAt = now;
+    _rerouting = true;
+    _loadRoute(
+      from: _captain,
+      heading: _speed > 2.5 && _gpsHeading >= 0 ? _gpsHeading : null,
+      reroute: true,
+    ).whenComplete(() {
+      if (mounted) setState(() => _rerouting = false);
+    });
   }
 
   // ---- Live location --------------------------------------------------------
@@ -451,7 +493,7 @@ class _NavigationScreenState extends State<NavigationScreen> {
   /// Hand the leg to the Google Maps app (motorcycle mode), falling back to
   /// the web directions page if the app isn't installed.
   Future<void> _openGoogleMaps() async {
-    final d = widget.destination;
+    final d = _target;
     final app = Uri.parse(
         'google.navigation:q=${d.latitude},${d.longitude}&mode=l');
     final web = Uri.parse('https://www.google.com/maps/dir/?api=1'
