@@ -9,7 +9,6 @@ import 'package:toastification/toastification.dart';
 import '../../../../core/theming/app_colors.dart';
 import '../../../../core/theming/app_style.dart';
 import '../../../../core/utils/app_constants.dart';
-import '../../../navigation/utils/distance_helper.dart';
 import '../logic/cubit/captain_home_cubit.dart';
 import '../widgets/active_trip_panel.dart';
 import '../widgets/incoming_trip_card.dart';
@@ -144,27 +143,24 @@ class _CaptainMapState extends State<_CaptainMap> {
   Set<Marker> _markers() {
     final trip = widget.state.activeTrip;
     if (trip == null) return const {};
+    // One rider pin: their live position while we get it (before pickup),
+    // else the pickup point they requested from.
+    final showClientLive = widget.state.hasClientLocation;
     return {
-      Marker(
-        markerId: const MarkerId('pickup'),
-        position: LatLng(trip.start.lat, trip.start.lng),
-        infoWindow: const InfoWindow(title: 'موقع العميل'),
-        icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueGreen),
-      ),
+      if (!showClientLive)
+        Marker(
+          markerId: const MarkerId('pickup'),
+          position: LatLng(trip.start.lat, trip.start.lng),
+          infoWindow: const InfoWindow(title: 'موقع العميل'),
+          icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueGreen),
+        ),
       Marker(
         markerId: const MarkerId('destination'),
         position: LatLng(trip.end.lat, trip.end.lng),
         infoWindow: const InfoWindow(title: 'الوجهة'),
         icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueOrange),
       ),
-      // Where the rider actually is right now — only when it differs from the
-      // pickup pin, so the map doesn't show two pins on the same spot.
-      if (widget.state.hasClientLocation &&
-          DistanceHelper.haversine(
-                LatLng(widget.state.clientLat!, widget.state.clientLng!),
-                LatLng(trip.start.lat, trip.start.lng),
-              ) >
-              30)
+      if (showClientLive)
         Marker(
           markerId: const MarkerId('client-live'),
           position: LatLng(widget.state.clientLat!, widget.state.clientLng!),

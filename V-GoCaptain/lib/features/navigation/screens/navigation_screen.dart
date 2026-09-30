@@ -70,9 +70,6 @@ class _NavigationScreenState extends State<NavigationScreen> {
   static const double _mapTopPad = 170, _mapBottomPad = 120;
   static const double _followArrowSize = 44;
 
-  /// Rider live position this close to the pickup pin counts as "at the pin".
-  static const double _sameSpotMeters = 30;
-
   NavUpdate? _update;
   LatLng _captain = const LatLng(0, 0); // raw GPS fix
   double _speed = 0; // m/s
@@ -681,6 +678,7 @@ class _NavigationScreenState extends State<NavigationScreen> {
   }
 
   Set<Marker> _markers() {
+    final showClientLive = widget.isPickup && _clientLive != null;
     return {
       // While following, the arrow is the fixed screen overlay instead (see
       // _followArrowOverlay) — no marker moving 20×/s through the plugin.
@@ -693,21 +691,20 @@ class _NavigationScreenState extends State<NavigationScreen> {
           anchor: const Offset(0.5, 0.5),
           flat: true,
         ),
-      Marker(
-        markerId: const MarkerId('destination'),
-        position: widget.destination,
-        icon: BitmapDescriptor.defaultMarkerWithHue(
-          widget.isPickup
-              ? BitmapDescriptor.hueGreen
-              : BitmapDescriptor.hueOrange,
+      // Going to the rider: one pin only — their live position when we have
+      // it, else the pickup point they requested from.
+      if (!showClientLive)
+        Marker(
+          markerId: const MarkerId('destination'),
+          position: widget.destination,
+          icon: BitmapDescriptor.defaultMarkerWithHue(
+            widget.isPickup
+                ? BitmapDescriptor.hueGreen
+                : BitmapDescriptor.hueOrange,
+          ),
+          infoWindow: InfoWindow(title: widget.destinationName),
         ),
-        infoWindow: InfoWindow(title: widget.destinationName),
-      ),
-      // Only when the rider is away from the pickup pin; otherwise it's just a
-      // second pin on the same spot.
-      if (widget.isPickup &&
-          _clientLive != null &&
-          _distance(_clientLive!, widget.destination) > _sameSpotMeters)
+      if (showClientLive)
         Marker(
           markerId: const MarkerId('client-live'),
           position: _clientLive!,
