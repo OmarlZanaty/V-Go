@@ -34,6 +34,7 @@ Widget startTripSection(
   RealTimeTripState tripState,
   BuildContext context, {
   CurrentTripModel? currentTrip,
+  String? paymentMethod,
 }) {
   // The live captain-based countdown (below) replaces this one whenever the
   // captain's location is streaming; this is only the no-captain-GPS fallback.
@@ -114,7 +115,11 @@ Widget startTripSection(
         verticalSpace(12),
         const LiveEtaWidget(toPickup: false),
         verticalSpace(10),
-        driverDataWidget(currentTrip: currentTrip, context: context),
+        driverDataWidget(
+          currentTrip: currentTrip,
+          context: context,
+          paymentMethod: paymentMethod,
+        ),
         paymentOptionsSection(context, tripState, currentTrip: currentTrip),
       ],
     ),

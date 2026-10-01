@@ -258,6 +258,7 @@ namespace Masafet_Elseka.Infrastructure.Services.TripService
                         DriverRating = driverTrip != null ? rates.GetValueOrDefault(driverTrip.UserId) : 0,
                         Status = trip.Status.ToString(),
                         DistanceKm = trip.DistanceInKm,
+                        PaymentMethod = trip.PaymentMethod,
                     };
                 }).ToList();
 
@@ -431,6 +432,7 @@ namespace Masafet_Elseka.Infrastructure.Services.TripService
                         ScooterLicense = driverTrip?.User?.Scooter?.License ?? "",
                         Status = trip.Status.ToString(),
                         DistanceKm = trip.DistanceInKm,
+                        PaymentMethod = trip.PaymentMethod,
                     };
                 }).ToList();
                 return Response<List<TripDetailsDTO>>.Success(tripDtos, "تم استرجاع الرحلات الحالية بنجاح", 200);
@@ -653,6 +655,7 @@ namespace Masafet_Elseka.Infrastructure.Services.TripService
                     DriverLng = driverTrip?.User.Longitude,
                     Status = trip.Status.ToString(),
                     DistanceKm = trip.DistanceInKm,
+                    PaymentMethod = trip.PaymentMethod,
                     Ratings = await _ratingService.GetCurrentUserTripRates()
                 };
                 return Response<TripDetailsDTO>.Success(tripDto, "تم استرجاع الرحلة بنجاح", 200);
@@ -762,6 +765,7 @@ namespace Masafet_Elseka.Infrastructure.Services.TripService
                         DriverRating = driverTrip != null ? rates.GetValueOrDefault(driverTrip.UserId) : 0,
                         Status = trip.Status.ToString(),
                         DistanceKm = trip.DistanceInKm,
+                        PaymentMethod = trip.PaymentMethod,
                         // Was never set → every trip showed "awaiting payment" in
                         // the captain's earnings regardless of actual status.
                         IsPaid = trip.Payment.Any(p => p.Status == PaymentStatus.Paid || p.Status == PaymentStatus.Captured),
@@ -916,6 +920,7 @@ namespace Masafet_Elseka.Infrastructure.Services.TripService
                         DriverLng = driverTrip?.User.Longitude,
                         Status = trip.Status.ToString(),
                         DistanceKm = trip.DistanceInKm,
+                        PaymentMethod = trip.PaymentMethod,
                     };
                 }).ToList();
 

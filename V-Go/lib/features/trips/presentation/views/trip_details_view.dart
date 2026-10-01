@@ -4,6 +4,7 @@ import '../../../../core/helpers/spacing.dart';
 import '../../../../core/theming/app_colors.dart';
 import '../../../../core/theming/app_style.dart';
 import '../../../../core/utils/widgets/custom_app_bar.dart';
+import '../../../../core/utils/widgets/payment_method_badge.dart';
 import '../../../admin/presentation/widgets/driver_or_client_data_section.dart';
 import '../../data/model/trip_model.dart';
 import '../widgets/trip_item.dart';
@@ -35,6 +36,8 @@ class TripDetailsView extends StatelessWidget {
                   ),
                   verticalSpace(10),
                   TripItem(trip: trip),
+                  verticalSpace(10),
+                  PaymentMethodBadge(method: trip.paymentMethod),
                   verticalSpace(24),
                   DriverOrClientDataSection(trip: trip, isFromDriver: false),
                   verticalSpace(24),

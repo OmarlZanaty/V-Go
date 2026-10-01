@@ -10,6 +10,7 @@ import '../../../../core/services/location_service.dart';
 import '../../../../core/theming/app_colors.dart';
 import '../../../../core/theming/app_style.dart';
 import '../../../../core/utils/app_constants.dart';
+import '../../../../core/utils/payment_method_badge.dart';
 import '../../../navigation/screens/navigation_screen.dart';
 import '../logic/cubit/captain_home_cubit.dart';
 
@@ -57,6 +58,8 @@ class ActiveTripPanel extends StatelessWidget {
                     ],
                   ),
                 ),
+                SizedBox(height: 12.h),
+                PaymentMethodBadge(method: trip.paymentMethod),
                 if (trip.isVisa) ...[
                   SizedBox(height: 12.h),
                   _visaPaymentStatus(),

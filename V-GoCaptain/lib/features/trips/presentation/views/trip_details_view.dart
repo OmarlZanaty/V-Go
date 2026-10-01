@@ -3,6 +3,7 @@ import 'package:flutter_screenutil/flutter_screenutil.dart';
 
 import '../../../../core/theming/app_colors.dart';
 import '../../../../core/theming/app_style.dart';
+import '../../../../core/utils/payment_method_badge.dart';
 import '../../data/models/trip_model.dart';
 
 class TripDetailsView extends StatelessWidget {
@@ -35,6 +36,13 @@ class TripDetailsView extends StatelessWidget {
           SizedBox(height: 16.h),
           _card([
             _row(Icons.payments, 'السعر', '${trip.price.toStringAsFixed(0)} ج.م',
+                color: AppColors.primary),
+            _row(
+                isVisaMethod(trip.paymentMethod)
+                    ? Icons.credit_card
+                    : Icons.payments_outlined,
+                'طريقة الدفع',
+                paymentMethodLabel(trip.paymentMethod),
                 color: AppColors.primary),
             _row(trip.isPaid ? Icons.check_circle : Icons.pending,
                 'الدفع', trip.isPaid ? 'مدفوعة' : 'غير مدفوعة',

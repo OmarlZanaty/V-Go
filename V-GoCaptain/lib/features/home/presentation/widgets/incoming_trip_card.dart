@@ -4,6 +4,7 @@ import 'package:flutter_screenutil/flutter_screenutil.dart';
 
 import '../../../../core/theming/app_colors.dart';
 import '../../../../core/theming/app_style.dart';
+import '../../../../core/utils/payment_method_badge.dart';
 import '../../data/models/trip_offer_model.dart';
 import '../logic/cubit/captain_home_cubit.dart';
 
@@ -45,7 +46,9 @@ class IncomingTripCard extends StatelessWidget {
           _row(Icons.my_location, offer.start.displayAddress, color: AppColors.success),
           SizedBox(height: 10.h),
           _row(Icons.location_on, offer.end.displayAddress, color: AppColors.primaryOrange),
-          SizedBox(height: 24.h),
+          SizedBox(height: 14.h),
+          PaymentMethodBadge(method: offer.paymentMethod),
+          SizedBox(height: 20.h),
           Row(
             children: [
               Expanded(

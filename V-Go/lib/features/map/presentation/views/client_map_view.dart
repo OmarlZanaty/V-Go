@@ -1035,6 +1035,7 @@ class _ClientMapViewState extends State<ClientMapView> {
                 tripState,
                 context,
                 currentTrip: tripState.currentTrip ?? widget.currentTrip,
+                paymentMethod: _tripPaymentMethod(tripState),
               );
             } else if (tripState.tripStatus == 'InProgress') {
               final remainingTime = context
@@ -1049,6 +1050,7 @@ class _ClientMapViewState extends State<ClientMapView> {
                 tripState,
                 context,
                 currentTrip: tripState.currentTrip ?? widget.currentTrip,
+                paymentMethod: _tripPaymentMethod(tripState),
               );
             } else if (tripState.tripStatus == 'Completed') {
               return endTripWidgetSection(tripState, context);
@@ -1758,6 +1760,9 @@ class _ClientMapViewState extends State<ClientMapView> {
                 context.read<RealTimeTripCubit>().state.currentTrip ??
                 widget.currentTrip,
             context: context,
+            paymentMethod: _tripPaymentMethod(
+              context.read<RealTimeTripCubit>().state,
+            ),
           ),
           verticalSpace(18),
           Align(child: cancelTripButton()),
@@ -1765,6 +1770,12 @@ class _ClientMapViewState extends State<ClientMapView> {
       ),
     );
   }
+
+  /// The trip's payment method: the server's record when we have the trip,
+  /// otherwise what the rider picked on the confirm screen.
+  String _tripPaymentMethod(RealTimeTripState tripState) =>
+      (tripState.currentTrip ?? widget.currentTrip)?.paymentMethod ??
+      _selectedPaymentMethod;
 
   Widget _payMethodChip(
     String value,
@@ -1904,6 +1915,7 @@ class _ClientMapViewState extends State<ClientMapView> {
           driverDataWidget(
             currentTrip: tripState.currentTrip ?? widget.currentTrip,
             context: context,
+            paymentMethod: _tripPaymentMethod(tripState),
           ),
           // If the ride completed before the client paid, this is the only place
           // left to settle it — otherwise the trip stays "awaiting payment"

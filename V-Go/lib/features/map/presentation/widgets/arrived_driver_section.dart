@@ -12,6 +12,7 @@ Widget arrivedDriverSection(
   RealTimeTripState tripState,
   BuildContext context, {
   CurrentTripModel? currentTrip,
+  String? paymentMethod,
 }) {
   return Container(
     width: double.infinity,
@@ -44,7 +45,11 @@ Widget arrivedDriverSection(
           ),
         ),
         verticalSpace(10),
-        driverDataWidget(currentTrip: currentTrip, context: context),
+        driverDataWidget(
+          currentTrip: currentTrip,
+          context: context,
+          paymentMethod: paymentMethod,
+        ),
         paymentOptionsSection(context, tripState, currentTrip: currentTrip),
         verticalSpace(4),
       ],

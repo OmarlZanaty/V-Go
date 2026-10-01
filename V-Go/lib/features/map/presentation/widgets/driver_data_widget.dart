@@ -10,6 +10,7 @@ import '../../../../core/theming/app_colors.dart';
 import '../../../../core/theming/app_style.dart';
 import '../../../../core/utils/model/current_trip_model.dart';
 import '../../../../core/utils/widgets/custom_avatar.dart';
+import '../../../../core/utils/widgets/payment_method_badge.dart';
 import '../../../trips/presentation/logic/realtime_trip_cubit/realtime_trip_cubit.dart';
 import '../logic/map_bloc/map_bloc.dart';
 import '../logic/map_bloc/map_state.dart';
@@ -18,6 +19,8 @@ Widget driverDataWidget({
   CurrentTripModel? currentTrip,
   BuildContext? context,
   bool showDistance = false,
+  // Trip's payment method ('Cash' / 'Visa'); shown as a badge when given.
+  String? paymentMethod,
 }) {
   return currentTrip != null
       ? Column(
@@ -72,6 +75,10 @@ Widget driverDataWidget({
                 ),
               ),
             ),
+            if (paymentMethod != null) ...[
+              verticalSpace(10),
+              PaymentMethodBadge(method: paymentMethod),
+            ],
             verticalSpace(10),
             _scooterData(
               scooterLicense: currentTrip.scooterType == 'Electric'
@@ -146,6 +153,10 @@ Widget driverDataWidget({
                       ),
                     ),
                   ),
+                  if (paymentMethod != null) ...[
+                    verticalSpace(10),
+                    PaymentMethodBadge(method: paymentMethod),
+                  ],
                   verticalSpace(10),
                   _scooterData(
                     scooterLicense:

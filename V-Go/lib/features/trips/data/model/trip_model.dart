@@ -16,6 +16,7 @@ class TripModel {
   final String? driverName;
   final String? driverPhone;
   final DateTime createdAt;
+  final String paymentMethod;
 
   TripModel({
     required this.tripId,
@@ -35,6 +36,7 @@ class TripModel {
     this.driverImageUrl,
     this.userRate = 0.0,
     this.driverRate = 0.0,
+    this.paymentMethod = 'Cash',
   });
 
   factory TripModel.fromJson(Map<String, dynamic> json) {
@@ -56,6 +58,8 @@ class TripModel {
       driverImageUrl: json['driverProfileImage'] as String?,
       userRate: json['userrating'] ?? 0.0,
       driverRate: json['driverRating'] ?? 0.0,
+      paymentMethod:
+          (json['paymentMethod'] ?? json['PaymentMethod'] ?? 'Cash').toString(),
     );
   }
 }
