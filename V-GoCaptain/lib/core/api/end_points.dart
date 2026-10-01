@@ -43,6 +43,7 @@ abstract class EndPoint {
 
   // Profile / ratings
   static String getDriverProfile(String userId) => 'Driver/driver/$userId';
+  static String updateUser(String userId) => 'User/update/$userId';
   static String getUserRates(String userId) => 'Rate/userRates/$userId';
 
   // Support (in-app report -> support chat)

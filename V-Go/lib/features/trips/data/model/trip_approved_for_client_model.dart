@@ -30,7 +30,7 @@ class TripApprovedForClientModel {
       status: json['status'],
       driverName: json['driverName'],
       driverPhone: (json['driverPhone'] ?? json['DriverPhone'] ?? '').toString(),
-      driverImageUrl: json['driverPhoto'],
+      driverImageUrl: (json['driverPhoto'] ?? json['DriverPhoto'])?.toString(),
       driverLocation: DriverLocation.fromJson(json['driverLocation']),
       driverRate: json['driverRate'],
       scooterType: json['scooterType'],

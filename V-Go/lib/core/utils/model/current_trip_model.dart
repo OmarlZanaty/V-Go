@@ -59,7 +59,9 @@ class CurrentTripModel {
         clientPhone: (json['userPhone'] ?? '').toString(),
         driverPhone: (json['driverPhone'] ?? json['DriverPhone'] ?? '').toString(),
         clientImageUrl: json['userProfileImage'],
-        driverImageUrl: json['driverProfileImage'],
+        driverImageUrl:
+            (json['driverProfileImage'] ?? json['DriverProfileImage'])
+                ?.toString(),
         clientRate: json['userrating'],
         driverRate: json['driverRating'],
         scooterType: json['scooterType'],

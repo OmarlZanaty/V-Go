@@ -11,6 +11,9 @@ abstract class ProfileRepo {
   /// Save the logged-in captain's phone so riders can call them.
   Future<void> setPhone(String phone);
 
+  /// Upload a new profile photo (shown to riders); returns its URL.
+  Future<String> uploadProfilePhoto(String filePath);
+
   /// Submit a support report: ensures a support chat then posts the message.
   Future<void> sendSupportReport(String content);
 }

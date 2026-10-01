@@ -1,4 +1,7 @@
+import 'package:dio/dio.dart';
+
 import '../../../../core/api/api_service.dart';
+import '../../../../core/cache/cache_helper.dart';
 import '../../../../core/api/end_points.dart';
 import '../../../../core/utils/app_constants.dart';
 import '../models/driver_profile_model.dart';
@@ -12,6 +15,20 @@ class ProfileRepoImpl implements ProfileRepo {
   @override
   Future<void> setPhone(String phone) async {
     await _api.post(EndPoint.setPhone, data: {'phone': phone});
+  }
+
+  @override
+  Future<String> uploadProfilePhoto(String filePath) async {
+    await _api.put(
+      EndPoint.updateUser(AppConstants.kUserId),
+      data: {'ProfilePicture': await MultipartFile.fromFile(filePath)},
+      isFormData: true,
+    );
+    // The update endpoint only returns a message — read the new URL back.
+    final url = (await getProfile()).profilePicture ?? '';
+    await CacheHelper.setData(key: AppConstants.profileImage, value: url);
+    AppConstants.kProfileImage = url;
+    return url;
   }
 
   @override

@@ -9,6 +9,7 @@ import '../../../../core/theming/app_colors.dart';
 import '../../../../core/theming/app_style.dart';
 import '../../../../core/utils/app_constants.dart';
 import '../../../home/presentation/logic/cubit/captain_home_cubit.dart';
+import '../../../home/presentation/widgets/missing_photo_prompt.dart';
 
 class ProfileView extends StatelessWidget {
   const ProfileView({super.key});
@@ -40,7 +41,7 @@ class ProfileView extends StatelessWidget {
       body: ListView(
         padding: EdgeInsets.all(16.w),
         children: [
-          _header(),
+          const _ProfileHeader(),
           SizedBox(height: 24.h),
           _tile(Icons.lock_outline, 'تغيير كلمة المرور',
               () => NavigationHandler.navigatorKey.currentState
@@ -68,46 +69,6 @@ class ProfileView extends StatelessWidget {
     );
   }
 
-  Widget _header() {
-    return Container(
-      padding: EdgeInsets.all(20.w),
-      decoration: BoxDecoration(
-        color: AppColors.darkGrey,
-        borderRadius: BorderRadius.circular(18.r),
-      ),
-      child: Row(
-        children: [
-          CircleAvatar(
-            radius: 32.r,
-            backgroundColor: AppColors.primary,
-            backgroundImage: AppConstants.kProfileImage.isNotEmpty
-                ? NetworkImage(AppConstants.kProfileImage)
-                : null,
-            child: AppConstants.kProfileImage.isEmpty
-                ? Icon(Icons.person, color: AppColors.black, size: 34.r)
-                : null,
-          ),
-          SizedBox(width: 16.w),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  AppConstants.kUserName.isNotEmpty
-                      ? AppConstants.kUserName
-                      : 'كابتن V-Go',
-                  style: AppStyle.title,
-                ),
-                SizedBox(height: 4.h),
-                Text('سائق', style: AppStyle.hint),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
   Widget _tile(IconData icon, String label, VoidCallback? onTap,
       {Color color = AppColors.white}) {
     return Container(
@@ -123,6 +84,90 @@ class ProfileView extends StatelessWidget {
             ? Text('قريباً', style: AppStyle.hint)
             : Icon(Icons.chevron_left, color: AppColors.grey, size: 22.r),
         onTap: onTap,
+      ),
+    );
+  }
+}
+
+/// Name + photo. Tapping the photo uploads a new one (riders see it).
+class _ProfileHeader extends StatefulWidget {
+  const _ProfileHeader();
+
+  @override
+  State<_ProfileHeader> createState() => _ProfileHeaderState();
+}
+
+class _ProfileHeaderState extends State<_ProfileHeader> {
+  bool _uploading = false;
+
+  Future<void> _changePhoto() async {
+    setState(() => _uploading = true);
+    await pickAndUploadProfilePhoto(context);
+    if (mounted) setState(() => _uploading = false);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final image = AppConstants.kProfileImage;
+    return Container(
+      padding: EdgeInsets.all(20.w),
+      decoration: BoxDecoration(
+        color: AppColors.darkGrey,
+        borderRadius: BorderRadius.circular(18.r),
+      ),
+      child: Row(
+        children: [
+          GestureDetector(
+            onTap: _uploading ? null : _changePhoto,
+            child: Stack(
+              clipBehavior: Clip.none,
+              children: [
+                CircleAvatar(
+                  radius: 32.r,
+                  backgroundColor: AppColors.primary,
+                  backgroundImage:
+                      image.isNotEmpty ? NetworkImage(image) : null,
+                  child: _uploading
+                      ? const CircularProgressIndicator(
+                          strokeWidth: 2, color: AppColors.black)
+                      : image.isEmpty
+                          ? Icon(Icons.person,
+                              color: AppColors.black, size: 34.r)
+                          : null,
+                ),
+                PositionedDirectional(
+                  bottom: -2,
+                  end: -2,
+                  child: CircleAvatar(
+                    radius: 12.r,
+                    backgroundColor: AppColors.white,
+                    child: Icon(Icons.camera_alt,
+                        size: 14.r, color: AppColors.black),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          SizedBox(width: 16.w),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  AppConstants.kUserName.isNotEmpty
+                      ? AppConstants.kUserName
+                      : 'كابتن V-Go',
+                  style: AppStyle.title,
+                ),
+                SizedBox(height: 4.h),
+                Text(
+                  image.isEmpty ? 'اضغط على الصورة لإضافة صورتك' : 'سائق',
+                  style: AppStyle.hint,
+                ),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }
