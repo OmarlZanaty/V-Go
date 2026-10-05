@@ -25,6 +25,12 @@ class CaptainHomeState extends Equatable {
   /// One-shot error message for the UI to surface.
   final String? error;
 
+  /// One-shot server reason that blocks going online.
+  final DriverOnlineBlock? onlineBlock;
+
+  /// Non-blocking message shown if the driver gets blocked during an active trip.
+  final String? onlineBanner;
+
   /// The captain's latest known location (for the home map). Null until the
   /// first GPS fix is available.
   final Position? position;
@@ -42,6 +48,8 @@ class CaptainHomeState extends Equatable {
     this.isBusy = false,
     this.activeTripPaid = false,
     this.error,
+    this.onlineBlock,
+    this.onlineBanner,
     this.position,
     this.clientLat,
     this.clientLng,
@@ -62,6 +70,10 @@ class CaptainHomeState extends Equatable {
     bool? activeTripPaid,
     String? error,
     bool clearError = false,
+    DriverOnlineBlock? onlineBlock,
+    bool clearOnlineBlock = false,
+    String? onlineBanner,
+    bool clearOnlineBanner = false,
     Position? position,
     double? clientLat,
     double? clientLng,
@@ -75,8 +87,12 @@ class CaptainHomeState extends Equatable {
       activeTrip: clearActiveTrip ? null : (activeTrip ?? this.activeTrip),
       stage: stage ?? this.stage,
       isBusy: isBusy ?? this.isBusy,
-      activeTripPaid: clearActiveTrip ? false : (activeTripPaid ?? this.activeTripPaid),
+      activeTripPaid: clearActiveTrip
+          ? false
+          : (activeTripPaid ?? this.activeTripPaid),
       error: clearError ? null : error,
+      onlineBlock: clearOnlineBlock ? null : onlineBlock,
+      onlineBanner: clearOnlineBanner ? null : onlineBanner,
       position: position ?? this.position,
       clientLat: dropClient ? null : (clientLat ?? this.clientLat),
       clientLng: dropClient ? null : (clientLng ?? this.clientLng),
@@ -85,16 +101,18 @@ class CaptainHomeState extends Equatable {
 
   @override
   List<Object?> get props => [
-        connection,
-        offer?.tripId,
-        activeTrip?.tripId,
-        stage,
-        isBusy,
-        activeTripPaid,
-        error,
-        position?.latitude,
-        position?.longitude,
-        clientLat,
-        clientLng,
-      ];
+    connection,
+    offer?.tripId,
+    activeTrip?.tripId,
+    stage,
+    isBusy,
+    activeTripPaid,
+    error,
+    onlineBlock,
+    onlineBanner,
+    position?.latitude,
+    position?.longitude,
+    clientLat,
+    clientLng,
+  ];
 }

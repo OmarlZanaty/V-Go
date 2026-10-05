@@ -18,8 +18,11 @@ class TripRepoImpl implements TripRepo {
     final list = response is List
         ? response
         : (response is Map
-            ? (response['items'] ?? response['data'] ?? response['Data'] ?? [])
-            : []);
+              ? (response['items'] ??
+                    response['data'] ??
+                    response['Data'] ??
+                    [])
+              : []);
     return (list as List)
         .whereType<Map>()
         .map((e) => TripModel.fromJson(Map<String, dynamic>.from(e)))
@@ -37,24 +40,16 @@ class TripRepoImpl implements TripRepo {
   }
 
   @override
-  Future<double?> getDriverCommission() async {
-    try {
-      final response = await _apiServices.get(EndPoint.driverCommission);
-      final v = response is Map ? (response['data'] ?? response['Data']) : null;
-      return v is num ? v.toDouble() : double.tryParse(v?.toString() ?? '');
-    } catch (_) {
-      return null;
-    }
-  }
-
-  @override
   Future<List<TripModel>> getPendingTrips() async {
     final response = await _apiServices.get(EndPoint.allPendingTrips);
     final list = response is List
         ? response
         : (response is Map
-            ? (response['items'] ?? response['data'] ?? response['Data'] ?? [])
-            : []);
+              ? (response['items'] ??
+                    response['data'] ??
+                    response['Data'] ??
+                    [])
+              : []);
     return (list as List)
         .whereType<Map>()
         .map((e) => TripModel.fromJson(Map<String, dynamic>.from(e)))

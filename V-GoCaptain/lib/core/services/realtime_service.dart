@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:developer';
 
 import 'package:signalr_netcore/signalr_client.dart';
@@ -5,6 +6,22 @@ import 'package:signalr_netcore/signalr_client.dart';
 import '../api/dio_factory.dart';
 import '../config/app_config.dart';
 import '../utils/app_constants.dart';
+
+class DriverOnlineBlock {
+  const DriverOnlineBlock({required this.canGoOnline, this.code, this.message});
+
+  final bool canGoOnline;
+  final String? code;
+  final String? message;
+
+  factory DriverOnlineBlock.fromMap(Map<dynamic, dynamic> map) {
+    return DriverOnlineBlock(
+      canGoOnline: map['canGoOnline'] == true || map['CanGoOnline'] == true,
+      code: (map['code'] ?? map['Code'])?.toString(),
+      message: (map['message'] ?? map['Message'])?.toString(),
+    );
+  }
+}
 
 /// Manages the two SignalR connections the Captain app needs:
 /// - driverHub: push availability + live location (`UpdateDriverStatus`)
@@ -15,6 +32,13 @@ class RealtimeService {
   bool _connected = false;
   bool _connecting = false;
   bool get isConnected => _connected;
+  final _onlineBlockedController =
+      StreamController<DriverOnlineBlock>.broadcast();
+  final _financeUpdatedController = StreamController<double>.broadcast();
+
+  Stream<DriverOnlineBlock> get onlineBlockedStream =>
+      _onlineBlockedController.stream;
+  Stream<double> get financeUpdatedStream => _financeUpdatedController.stream;
 
   // Callbacks the UI/cubit can listen to.
   void Function(Map<dynamic, dynamic> offer)? onTripOffer;
@@ -92,6 +116,27 @@ class RealtimeService {
           onClientLocation?.call(lat.toDouble(), lng.toDouble());
         }
       });
+      void onlineBlockedHandler(List<Object?>? args) {
+        final data = (args != null && args.isNotEmpty) ? args.first : null;
+        if (data is Map) {
+          _onlineBlockedController.add(DriverOnlineBlock.fromMap(data));
+        }
+      }
+
+      void financeUpdatedHandler(List<Object?>? args) {
+        final data = (args != null && args.isNotEmpty) ? args.first : null;
+        if (data is! Map) return;
+        final balance = data['balance'] ?? data['Balance'];
+        if (balance is num) {
+          _financeUpdatedController.add(balance.toDouble());
+        } else {
+          _financeUpdatedController.add(0);
+        }
+      }
+
+      tripHub.on('DriverOnlineBlocked', onlineBlockedHandler);
+      driverHub.on('DriverOnlineBlocked', onlineBlockedHandler);
+      tripHub.on('DriverFinanceUpdated', financeUpdatedHandler);
 
       for (final hub in [driverHub, tripHub]) {
         hub.onclose(({error}) {
@@ -132,14 +177,17 @@ class RealtimeService {
     double? lng,
   }) async {
     if (_driverHub?.state != HubConnectionState.Connected) return;
-    await _driverHub!.invoke('UpdateDriverStatus', args: [
-      {
-        'driverId': AppConstants.kUserId,
-        'isAvailable': isAvailable,
-        'latitude': lat,
-        'longitude': lng,
-      }
-    ]);
+    await _driverHub!.invoke(
+      'UpdateDriverStatus',
+      args: [
+        {
+          'driverId': AppConstants.kUserId,
+          'isAvailable': isAvailable,
+          'latitude': lat,
+          'longitude': lng,
+        },
+      ],
+    );
   }
 
   /// Invokes a trip-hub method, but first makes sure the socket is actually
@@ -162,9 +210,11 @@ class RealtimeService {
   Future<void> _ensureConnected(HubConnection hub) async {
     if (hub.state == HubConnectionState.Connected) return;
     const step = Duration(milliseconds: 300);
-    for (var waited = Duration.zero;
-        waited < const Duration(seconds: 6);
-        waited += step) {
+    for (
+      var waited = Duration.zero;
+      waited < const Duration(seconds: 6);
+      waited += step
+    ) {
       if (hub.state == HubConnectionState.Connected) return;
       if (hub.state == HubConnectionState.Disconnected) {
         try {
@@ -187,12 +237,10 @@ class RealtimeService {
     required double lat,
     required double lng,
   }) async {
-    await _invokeTrip('ApproveAndAssignDriverToTrip', args: [
-      tripId,
-      AppConstants.kUserId,
-      lat.toString(),
-      lng.toString(),
-    ]);
+    await _invokeTrip(
+      'ApproveAndAssignDriverToTrip',
+      args: [tripId, AppConstants.kUserId, lat.toString(), lng.toString()],
+    );
   }
 
   Future<void> rejectTrip(String tripId) async {

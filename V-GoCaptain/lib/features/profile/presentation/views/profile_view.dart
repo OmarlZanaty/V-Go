@@ -10,6 +10,8 @@ import '../../../../core/theming/app_style.dart';
 import '../../../../core/utils/app_constants.dart';
 import '../../../home/presentation/logic/cubit/captain_home_cubit.dart';
 import '../../../home/presentation/widgets/missing_photo_prompt.dart';
+import '../../../verification/data/models/verification_models.dart';
+import '../../../verification/presentation/cubit/verification_cubit.dart';
 
 class ProfileView extends StatelessWidget {
   const ProfileView({super.key});
@@ -35,42 +37,77 @@ class ProfileView extends StatelessWidget {
     return Scaffold(
       appBar: AppBar(
         automaticallyImplyLeading: false,
-        title: Text('حسابي',
-            style: AppStyle.title.copyWith(color: AppColors.black)),
+        title: Text(
+          'حسابي',
+          style: AppStyle.title.copyWith(color: AppColors.black),
+        ),
       ),
       body: ListView(
         padding: EdgeInsets.all(16.w),
         children: [
           const _ProfileHeader(),
           SizedBox(height: 24.h),
-          _tile(Icons.lock_outline, 'تغيير كلمة المرور',
-              () => NavigationHandler.navigatorKey.currentState
-                  ?.pushNamed(Routes.changePasswordViewRoute)),
-          _tile(Icons.two_wheeler_outlined, 'بيانات السكوتر',
-              () => NavigationHandler.navigatorKey.currentState
-                  ?.pushNamed(Routes.scooterViewRoute)),
-          _tile(Icons.star_outline, 'تقييماتي',
-              () => NavigationHandler.navigatorKey.currentState
-                  ?.pushNamed(Routes.ratingsViewRoute)),
-          _tile(Icons.settings_outlined, 'الإعدادات',
-              () => NavigationHandler.navigatorKey.currentState
-                  ?.pushNamed(Routes.settingsViewRoute)),
-          _tile(Icons.support_agent_outlined, 'الدعم الفني',
-              () => NavigationHandler.navigatorKey.currentState
-                  ?.pushNamed(Routes.supportViewRoute)),
-          _tile(Icons.privacy_tip_outlined, 'الشروط والخصوصية',
-              () => NavigationHandler.navigatorKey.currentState
-                  ?.pushNamed(Routes.termsViewRoute)),
+          _tile(
+            Icons.lock_outline,
+            'تغيير كلمة المرور',
+            () => NavigationHandler.navigatorKey.currentState?.pushNamed(
+              Routes.changePasswordViewRoute,
+            ),
+          ),
+          _tile(
+            Icons.two_wheeler_outlined,
+            'بيانات السكوتر',
+            () => NavigationHandler.navigatorKey.currentState?.pushNamed(
+              Routes.scooterViewRoute,
+            ),
+          ),
+          const _VerificationTile(),
+          _tile(
+            Icons.star_outline,
+            'تقييماتي',
+            () => NavigationHandler.navigatorKey.currentState?.pushNamed(
+              Routes.ratingsViewRoute,
+            ),
+          ),
+          _tile(
+            Icons.settings_outlined,
+            'الإعدادات',
+            () => NavigationHandler.navigatorKey.currentState?.pushNamed(
+              Routes.settingsViewRoute,
+            ),
+          ),
+          _tile(
+            Icons.support_agent_outlined,
+            'الدعم الفني',
+            () => NavigationHandler.navigatorKey.currentState?.pushNamed(
+              Routes.supportViewRoute,
+            ),
+          ),
+          _tile(
+            Icons.privacy_tip_outlined,
+            'الشروط والخصوصية',
+            () => NavigationHandler.navigatorKey.currentState?.pushNamed(
+              Routes.termsViewRoute,
+            ),
+          ),
           SizedBox(height: 8.h),
-          _tile(Icons.logout, 'تسجيل الخروج', () => _logout(context),
-              color: AppColors.danger),
+          _tile(
+            Icons.logout,
+            'تسجيل الخروج',
+            () => _logout(context),
+            color: AppColors.danger,
+          ),
         ],
       ),
     );
   }
 
-  Widget _tile(IconData icon, String label, VoidCallback? onTap,
-      {Color color = AppColors.white}) {
+  Widget _tile(
+    IconData icon,
+    String label,
+    VoidCallback? onTap, {
+    Color color = AppColors.white,
+  }) {
     return Container(
       margin: EdgeInsets.only(bottom: 10.h),
       decoration: BoxDecoration(
@@ -85,6 +122,42 @@ class ProfileView extends StatelessWidget {
             : Icon(Icons.chevron_left, color: AppColors.grey, size: 22.r),
         onTap: onTap,
       ),
+    );
+  }
+}
+
+class _VerificationTile extends StatelessWidget {
+  const _VerificationTile();
+
+  @override
+  Widget build(BuildContext context) {
+    return BlocBuilder<VerificationCubit, VerificationState>(
+      builder: (context, state) {
+        final label = state.verification?.status.label ?? '';
+        return Container(
+          margin: EdgeInsets.only(bottom: 10.h),
+          decoration: BoxDecoration(
+            color: AppColors.darkGrey,
+            borderRadius: BorderRadius.circular(14.r),
+          ),
+          child: ListTile(
+            leading: const Icon(
+              Icons.verified_user_outlined,
+              color: AppColors.white,
+            ),
+            title: Text('توثيق الحساب', style: AppStyle.body),
+            subtitle: label.isEmpty ? null : Text(label, style: AppStyle.hint),
+            trailing: Icon(
+              Icons.chevron_left,
+              color: AppColors.grey,
+              size: 22.r,
+            ),
+            onTap: () => NavigationHandler.navigatorKey.currentState?.pushNamed(
+              Routes.verificationViewRoute,
+            ),
+          ),
+        );
+      },
     );
   }
 }
@@ -125,15 +198,17 @@ class _ProfileHeaderState extends State<_ProfileHeader> {
                 CircleAvatar(
                   radius: 32.r,
                   backgroundColor: AppColors.primary,
-                  backgroundImage:
-                      image.isNotEmpty ? NetworkImage(image) : null,
+                  backgroundImage: image.isNotEmpty
+                      ? NetworkImage(image)
+                      : null,
                   child: _uploading
                       ? const CircularProgressIndicator(
-                          strokeWidth: 2, color: AppColors.black)
+                          strokeWidth: 2,
+                          color: AppColors.black,
+                        )
                       : image.isEmpty
-                          ? Icon(Icons.person,
-                              color: AppColors.black, size: 34.r)
-                          : null,
+                      ? Icon(Icons.person, color: AppColors.black, size: 34.r)
+                      : null,
                 ),
                 PositionedDirectional(
                   bottom: -2,
@@ -141,8 +216,11 @@ class _ProfileHeaderState extends State<_ProfileHeader> {
                   child: CircleAvatar(
                     radius: 12.r,
                     backgroundColor: AppColors.white,
-                    child: Icon(Icons.camera_alt,
-                        size: 14.r, color: AppColors.black),
+                    child: Icon(
+                      Icons.camera_alt,
+                      size: 14.r,
+                      color: AppColors.black,
+                    ),
                   ),
                 ),
               ],

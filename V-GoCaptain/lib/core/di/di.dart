@@ -3,10 +3,14 @@ import 'package:get_it/get_it.dart';
 
 import '../../features/auth/data/repo/auth_repo.dart';
 import '../../features/auth/data/repo/auth_repo_impl.dart';
+import '../../features/finance/data/repo/finance_repo.dart';
+import '../../features/finance/data/repo/finance_repo_impl.dart';
 import '../../features/profile/data/repo/profile_repo.dart';
 import '../../features/profile/data/repo/profile_repo_impl.dart';
 import '../../features/trips/data/repo/trip_repo.dart';
 import '../../features/trips/data/repo/trip_repo_impl.dart';
+import '../../features/verification/data/repo/verification_repo.dart';
+import '../../features/verification/data/repo/verification_repo_impl.dart';
 import '../api/api_service.dart';
 import '../api/dio_factory.dart';
 import '../services/location_service.dart';
@@ -31,6 +35,14 @@ void setupGetIt() {
   // Trips repository (history + earnings)
   getIt.registerLazySingleton<TripRepo>(
     () => TripRepoImpl(apiServices: getIt<ApiServices>()),
+  );
+
+  getIt.registerLazySingleton<FinanceRepo>(
+    () => FinanceRepoImpl(apiServices: getIt<ApiServices>()),
+  );
+
+  getIt.registerLazySingleton<VerificationRepo>(
+    () => VerificationRepoImpl(apiServices: getIt<ApiServices>()),
   );
 
   // Profile repository (scooter data, ratings, support)

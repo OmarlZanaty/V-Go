@@ -14,4 +14,5 @@ abstract class Routes {
   static const String supportViewRoute = "/supportView";
   static const String termsViewRoute = "/termsView";
   static const String pdfViewRoute = "/pdfView";
+  static const String verificationViewRoute = "/verificationView";
 }

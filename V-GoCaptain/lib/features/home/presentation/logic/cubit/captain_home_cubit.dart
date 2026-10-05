@@ -9,25 +9,34 @@ import 'package:geolocator/geolocator.dart';
 import '../../../../../core/services/location_service.dart';
 import '../../../../../core/services/realtime_service.dart';
 import '../../../../../core/utils/app_constants.dart';
+import '../../../../finance/data/repo/finance_repo.dart';
 import '../../../../trips/data/models/trip_model.dart';
 import '../../../../trips/data/repo/trip_repo.dart';
 import '../../../data/models/trip_offer_model.dart';
 
 part 'captain_home_state.dart';
 
-class CaptainHomeCubit extends Cubit<CaptainHomeState> with WidgetsBindingObserver {
+class CaptainHomeCubit extends Cubit<CaptainHomeState>
+    with WidgetsBindingObserver {
   final RealtimeService _realtime;
   final LocationService _location;
   final TripRepo _tripRepo;
+  final FinanceRepo _financeRepo;
 
   StreamSubscription<Position>? _positionSub;
+  StreamSubscription<DriverOnlineBlock>? _onlineBlockedSub;
   Position? _lastPosition;
+  DriverOnlineBlock? _offlineAfterTripBlock;
 
   /// Set by the shell to refresh the trips/earnings list after a completed trip.
   void Function()? onTripCompleted;
 
-  CaptainHomeCubit(this._realtime, this._location, this._tripRepo)
-      : super(const CaptainHomeState()) {
+  CaptainHomeCubit(
+    this._realtime,
+    this._location,
+    this._tripRepo,
+    this._financeRepo,
+  ) : super(const CaptainHomeState()) {
     _realtime.onTripOffer = _handleOffer;
     _realtime.onTripTaken = _handleTripTaken;
     _realtime.onTripCancelled = _handleTripCancelled;
@@ -35,6 +44,9 @@ class CaptainHomeCubit extends Cubit<CaptainHomeState> with WidgetsBindingObserv
     _realtime.onReconnected = _handleReconnected;
     _realtime.onPaymentUpdated = _handlePaymentUpdated;
     _realtime.onClientLocation = _handleClientLocation;
+    _onlineBlockedSub = _realtime.onlineBlockedStream.listen(
+      (block) => unawaited(_handleOnlineBlocked(block)),
+    );
     WidgetsBinding.instance.addObserver(this);
   }
 
@@ -78,10 +90,12 @@ class CaptainHomeCubit extends Cubit<CaptainHomeState> with WidgetsBindingObserv
           emit(state.copyWith(activeTripPaid: true, isBusy: false));
         }
       } else if (showFeedback) {
-        emit(state.copyWith(
-          isBusy: false,
-          error: 'لم يكتمل دفع العميل بعد، يرجى المحاولة بعد إتمامه.',
-        ));
+        emit(
+          state.copyWith(
+            isBusy: false,
+            error: 'لم يكتمل دفع العميل بعد، يرجى المحاولة بعد إتمامه.',
+          ),
+        );
       }
     } catch (_) {
       if (!isClosed && showFeedback) {
@@ -107,24 +121,53 @@ class CaptainHomeCubit extends Cubit<CaptainHomeState> with WidgetsBindingObserv
   Future<void> goOnline() async {
     // Only start from a clean offline state (prevents double-connect on rapid taps).
     if (state.connection != CaptainConnection.offline) return;
-    emit(state.copyWith(
-        connection: CaptainConnection.connecting, clearError: true));
+    emit(
+      state.copyWith(
+        connection: CaptainConnection.connecting,
+        clearError: true,
+        clearOnlineBlock: true,
+        clearOnlineBanner: true,
+      ),
+    );
+
+    try {
+      final eligibility = await _financeRepo.getEligibility();
+      if (!eligibility.canGoOnline) {
+        emit(
+          state.copyWith(
+            connection: CaptainConnection.offline,
+            onlineBlock: DriverOnlineBlock(
+              canGoOnline: eligibility.canGoOnline,
+              code: eligibility.code,
+              message: eligibility.message,
+            ),
+          ),
+        );
+        return;
+      }
+    } catch (_) {
+      // Can't reach the check (network blip): carry on — the server refuses an
+      // ineligible captain on the hub anyway and pushes DriverOnlineBlocked.
+    }
 
     final granted = await _location.ensurePermission();
     if (!granted) {
-      emit(state.copyWith(
-        connection: CaptainConnection.offline,
-        error: 'يجب تفعيل إذن الموقع لاستقبال الرحلات',
-      ));
+      emit(
+        state.copyWith(
+          connection: CaptainConnection.offline,
+          error: 'يجب تفعيل إذن الموقع لاستقبال الرحلات',
+        ),
+      );
       return;
     }
 
     try {
       // Socket + GPS fix in parallel — each can take seconds on mobile. A missing
       // fix must not block going online; the position stream fills it in.
-      final positionFuture = _location
-          .currentPosition()
-          .then<Position?>((p) => p, onError: (_) => _lastPosition);
+      final positionFuture = _location.currentPosition().then<Position?>(
+        (p) => p,
+        onError: (_) => _lastPosition,
+      );
       await _realtime.connect();
       _lastPosition = await positionFuture;
       await _realtime.updateDriverStatus(
@@ -133,8 +176,12 @@ class CaptainHomeCubit extends Cubit<CaptainHomeState> with WidgetsBindingObserv
         lng: _lastPosition?.longitude,
       );
       _startLocationStream();
-      emit(state.copyWith(
-          connection: CaptainConnection.online, position: _lastPosition));
+      emit(
+        state.copyWith(
+          connection: CaptainConnection.online,
+          position: _lastPosition,
+        ),
+      );
       // Restore an in-progress trip first (so closing/reopening the app doesn't
       // strand a ride that can't be ended), then surface any waiting offer.
       await _restoreActiveTrip();
@@ -142,10 +189,12 @@ class CaptainHomeCubit extends Cubit<CaptainHomeState> with WidgetsBindingObserv
     } catch (e) {
       log('goOnline failed: $e', name: 'CaptainHomeCubit');
       await _realtime.disconnect();
-      emit(state.copyWith(
-        connection: CaptainConnection.offline,
-        error: 'تعذّر الاتصال بالخادم، حاول مرة أخرى',
-      ));
+      emit(
+        state.copyWith(
+          connection: CaptainConnection.offline,
+          error: 'تعذّر الاتصال بالخادم، حاول مرة أخرى',
+        ),
+      );
     }
   }
 
@@ -163,11 +212,13 @@ class CaptainHomeCubit extends Cubit<CaptainHomeState> with WidgetsBindingObserv
         'InProgress' => TripStage.inProgress,
         _ => TripStage.accepted,
       };
-      emit(state.copyWith(
-        activeTrip: _toOffer(t),
-        stage: stage,
-        activeTripPaid: t.isPaid,
-      ));
+      emit(
+        state.copyWith(
+          activeTrip: _toOffer(t),
+          stage: stage,
+          activeTripPaid: t.isPaid,
+        ),
+      );
     } catch (_) {
       // Best-effort: failing to restore must not block going online.
     }
@@ -189,21 +240,23 @@ class CaptainHomeCubit extends Cubit<CaptainHomeState> with WidgetsBindingObserv
   }
 
   TripOfferModel _toOffer(TripModel t) => TripOfferModel(
-        tripId: t.tripId,
-        price: t.price,
-        start: TripPoint(
-            lat: t.from.lat, lng: t.from.lng, address: t.from.address ?? ''),
-        end: TripPoint(
-            lat: t.to.lat, lng: t.to.lng, address: t.to.address ?? ''),
-        client: TripClient(
-          clientId: '',
-          fullName: t.clientName,
-          phoneNumber: t.clientPhone,
-          profileImageUrl: t.clientImage,
-          rating: 0,
-        ),
-        paymentMethod: t.paymentMethod,
-      );
+    tripId: t.tripId,
+    price: t.price,
+    start: TripPoint(
+      lat: t.from.lat,
+      lng: t.from.lng,
+      address: t.from.address ?? '',
+    ),
+    end: TripPoint(lat: t.to.lat, lng: t.to.lng, address: t.to.address ?? ''),
+    client: TripClient(
+      clientId: '',
+      fullName: t.clientName,
+      phoneNumber: t.clientPhone,
+      profileImageUrl: t.clientImage,
+      rating: 0,
+    ),
+    paymentMethod: t.paymentMethod,
+  );
 
   Future<void> goOffline() async {
     await _positionSub?.cancel();
@@ -212,10 +265,42 @@ class CaptainHomeCubit extends Cubit<CaptainHomeState> with WidgetsBindingObserv
       await _realtime.updateDriverStatus(isAvailable: false);
       await _realtime.disconnect();
     } catch (_) {}
-    emit(state.copyWith(
-      connection: CaptainConnection.offline,
-      clearOffer: true,
-    ));
+    emit(
+      state.copyWith(connection: CaptainConnection.offline, clearOffer: true),
+    );
+  }
+
+  Future<void> _handleOnlineBlocked(DriverOnlineBlock block) async {
+    if (isClosed || block.canGoOnline) return;
+    if (state.hasActiveTrip) {
+      _offlineAfterTripBlock = block;
+      emit(
+        state.copyWith(
+          onlineBanner:
+              block.message ?? 'لازم تراجع حالة حسابك قبل استقبال رحلات جديدة.',
+        ),
+      );
+      return;
+    }
+    await _goOfflineBecauseBlocked(block);
+  }
+
+  Future<void> _goOfflineBecauseBlocked(DriverOnlineBlock block) async {
+    await _positionSub?.cancel();
+    _positionSub = null;
+    try {
+      await _realtime.updateDriverStatus(isAvailable: false);
+      await _realtime.disconnect();
+    } catch (_) {}
+    if (!isClosed) {
+      emit(
+        state.copyWith(
+          connection: CaptainConnection.offline,
+          clearOffer: true,
+          onlineBlock: block,
+        ),
+      );
+    }
   }
 
   DateTime? _lastPushAt;
@@ -231,24 +316,27 @@ class CaptainHomeCubit extends Cubit<CaptainHomeState> with WidgetsBindingObserv
           keepAliveInBackground: true,
         )
         .listen((pos) {
-      _lastPosition = pos;
-      if (!isClosed) emit(state.copyWith(position: pos)); // keep the map following
-      final now = DateTime.now();
-      final minGap = state.hasActiveTrip
-          ? const Duration(milliseconds: 1500)
-          : const Duration(seconds: 10);
-      final last = _lastPushAt;
-      if (last != null && now.difference(last) < minGap) return;
-      _lastPushAt = now;
-      // Fire-and-forget but never let a failed push crash the stream.
-      unawaited(_realtime
-          .updateDriverStatus(
-            isAvailable: !state.hasActiveTrip,
-            lat: pos.latitude,
-            lng: pos.longitude,
-          )
-          .catchError((_) {}));
-    });
+          _lastPosition = pos;
+          if (!isClosed)
+            emit(state.copyWith(position: pos)); // keep the map following
+          final now = DateTime.now();
+          final minGap = state.hasActiveTrip
+              ? const Duration(milliseconds: 1500)
+              : const Duration(seconds: 10);
+          final last = _lastPushAt;
+          if (last != null && now.difference(last) < minGap) return;
+          _lastPushAt = now;
+          // Fire-and-forget but never let a failed push crash the stream.
+          unawaited(
+            _realtime
+                .updateDriverStatus(
+                  isAvailable: !state.hasActiveTrip,
+                  lat: pos.latitude,
+                  lng: pos.longitude,
+                )
+                .catchError((_) {}),
+          );
+        });
   }
 
   /// Immediately push the captain's current location for the active trip so the
@@ -278,8 +366,9 @@ class CaptainHomeCubit extends Cubit<CaptainHomeState> with WidgetsBindingObserv
 
   void _handleTripTaken(String tripId) {
     if (state.offer?.tripId == tripId) {
-      emit(state.copyWith(
-          clearOffer: true, error: 'تم قبول الرحلة من كابتن آخر'));
+      emit(
+        state.copyWith(clearOffer: true, error: 'تم قبول الرحلة من كابتن آخر'),
+      );
     }
   }
 
@@ -288,8 +377,12 @@ class CaptainHomeCubit extends Cubit<CaptainHomeState> with WidgetsBindingObserv
   void _handleTripCancelled(String tripId) {
     if (isClosed) return;
     if (state.offer?.tripId == tripId) {
-      emit(state.copyWith(
-          clearOffer: true, error: 'تم إلغاء الرحلة من قِبل العميل'));
+      emit(
+        state.copyWith(
+          clearOffer: true,
+          error: 'تم إلغاء الرحلة من قِبل العميل',
+        ),
+      );
       return;
     }
     if (state.activeTrip?.tripId == tripId) {
@@ -308,13 +401,15 @@ class CaptainHomeCubit extends Cubit<CaptainHomeState> with WidgetsBindingObserv
   /// After an auto-reconnect, restore availability and the online UI.
   void _handleReconnected() {
     if (isClosed || state.connection == CaptainConnection.offline) return;
-    unawaited(_realtime
-        .updateDriverStatus(
-          isAvailable: !state.hasActiveTrip,
-          lat: _lastPosition?.latitude,
-          lng: _lastPosition?.longitude,
-        )
-        .catchError((_) {}));
+    unawaited(
+      _realtime
+          .updateDriverStatus(
+            isAvailable: !state.hasActiveTrip,
+            lat: _lastPosition?.latitude,
+            lng: _lastPosition?.longitude,
+          )
+          .catchError((_) {}),
+    );
     emit(state.copyWith(connection: CaptainConnection.online));
     // We may have missed a payment event while disconnected — re-check.
     unawaited(recheckActivePayment());
@@ -332,12 +427,14 @@ class CaptainHomeCubit extends Cubit<CaptainHomeState> with WidgetsBindingObserv
         lat: pos.latitude,
         lng: pos.longitude,
       );
-      emit(state.copyWith(
-        activeTrip: offer,
-        stage: TripStage.accepted,
-        isBusy: false,
-        clearOffer: true,
-      ));
+      emit(
+        state.copyWith(
+          activeTrip: offer,
+          stage: TripStage.accepted,
+          isBusy: false,
+          clearOffer: true,
+        ),
+      );
       // Seed the rider's live tracking immediately. The position stream only
       // emits after 15m of movement (distanceFilter), so without this push the
       // captain marker wouldn't appear on the client until the captain moved.
@@ -369,11 +466,13 @@ class CaptainHomeCubit extends Cubit<CaptainHomeState> with WidgetsBindingObserv
           unawaited(_pushActiveTripLocation());
         case TripStage.arrived:
           await _realtime.startTrip(trip.tripId);
-          emit(state.copyWith(
-            stage: TripStage.inProgress,
-            isBusy: false,
-            clearClientLocation: true,
-          ));
+          emit(
+            state.copyWith(
+              stage: TripStage.inProgress,
+              isBusy: false,
+              clearClientLocation: true,
+            ),
+          );
           // Trip just started → target flips to the destination; seed a location
           // so the client's route/marker updates right away.
           unawaited(_pushActiveTripLocation());
@@ -401,7 +500,9 @@ class CaptainHomeCubit extends Cubit<CaptainHomeState> with WidgetsBindingObserv
       await _realtime.confirmCashPayment(trip.tripId);
       _finishTrip();
     } catch (_) {
-      emit(state.copyWith(isBusy: false, error: 'تعذّر تأكيد الدفع، حاول مجددا'));
+      emit(
+        state.copyWith(isBusy: false, error: 'تعذّر تأكيد الدفع، حاول مجددا'),
+      );
     }
   }
 
@@ -420,7 +521,12 @@ class CaptainHomeCubit extends Cubit<CaptainHomeState> with WidgetsBindingObserv
       await _realtime.reportPaymentRefused(trip.tripId);
       _finishTrip();
     } catch (_) {
-      emit(state.copyWith(isBusy: false, error: 'تعذّر تسجيل رفض الدفع، حاول مجددا'));
+      emit(
+        state.copyWith(
+          isBusy: false,
+          error: 'تعذّر تسجيل رفض الدفع، حاول مجددا',
+        ),
+      );
     }
   }
 
@@ -428,13 +534,22 @@ class CaptainHomeCubit extends Cubit<CaptainHomeState> with WidgetsBindingObserv
   void _finishTrip() {
     if (!state.hasActiveTrip) return;
     emit(state.copyWith(isBusy: false, clearActiveTrip: true));
-    unawaited(_realtime
-        .updateDriverStatus(
-          isAvailable: true,
-          lat: _lastPosition?.latitude,
-          lng: _lastPosition?.longitude,
-        )
-        .catchError((_) {}));
+    final block = _offlineAfterTripBlock;
+    if (block != null) {
+      _offlineAfterTripBlock = null;
+      unawaited(_goOfflineBecauseBlocked(block));
+      onTripCompleted?.call();
+      return;
+    }
+    unawaited(
+      _realtime
+          .updateDriverStatus(
+            isAvailable: true,
+            lat: _lastPosition?.latitude,
+            lng: _lastPosition?.longitude,
+          )
+          .catchError((_) {}),
+    );
     onTripCompleted?.call();
   }
 
@@ -454,6 +569,7 @@ class CaptainHomeCubit extends Cubit<CaptainHomeState> with WidgetsBindingObserv
   Future<void> close() async {
     WidgetsBinding.instance.removeObserver(this);
     await _positionSub?.cancel();
+    await _onlineBlockedSub?.cancel();
     await _realtime.disconnect();
     return super.close();
   }

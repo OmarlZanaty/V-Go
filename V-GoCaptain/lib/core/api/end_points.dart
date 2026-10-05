@@ -7,11 +7,14 @@ abstract class EndPoint {
 
   // Auth
   static const String login = 'Auth/login';
-  static const String phoneLogin = 'Auth/phone-login-driver';         // phone + password
-  static const String phoneRegisterDriver = 'Auth/phone-register-driver'; // phone + password
-  static const String phoneExists = 'Auth/phone-exists';              // new-vs-returning check
+  static const String phoneLogin =
+      'Auth/phone-login-driver'; // phone + password
+  static const String phoneRegisterDriver =
+      'Auth/phone-register-driver'; // phone + password
+  static const String phoneExists =
+      'Auth/phone-exists'; // new-vs-returning check
   static const String phoneResetPassword =
-      'Auth/phone-reset-password';                                     // forgot password (OTP)
+      'Auth/phone-reset-password'; // forgot password (OTP)
   static const String register = 'Auth/register';
   static const String logout = 'Auth/logout';
   static const String confirmOtp = 'Auth/confirmOtp';
@@ -37,9 +40,22 @@ abstract class EndPoint {
   // Payment — fetching status also triggers a server-side reconcile with Paymob,
   // settling a card payment whose webhook was missed.
   static String paymentStatus(String tripId) => 'Payment/status/$tripId';
+  static const String paymentConfirmCallback = 'Payment/confirm-callback';
 
-  // Pricing — the captain's share of each fare, in percent.
-  static const String driverCommission = 'PricingRule/getDriverCommission';
+  // Driver finance
+  static const String driverFinanceSummary = 'DriverFinance/me/summary';
+  static const String driverFinanceLedger = 'DriverFinance/me/ledger';
+  static const String driverFinanceEligibility = 'DriverFinance/me/eligibility';
+  static const String driverFinancePayoutAccount =
+      'DriverFinance/me/payout-account';
+  static const String driverFinanceSettle = 'DriverFinance/me/settle';
+  static String driverFinanceSettleStatus(String paymentId) =>
+      'DriverFinance/me/settle/$paymentId';
+
+  // Driver verification
+  static const String driverVerificationMe = 'DriverVerification/me';
+  static const String driverVerificationDocuments =
+      'DriverVerification/me/documents';
 
   // Notifications
   static const String getNotifications = 'Notification/GetAll';

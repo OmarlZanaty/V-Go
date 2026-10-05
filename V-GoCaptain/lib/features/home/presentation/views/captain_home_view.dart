@@ -6,9 +6,12 @@ import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:toastification/toastification.dart';
 
+import '../../../../core/routing/routes.dart';
 import '../../../../core/theming/app_colors.dart';
 import '../../../../core/theming/app_style.dart';
 import '../../../../core/utils/app_constants.dart';
+import '../../../verification/data/models/verification_models.dart';
+import '../../../verification/presentation/cubit/verification_cubit.dart';
 import '../logic/cubit/captain_home_cubit.dart';
 import '../widgets/active_trip_panel.dart';
 import '../widgets/location_disclosure_dialog.dart';
@@ -48,8 +51,21 @@ class _CaptainHomeViewState extends State<CaptainHomeView> {
       ),
       body: BlocConsumer<CaptainHomeCubit, CaptainHomeState>(
         listenWhen: (prev, curr) =>
-            curr.error != null && prev.error != curr.error,
+            (curr.error != null && prev.error != curr.error) ||
+            (curr.onlineBanner != null &&
+                prev.onlineBanner != curr.onlineBanner),
         listener: (context, state) {
+          if (state.onlineBanner != null) {
+            toastification.show(
+              context: context,
+              type: ToastificationType.warning,
+              style: ToastificationStyle.fillColored,
+              title: Text(state.onlineBanner!, style: AppStyle.body),
+              autoCloseDuration: const Duration(seconds: 5),
+              alignment: Alignment.bottomCenter,
+            );
+            return;
+          }
           toastification.show(
             context: context,
             type: ToastificationType.error,
@@ -81,6 +97,7 @@ class _Foreground extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final children = <Widget>[_StatusCard(state: state)];
+    children.add(const _VerificationBanner());
 
     if (state.hasActiveTrip) {
       // Active trip needs the full height (its layout uses a Spacer).
@@ -105,6 +122,77 @@ class _Foreground extends StatelessWidget {
         children: children,
       ),
     );
+  }
+}
+
+class _VerificationBanner extends StatelessWidget {
+  const _VerificationBanner();
+
+  @override
+  Widget build(BuildContext context) {
+    return BlocBuilder<VerificationCubit, VerificationState>(
+      builder: (context, state) {
+        final verification = state.verification;
+        if (verification == null) return const SizedBox.shrink();
+
+        String? message;
+        Color color = AppColors.primaryOrange;
+        final open = verification.status != VerificationStatus.underReview;
+        if (verification.status == VerificationStatus.pendingDocuments ||
+            verification.status == VerificationStatus.rejected) {
+          message = 'كمّل توثيق حسابك علشان تقدر تشتغل';
+          color = verification.status == VerificationStatus.rejected
+              ? AppColors.danger
+              : AppColors.primaryOrange;
+        } else if (verification.status == VerificationStatus.underReview) {
+          message = 'مستنداتك قيد المراجعة';
+        } else if (verification.status == VerificationStatus.approved &&
+            verification.missingTypes.isNotEmpty &&
+            verification.documentsDeadline != null) {
+          message =
+              'ارفع مستنداتك قبل ${_date(verification.documentsDeadline!)} علشان تفضل شغّال';
+          color = AppColors.primaryOrange;
+        }
+        if (message == null) return const SizedBox.shrink();
+        return Padding(
+          padding: EdgeInsets.only(top: 12.h),
+          child: InkWell(
+            borderRadius: BorderRadius.circular(14.r),
+            onTap: open
+                ? () => Navigator.of(
+                    context,
+                  ).pushNamed(Routes.verificationViewRoute)
+                : null,
+            child: Container(
+              padding: EdgeInsets.symmetric(horizontal: 14.w, vertical: 12.h),
+              decoration: BoxDecoration(
+                color: color.withValues(alpha: 0.16),
+                borderRadius: BorderRadius.circular(14.r),
+                border: Border.all(color: color.withValues(alpha: 0.45)),
+              ),
+              child: Row(
+                children: [
+                  Icon(Icons.verified_user_outlined, color: color, size: 22.r),
+                  SizedBox(width: 10.w),
+                  Expanded(
+                    child: Text(
+                      message,
+                      style: AppStyle.body.copyWith(color: color),
+                    ),
+                  ),
+                  if (open) Icon(Icons.chevron_left, color: color, size: 22.r),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  String _date(DateTime date) {
+    String two(int value) => value.toString().padLeft(2, '0');
+    return '${date.year}/${two(date.month)}/${two(date.day)}';
   }
 }
 
@@ -161,7 +249,9 @@ class _CaptainMapState extends State<_CaptainMap> {
           markerId: const MarkerId('pickup'),
           position: LatLng(trip.start.lat, trip.start.lng),
           infoWindow: const InfoWindow(title: 'موقع العميل'),
-          icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueGreen),
+          icon: BitmapDescriptor.defaultMarkerWithHue(
+            BitmapDescriptor.hueGreen,
+          ),
         ),
       Marker(
         markerId: const MarkerId('destination'),
@@ -174,7 +264,9 @@ class _CaptainMapState extends State<_CaptainMap> {
           markerId: const MarkerId('client-live'),
           position: LatLng(widget.state.clientLat!, widget.state.clientLng!),
           infoWindow: const InfoWindow(title: 'موقع العميل الحالي'),
-          icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueAzure),
+          icon: BitmapDescriptor.defaultMarkerWithHue(
+            BitmapDescriptor.hueAzure,
+          ),
         ),
     };
   }
@@ -208,7 +300,8 @@ class _CaptainMapState extends State<_CaptainMap> {
     if (widget.state.hasActiveTrip) return;
     final pos = widget.state.position;
     final oldPos = old.state.position;
-    final moved = pos != null &&
+    final moved =
+        pos != null &&
         (oldPos == null ||
             oldPos.latitude != pos.latitude ||
             oldPos.longitude != pos.longitude);
@@ -222,7 +315,8 @@ class _CaptainMapState extends State<_CaptainMap> {
     final from = _latLng;
     if (target == null || from == null) return;
     final stageChanged = old.state.stage != widget.state.stage;
-    final tripChanged = old.state.activeTrip?.tripId != widget.state.activeTrip?.tripId;
+    final tripChanged =
+        old.state.activeTrip?.tripId != widget.state.activeTrip?.tripId;
     if (!stageChanged && !tripChanged) return;
     _frameBounds(from, target);
   }
@@ -232,11 +326,13 @@ class _CaptainMapState extends State<_CaptainMap> {
     final controller = await _controller.future;
     final bounds = LatLngBounds(
       southwest: LatLng(
-          a.latitude < b.latitude ? a.latitude : b.latitude,
-          a.longitude < b.longitude ? a.longitude : b.longitude),
+        a.latitude < b.latitude ? a.latitude : b.latitude,
+        a.longitude < b.longitude ? a.longitude : b.longitude,
+      ),
       northeast: LatLng(
-          a.latitude > b.latitude ? a.latitude : b.latitude,
-          a.longitude > b.longitude ? a.longitude : b.longitude),
+        a.latitude > b.latitude ? a.latitude : b.latitude,
+        a.longitude > b.longitude ? a.longitude : b.longitude,
+      ),
     );
     controller.animateCamera(CameraUpdate.newLatLngBounds(bounds, 80));
   }
@@ -294,8 +390,8 @@ class _StatusCard extends StatelessWidget {
               connecting
                   ? 'جارٍ الاتصال...'
                   : state.isOnline
-                      ? 'أنت متاح لاستقبال الرحلات'
-                      : 'أنت غير متصل',
+                  ? 'أنت متاح لاستقبال الرحلات'
+                  : 'أنت غير متصل',
               style: AppStyle.body,
             ),
           ),

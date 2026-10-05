@@ -23,6 +23,9 @@ import '../../features/profile/presentation/views/settings_view.dart';
 import '../../features/profile/presentation/views/support_view.dart';
 import '../../features/profile/presentation/views/terms_view.dart';
 import '../../features/shell/presentation/views/captain_shell_view.dart';
+import '../../features/verification/data/repo/verification_repo.dart';
+import '../../features/verification/presentation/cubit/verification_cubit.dart';
+import '../../features/verification/presentation/views/verification_view.dart';
 import '../di/di.dart';
 import '../utils/app_constants.dart';
 import 'routes.dart';
@@ -38,16 +41,14 @@ class AppRouter {
   }
 
   /// Wraps an auth screen with a fresh AuthCubit.
-  static Widget _auth(Widget child) => BlocProvider(
-        create: (_) => AuthCubit(getIt<AuthRepo>()),
-        child: child,
-      );
+  static Widget _auth(Widget child) =>
+      BlocProvider(create: (_) => AuthCubit(getIt<AuthRepo>()), child: child);
 
   /// Wraps a phone-auth screen with a fresh PhoneAuthCubit.
   static Widget _phoneAuth(Widget child) => BlocProvider(
-        create: (_) => PhoneAuthCubit(getIt<AuthRepo>()),
-        child: child,
-      );
+    create: (_) => PhoneAuthCubit(getIt<AuthRepo>()),
+    child: child,
+  );
 
   static Route<dynamic> generateRoute(RouteSettings settings) {
     final args = settings.arguments as Map<String, dynamic>?;
@@ -60,55 +61,73 @@ class AppRouter {
         return _page(_phoneAuth(const PhoneLoginView()));
 
       case Routes.phoneDriverSignupViewRoute:
-        final signupView =
-            PhoneDriverSignupView(phone: args?['phone'] as String? ?? '');
+        final signupView = PhoneDriverSignupView(
+          phone: args?['phone'] as String? ?? '',
+        );
         final existingCubit = args?['cubit'] as PhoneAuthCubit?;
         // Reuse the source screen's cubit so the phone number and (for Google
         // sign-up) the Google ID token stored in state are preserved.
-        return _page(existingCubit != null
-            ? BlocProvider.value(value: existingCubit, child: signupView)
-            : _phoneAuth(signupView));
+        return _page(
+          existingCubit != null
+              ? BlocProvider.value(value: existingCubit, child: signupView)
+              : _phoneAuth(signupView),
+        );
 
       case Routes.registerViewRoute:
         return _page(_auth(const RegisterView()));
 
       case Routes.otpViewRoute:
-        return _page(_auth(OtpView(
-          email: args?['email'] as String? ?? '',
-          type: args?['type'] as String? ?? 'Register',
-        )));
+        return _page(
+          _auth(
+            OtpView(
+              email: args?['email'] as String? ?? '',
+              type: args?['type'] as String? ?? 'Register',
+            ),
+          ),
+        );
 
       case Routes.resetPasswordViewRoute:
         return _page(_auth(const ResetPasswordView()));
 
       case Routes.newPasswordViewRoute:
-        return _page(_auth(NewPasswordView(
-          email: args?['email'] as String? ?? '',
-        )));
+        return _page(
+          _auth(NewPasswordView(email: args?['email'] as String? ?? '')),
+        );
 
       case Routes.changePasswordViewRoute:
         return _page(_auth(const ChangePasswordView()));
 
       case Routes.captainHomeViewRoute:
-        return _page(const CaptainShellView());
+        return _page(
+          CaptainShellView(
+            openVerificationOnStart:
+                args?['openVerificationOnStart'] as bool? ?? false,
+          ),
+        );
 
       case Routes.scooterViewRoute:
-        return _page(BlocProvider(
-          create: (_) => ScooterCubit(getIt<ProfileRepo>())..load(),
-          child: const ScooterView(),
-        ));
+        return _page(
+          BlocProvider(
+            create: (_) => ScooterCubit(getIt<ProfileRepo>())..load(),
+            child: const ScooterView(),
+          ),
+        );
 
       case Routes.ratingsViewRoute:
-        return _page(BlocProvider(
-          create: (_) => RatingsCubit(getIt<ProfileRepo>())..load(),
-          child: const RatingsView(),
-        ));
+        return _page(
+          BlocProvider(
+            create: (_) => RatingsCubit(getIt<ProfileRepo>())..load(),
+            child: const RatingsView(),
+          ),
+        );
 
       case Routes.supportViewRoute:
-        return _page(BlocProvider(
-          create: (_) => SupportCubit(getIt<ProfileRepo>()),
-          child: const SupportView(),
-        ));
+        return _page(
+          BlocProvider(
+            create: (_) => SupportCubit(getIt<ProfileRepo>()),
+            child: const SupportView(),
+          ),
+        );
 
       case Routes.settingsViewRoute:
         return _page(const SettingsView());
@@ -117,17 +136,25 @@ class AppRouter {
         return _page(const TermsView());
 
       case Routes.pdfViewRoute:
-        return _page(PdfViewerView(
-          assetPath:
-              args?['assetPath'] as String? ?? 'assets/files/policy.pdf',
-          title: args?['title'] as String? ?? 'سياسة الخصوصية',
-        ));
+        return _page(
+          PdfViewerView(
+            assetPath:
+                args?['assetPath'] as String? ?? 'assets/files/policy.pdf',
+            title: args?['title'] as String? ?? 'سياسة الخصوصية',
+          ),
+        );
+
+      case Routes.verificationViewRoute:
+        return _page(
+          BlocProvider(
+            create: (_) => VerificationCubit(getIt<VerificationRepo>())..load(),
+            child: const VerificationView(),
+          ),
+        );
 
       default:
         return _page(
-          const Scaffold(
-            body: Center(child: Text('No route defined')),
-          ),
+          const Scaffold(body: Center(child: Text('No route defined'))),
         );
     }
   }

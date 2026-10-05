@@ -79,9 +79,15 @@ class _PhoneDriverSignupViewState extends State<PhoneDriverSignupView> {
     }
     final fullName = _name.text.trim();
     final email = _email.text.trim().isEmpty ? null : _email.text.trim();
-    final nationalId = _nationalId.text.trim().isEmpty ? null : _nationalId.text.trim();
-    final driverLicense = _driverLicense.text.trim().isEmpty ? null : _driverLicense.text.trim();
-    final scooterLicense = _scooterLicense.text.trim().isEmpty ? null : _scooterLicense.text.trim();
+    final nationalId = _nationalId.text.trim().isEmpty
+        ? null
+        : _nationalId.text.trim();
+    final driverLicense = _driverLicense.text.trim().isEmpty
+        ? null
+        : _driverLicense.text.trim();
+    final scooterLicense = _scooterLicense.text.trim().isEmpty
+        ? null
+        : _scooterLicense.text.trim();
 
     if (_isGoogle) {
       // Came from Google sign-in (no phone number, no password).
@@ -120,6 +126,7 @@ class _PhoneDriverSignupViewState extends State<PhoneDriverSignupView> {
               Navigator.of(context).pushNamedAndRemoveUntil(
                 Routes.captainHomeViewRoute,
                 (route) => false,
+                arguments: {'openVerificationOnStart': true},
               );
             } else if (state.status == PhoneAuthStatus.failure) {
               _toast(state.errorMessage);
@@ -143,23 +150,36 @@ class _PhoneDriverSignupViewState extends State<PhoneDriverSignupView> {
                     PasswordField(controller: _password, hint: 'كلمة المرور'),
                     SizedBox(height: 12.h),
                     PasswordField(
-                        controller: _confirm, hint: 'تأكيد كلمة المرور'),
+                      controller: _confirm,
+                      hint: 'تأكيد كلمة المرور',
+                    ),
                     SizedBox(height: 12.h),
                   ],
                   _field(_name, 'الاسم بالكامل', Icons.person_outline),
                   SizedBox(height: 12.h),
                   if (_isGoogle) ...[
                     // Riders need it to call the captain during a trip.
-                    _field(_phone, 'رقم الهاتف', Icons.phone_outlined,
-                        keyboard: TextInputType.phone),
+                    _field(
+                      _phone,
+                      'رقم الهاتف',
+                      Icons.phone_outlined,
+                      keyboard: TextInputType.phone,
+                    ),
                     SizedBox(height: 12.h),
                   ],
-                  _field(_email, 'البريد الإلكتروني (اختياري)',
-                      Icons.email_outlined,
-                      keyboard: TextInputType.emailAddress),
+                  _field(
+                    _email,
+                    'البريد الإلكتروني (اختياري)',
+                    Icons.email_outlined,
+                    keyboard: TextInputType.emailAddress,
+                  ),
                   SizedBox(height: 12.h),
-                  _field(_nationalId, 'الرقم القومي', Icons.badge_outlined,
-                      keyboard: TextInputType.number),
+                  _field(
+                    _nationalId,
+                    'الرقم القومي',
+                    Icons.badge_outlined,
+                    keyboard: TextInputType.number,
+                  ),
                   SizedBox(height: 12.h),
                   _field(_driverLicense, 'رخصة القيادة', Icons.card_membership),
                   SizedBox(height: 12.h),
@@ -175,7 +195,11 @@ class _PhoneDriverSignupViewState extends State<PhoneDriverSignupView> {
                     onChanged: (v) => setState(() => _scooterType = v ?? 0),
                   ),
                   SizedBox(height: 12.h),
-                  _field(_scooterLicense, 'رخصة السكوتر', Icons.confirmation_number_outlined),
+                  _field(
+                    _scooterLicense,
+                    'رخصة السكوتر',
+                    Icons.confirmation_number_outlined,
+                  ),
                   SizedBox(height: 12.h),
                   Text('الجنس', style: AppStyle.hint),
                   Row(
@@ -217,7 +241,9 @@ class _PhoneDriverSignupViewState extends State<PhoneDriverSignupView> {
                           : () => _submit(context.read<PhoneAuthCubit>()),
                       child: busy
                           ? const SpinKitThreeBounce(
-                              color: AppColors.black, size: 22)
+                              color: AppColors.black,
+                              size: 22,
+                            )
                           : Text('إنشاء الحساب', style: AppStyle.button),
                     ),
                   ),
@@ -230,8 +256,13 @@ class _PhoneDriverSignupViewState extends State<PhoneDriverSignupView> {
     );
   }
 
-  Widget _field(TextEditingController c, String hint, IconData icon,
-      {TextInputType? keyboard, bool obscure = false}) {
+  Widget _field(
+    TextEditingController c,
+    String hint,
+    IconData icon, {
+    TextInputType? keyboard,
+    bool obscure = false,
+  }) {
     return TextField(
       controller: c,
       keyboardType: keyboard,
