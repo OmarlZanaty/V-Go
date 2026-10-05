@@ -15,6 +15,7 @@ import '../auth/presentation/logic/cubit/auth_cubit.dart';
 import 'emergecy_settings_item.dart';
 import 'logout_settings_item.dart';
 import 'settings_item.dart';
+import '../../core/branding/al_mobarmg_branding.dart';
 
 class SettingsView extends StatelessWidget {
   const SettingsView({super.key, this.isDriver = false});
@@ -133,6 +134,9 @@ class SettingsView extends StatelessWidget {
                   const _SettingsHeader(title: 'الطوارئ'),
                   const EmergecySettingsItem(),
                 ],
+                const _SettingsHeader(title: 'عن التطبيق'),
+                const AlMobarmgBranding.full(),
+                const SizedBox(height: 24),
               ],
             ),
           ),

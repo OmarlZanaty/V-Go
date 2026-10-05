@@ -12,6 +12,7 @@ import '../../../../core/utils/widgets/custom_loading_widget.dart';
 import '../../../../core/utils/widgets/custom_text_field.dart';
 import '../../../../core/utils/widgets/custom_toastification.dart';
 import '../logic/phone_auth_cubit/phone_auth_cubit.dart';
+import '../../../../core/branding/al_mobarmg_branding.dart';
 
 enum _AuthScreen { phone, password, resetCode, resetNewPassword }
 
@@ -72,9 +73,24 @@ class _PhoneLoginViewState extends State<PhoneLoginView> {
           }
         },
         builder: (context, state) {
-          return Padding(
-            padding: const EdgeInsets.all(16),
-            child: SingleChildScrollView(child: _body(context, state)),
+          return Column(
+            children: [
+              Expanded(
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: SingleChildScrollView(child: _body(context, state)),
+                ),
+              ),
+              // Developer signature, kept out of the way while typing.
+              if (MediaQuery.viewInsetsOf(context).bottom == 0)
+                const SafeArea(
+                  top: false,
+                  child: Padding(
+                    padding: EdgeInsets.only(bottom: 8),
+                    child: AlMobarmgBranding.compact(),
+                  ),
+                ),
+            ],
           );
         },
       ),

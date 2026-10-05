@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="298 256 404 366">
+  <!-- AL MOBARMG mark, vector redraw of the company logo (same geometry as AlMobarmgLogo). -->
+  <g fill="none" stroke="#29ABE2" stroke-width="17" stroke-linecap="round">
+    <path d="M330 287 H455 A155 155 0 0 1 610 442 V608"/>
+    <path d="M568 485 V445 A108 108 0 0 0 460 337 A108 108 0 0 0 352 445 A108 108 0 0 0 460 553 H668"/>
+    <path d="M465 507 A62 62 0 0 1 403 445 A62 62 0 0 1 465 383 A62 62 0 0 1 527 445 V608"/>
+  </g>
+  <g fill="#29ABE2"><circle cx="330" cy="287" r="27"/><circle cx="465" cy="507" r="27"/><circle cx="668" cy="553" r="27"/></g>
+  <g fill="#FFFFFF"><circle cx="330" cy="287" r="19"/><circle cx="465" cy="507" r="19"/><circle cx="668" cy="553" r="19"/></g>
+  <g fill="#2B2E83"><circle cx="330" cy="287" r="13"/><circle cx="465" cy="507" r="13"/><circle cx="668" cy="553" r="13"/></g>
+</svg>

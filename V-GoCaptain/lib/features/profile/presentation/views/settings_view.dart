@@ -13,6 +13,7 @@ import '../../../../core/theming/app_style.dart';
 import '../../../../core/utils/app_constants.dart';
 import '../widgets/emergency_alert_item.dart';
 import '../widgets/settings_item.dart';
+import '../../../../core/branding/al_mobarmg_branding.dart';
 
 class SettingsView extends StatelessWidget {
   const SettingsView({super.key});
@@ -129,6 +130,10 @@ class SettingsView extends StatelessWidget {
           // ---------- Captain-only ----------
           const SettingsSectionHeader(title: 'الطوارئ'),
           const EmergencyAlertItem(),
+
+          // ---------- About ----------
+          const SettingsSectionHeader(title: 'عن التطبيق'),
+          const AlMobarmgBranding.full(),
           SizedBox(height: 20.h),
         ],
       ),
