@@ -30,6 +30,9 @@ using Masafet_Elseka.Application.Interfaces.IExpenseService;
 using Masafet_Elseka.Application.Interfaces.IMessageService;
 using Masafet_Elseka.Application.Interfaces.INotificationService;
 using Masafet_Elseka.Application.Interfaces.IPaymentService;
+using Masafet_Elseka.Application.Interfaces.IDriverFinanceService;
+using Masafet_Elseka.Application.Interfaces.IDriverVerificationService;
+using Masafet_Elseka.Application.Interfaces.IPrivateFileStorage;
 using Masafet_Elseka.Application.Interfaces.IPricingRuleService;
 using Masafet_Elseka.Application.Interfaces.IRatingService;
 using Masafet_Elseka.Application.Interfaces.ITripService;
@@ -63,6 +66,9 @@ using Masafet_Elseka.Infrastructure.Services.MessageService;
 using Masafet_Elseka.Infrastructure.Services.NotificationService;
 using Masafet_Elseka.Infrastructure.Services.OnlineTrackerService;
 using Masafet_Elseka.Infrastructure.Services.PaymentService;
+using Masafet_Elseka.Infrastructure.Services.DriverFinanceService;
+using Masafet_Elseka.Infrastructure.Services.DriverVerificationService;
+using Masafet_Elseka.Infrastructure.ExternalService.PrivateFileStorage;
 using Masafet_Elseka.Infrastructure.Services.PricingRoleService;
 using Masafet_Elseka.Infrastructure.Services.RatingService;
 using Masafet_Elseka.Infrastructure.Services.StatisticsService;
@@ -229,6 +235,10 @@ builder.Services.AddScoped<IExpenseService, ExpenseService>();
 builder.Services.AddScoped<IRatingService, RatingService>();
 //builder.Services.AddScoped<IDriverNotifier, DriverNotifier>();
 builder.Services.AddScoped<IPaymentService, PaymentService>();
+builder.Services.AddScoped<IDriverFinanceService, DriverFinanceService>();
+builder.Services.AddScoped<IDriverVerificationService, DriverVerificationService>();
+builder.Services.AddSingleton<IPrivateFileStorage, LocalPrivateFileStorage>();
+builder.Services.AddSingleton<IPublicMediaStorage, LocalPublicMediaStorage>();
 builder.Services.AddScoped<IFirebaseNotificationService, FirebaseNotificationService>();
 builder.Services.AddScoped<INotificationService, NotificationService>();
 builder.Services.AddScoped<IEmergencyService, EmergencyService>();
@@ -375,6 +385,9 @@ builder.Services.AddCors(options =>
             origins.Add("http://127.0.0.1:5500");
             origins.Add("http://localhost:5173");
         }
+        // Per-host extras (e.g. a staging dashboard), comma-separated: Cors__ExtraOrigins.
+        origins.AddRange((builder.Configuration["Cors:ExtraOrigins"] ?? string.Empty)
+            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
 
         policy.WithOrigins(origins.ToArray())
               .AllowAnyHeader()
@@ -415,6 +428,15 @@ using (var scope = app.Services.CreateScope())
     {
         Log.Error(ex, "Database migration failed on startup");
     }
+
+    try
+    {
+        await DriverFinanceBootstrap.RunAsync(scope.ServiceProvider.GetRequiredService<Context>());
+    }
+    catch (Exception ex)
+    {
+        Log.Error(ex, "Driver finance bootstrap failed on startup");
+    }
 }
 
 #endregion
@@ -428,10 +450,16 @@ if (app.Environment.IsDevelopment())
     app.UseSwaggerUI();
 }
 // Add this BEFORE UseAuthentication / UseAuthorization
-app.UseForwardedHeaders(new ForwardedHeadersOptions
+var forwardedOptions = new ForwardedHeadersOptions
 {
     ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto
-});
+};
+// The API is only published on the host's loopback and reached through the Caddy edge
+// proxy over the Docker bridge, so trust its X-Forwarded-* headers. Without this every
+// rider/captain shares Caddy's IP and therefore one rate-limit bucket.
+forwardedOptions.KnownNetworks.Clear();
+forwardedOptions.KnownProxies.Clear();
+app.UseForwardedHeaders(forwardedOptions);
 
 // Cloud Run terminates TLS at the edge and forwards plain HTTP on $PORT, so
 // HTTPS redirection would break health checks there. Only redirect locally.
@@ -439,6 +467,16 @@ if (app.Environment.IsDevelopment())
 {
     app.UseHttpsRedirection();
 }
+
+// Public images saved on the server (captain photos when Cloudinary isn't configured).
+var publicMediaRoot = Path.GetFullPath(LocalPublicMediaStorage.RootFrom(app.Configuration));
+Directory.CreateDirectory(publicMediaRoot);
+app.UseStaticFiles(new StaticFileOptions
+{
+    FileProvider = new Microsoft.Extensions.FileProviders.PhysicalFileProvider(publicMediaRoot),
+    RequestPath = LocalPublicMediaStorage.RequestPath,
+    OnPrepareResponse = ctx => ctx.Context.Response.Headers.CacheControl = "public, max-age=604800",
+});
 
 app.UseRouting();
 app.UseWebSockets();

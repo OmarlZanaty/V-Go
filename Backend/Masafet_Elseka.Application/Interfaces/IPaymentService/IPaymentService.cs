@@ -42,5 +42,9 @@ namespace Masafet_Elseka.Application.Interfaces.IPaymentService
         // Driver reports the client refused to pay a completed Visa trip. Records
         // the refusal and returns the client id so the hub can release the rider.
         Task<Response<string>> MarkPaymentRefusedByDriverAsync(string tripId, string driverId);
+        // Captain pays his exact debt to the company (amount computed server-side).
+        Task<Response<Masafet_Elseka.Application.DTOs.DriverFinance.SettlementIntentDTO>> CreateDriverSettlementIntentAsync(string driverId);
+        // Re-checks a pending settlement with Paymob (missed webhook).
+        Task RefreshSettlementAsync(string paymentId, string driverId);
     }
 }

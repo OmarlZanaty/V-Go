@@ -3,6 +3,7 @@ using Masafet_Elseka.Application.DTOs.Driver;
 using Masafet_Elseka.Application.DTOs.Trip;
 using Masafet_Elseka.Application.ExternalInterfaces.ICachService;
 using Masafet_Elseka.Application.Helpers;
+using Masafet_Elseka.Application.Interfaces.IDriverFinanceService;
 using Masafet_Elseka.Application.Interfaces.IDriverService;
 using Masafet_Elseka.Application.Interfaces.IEmergencyService;
 using Masafet_Elseka.Application.Interfaces.ITripService;
@@ -40,10 +41,12 @@ namespace Masafet_Elseka.Infrastructure.Hubs
         private readonly UserManager<ApplicationUser> _userManager;
         private readonly IHubContext<TripHub> _tripHubContext;
         private readonly IEmergencyService _emergencyService;
+        private readonly IDriverFinanceService _finance;
         private double _distanceThresholdKm = 4.0;
 
-        public DriverHub(IDriverService driverService, ICacheService cacheService, ITripService tripService, UserManager<ApplicationUser> userManager, IHubContext<TripHub> tripHub, IEmergencyService emergencyService)
+        public DriverHub(IDriverService driverService, ICacheService cacheService, ITripService tripService, UserManager<ApplicationUser> userManager, IHubContext<TripHub> tripHub, IEmergencyService emergencyService, IDriverFinanceService finance)
         {
+            _finance = finance;
             _driverService = driverService;
             _cacheService = cacheService;
             _tripService = tripService;
@@ -89,6 +92,20 @@ namespace Masafet_Elseka.Infrastructure.Hubs
             }
 
             status.DriverId = driverId;
+
+            // Going (or staying) online is only allowed for verified captains under their
+            // cash limit. Otherwise keep him offline and tell the app why — this holds even
+            // for an old app build that doesn't know about the new rules.
+            if (status.IsAvailable)
+            {
+                var eligibility = await _finance.CheckOnlineEligibilityAsync(driverId, useCache: true);
+                if (!eligibility.CanGoOnline)
+                {
+                    status.IsAvailable = false;
+                    await Clients.Caller.SendAsync(HubEvents.DriverOnlineBlocked, eligibility);
+                }
+            }
+
             if (string.IsNullOrEmpty(status.DriverGender))
             {
                 // The app never sends these, so without the cache every location

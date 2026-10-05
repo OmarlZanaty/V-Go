@@ -35,6 +35,33 @@ namespace Masafet_Elseka.Infrastructure.Data
                 entity.Property(t => t.Id)
                     .ValueGeneratedOnAdd();
             });
+            builder.Entity<DriverLedgerEntry>(entity =>
+            {
+                entity.HasIndex(e => new { e.DriverId, e.CreatedAt });
+                entity.HasIndex(e => e.TripId);
+                // A Paymob settlement can be credited only once, however many times
+                // the webhook / callback / reconcile paths report it.
+                entity.HasIndex(e => e.PaymentId).IsUnique().HasFilter("[PaymentId] IS NOT NULL");
+                entity.HasOne(e => e.Driver).WithMany().HasForeignKey(e => e.DriverId)
+                    .OnDelete(DeleteBehavior.Restrict);
+                entity.HasOne(e => e.Trip).WithMany().HasForeignKey(e => e.TripId)
+                    .OnDelete(DeleteBehavior.Restrict);
+                entity.HasQueryFilter(e => !e.Driver.IsDeleted);
+            });
+            builder.Entity<DriverDocument>(entity =>
+            {
+                entity.HasIndex(d => new { d.DriverId, d.Type }).IsUnique();
+                entity.HasIndex(d => d.Status);
+                entity.HasOne(d => d.Driver).WithMany(u => u.DriverDocuments).HasForeignKey(d => d.DriverId)
+                    .OnDelete(DeleteBehavior.Restrict);
+                entity.HasQueryFilter(d => !d.Driver.IsDeleted);
+            });
+            builder.Entity<AdminAuditLog>(entity =>
+            {
+                entity.HasIndex(a => a.CreatedAt);
+                entity.HasIndex(a => a.TargetUserId);
+            });
+            builder.Entity<ApplicationUser>().HasIndex(u => u.VerificationStatus);
             base.OnModelCreating(builder);
         }
 
@@ -52,6 +79,9 @@ namespace Masafet_Elseka.Infrastructure.Data
         public DbSet<SavedCard> SavedCards { get; set; }
         public DbSet<Notification> Notifications { get; set; }
         public DbSet<HomeBanner> HomeBanners { get; set; }
+        public DbSet<DriverLedgerEntry> DriverLedgerEntries { get; set; }
+        public DbSet<DriverDocument> DriverDocuments { get; set; }
+        public DbSet<AdminAuditLog> AdminAuditLogs { get; set; }
 
     }
 }

@@ -30,6 +30,10 @@ namespace Masafet_Elseka.Domain.Const
         public const string TripPaymentRefused = "TripPaymentRefused";
         public const string ReceiveDriverLocation = "ReceiveDriverLocation";
         public const string ReceiveClientLocation = "ReceiveClientLocation";
+        // Captain finance: balance changed (trip posted, settlement credited, payout...).
+        public const string DriverFinanceUpdated = "DriverFinanceUpdated";
+        // Captain can no longer be online (cash limit, verification, suspension).
+        public const string DriverOnlineBlocked = "DriverOnlineBlocked";
 
     }
 }

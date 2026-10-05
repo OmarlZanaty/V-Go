@@ -1,5 +1,7 @@
 ﻿using Masafet_Elseka.Application.DTOs.Payment;
 using Masafet_Elseka.Application.DTOs.Payment.PayMob;
+using Masafet_Elseka.Application.DTOs.DriverFinance;
+using Masafet_Elseka.Application.Interfaces.IDriverFinanceService;
 using Masafet_Elseka.Application.Interfaces.IPaymentService;
 using Masafet_Elseka.Application.Interfaces.ITripService;
 using Masafet_Elseka.Application.Response;
@@ -33,9 +35,11 @@ namespace Masafet_Elseka.Infrastructure.Services.PaymentService
         private readonly IHubContext<TripHub> _tripHub;
         private readonly ITripService _tripService;
         private readonly Application.Interfaces.INotificationService.INotificationService _notificationService;
+        private readonly IDriverFinanceService _finance;
 
-        public PaymentService(HttpClient httpClient, Context context, IConfiguration configuration, IHubContext<TripHub> tripHub, ITripService tripService, Application.Interfaces.INotificationService.INotificationService notificationService)
+        public PaymentService(HttpClient httpClient, Context context, IConfiguration configuration, IHubContext<TripHub> tripHub, ITripService tripService, Application.Interfaces.INotificationService.INotificationService notificationService, IDriverFinanceService finance)
         {
+            _finance = finance;
             _httpClient = httpClient;
             _context = context;
             _configuration = configuration;
@@ -340,6 +344,7 @@ namespace Masafet_Elseka.Infrastructure.Services.PaymentService
                 payment.CaptureTransactionId ??= payment.PreauthTransactionId;
                 payment.UpdatedAt = DateTime.Now.ToEgyptTime();
                 await _context.SaveChangesAsync();
+                await _finance.OnPaymentUpdatedAsync(payment.Id);
                 return Response<Payment>.Success(payment, "تم تحصيل المبلغ بنجاح", 200);
             }
             catch (Exception ex)
@@ -599,9 +604,13 @@ namespace Masafet_Elseka.Infrastructure.Services.PaymentService
                 }
 
                 await _context.SaveChangesAsync();
+                await _finance.OnPaymentUpdatedAsync(payment.Id);
 
-                var driverId = await DriverToNotifyAsync(payment);
-                await NotifyClientAndDriver(payment.UserId, driverId ?? string.Empty, payment.Status);
+                if (payment.Purpose == PaymentPurpose.Trip)
+                {
+                    var driverId = await DriverToNotifyAsync(payment);
+                    await NotifyClientAndDriver(payment.UserId, driverId ?? string.Empty, payment.Status);
+                }
 
                 return Response<string>.Success("تم تحديث حالة الدفع", "تم تحديث حالة الدفع", 200);
             }
@@ -744,9 +753,13 @@ namespace Masafet_Elseka.Infrastructure.Services.PaymentService
                 }
 
                 await _context.SaveChangesAsync();
+                await _finance.OnPaymentUpdatedAsync(payment.Id);
 
-                var driverId = await DriverToNotifyAsync(payment);
-                await NotifyClientAndDriver(payment.UserId, driverId ?? string.Empty, payment.Status);
+                if (payment.Purpose == PaymentPurpose.Trip)
+                {
+                    var driverId = await DriverToNotifyAsync(payment);
+                    await NotifyClientAndDriver(payment.UserId, driverId ?? string.Empty, payment.Status);
+                }
             }
             catch (Exception ex)
             {
@@ -823,6 +836,8 @@ namespace Masafet_Elseka.Infrastructure.Services.PaymentService
                 // Already settled as a success — nothing to do (the webhook may have won).
                 if (payment.Status == PaymentStatus.Paid || payment.Status == PaymentStatus.Captured)
                 {
+                    // Idempotent: makes sure a settled payment reached the captain's ledger.
+                    await _finance.OnPaymentUpdatedAsync(payment.Id);
                     return Response<string>.Success("ok", "تم تأكيد الدفع مسبقاً", 200);
                 }
 
@@ -845,9 +860,13 @@ namespace Masafet_Elseka.Infrastructure.Services.PaymentService
                     payment.CaptureTransactionId = payment.TransactionId;
                 }
                 await _context.SaveChangesAsync();
+                await _finance.OnPaymentUpdatedAsync(payment.Id);
 
-                var driverId = await DriverToNotifyAsync(payment);
-                await NotifyClientAndDriver(payment.UserId, driverId ?? string.Empty, payment.Status);
+                if (payment.Purpose == PaymentPurpose.Trip)
+                {
+                    var driverId = await DriverToNotifyAsync(payment);
+                    await NotifyClientAndDriver(payment.UserId, driverId ?? string.Empty, payment.Status);
+                }
 
                 return Response<string>.Success("ok", "تم تأكيد الدفع", 200);
             }
@@ -982,6 +1001,115 @@ namespace Masafet_Elseka.Infrastructure.Services.PaymentService
             }
         }
 
+        // ===================== Captain settlement =====================
+
+        // Checkout for a captain paying his debt to the company. The amount is always the
+        // server-side debt — the app never sends it — so it is exactly what he owes.
+        public async Task<Response<SettlementIntentDTO>> CreateDriverSettlementIntentAsync(string driverId)
+        {
+            try
+            {
+                var user = await _context.Users.FindAsync(driverId);
+                if (user == null)
+                    return Response<SettlementIntentDTO>.Failure("الكابتن غير موجود", 404);
+
+                var balance = await _finance.GetBalanceAsync(driverId);
+                var amount = Math.Round(-balance, 2, MidpointRounding.AwayFromZero);
+                if (amount <= 0)
+                    return Response<SettlementIntentDTO>.Failure("مفيش مستحقات عليك للشركة حالياً", 400);
+                if (amount < 1)
+                    return Response<SettlementIntentDTO>.Failure("المبلغ أقل من الحد الأدنى للدفع الإلكتروني (1 ج.م)", 400);
+
+                var secretKey = _configuration["Paymob:SecretKey"];
+                if (string.IsNullOrWhiteSpace(secretKey))
+                {
+                    Log.Error("Paymob:SecretKey is not configured on this server (env var missing).");
+                    return Response<SettlementIntentDTO>.Failure("خدمة الدفع الإلكتروني غير مُهيأة حالياً", 503);
+                }
+
+                var payment = new Payment
+                {
+                    UserId = driverId,
+                    TripId = null,
+                    Purpose = PaymentPurpose.DriverSettlement,
+                    Amount = amount,
+                    Currency = "EGP",
+                    CreatedAt = DateTime.Now.ToEgyptTime(),
+                    UpdatedAt = DateTime.Now.ToEgyptTime(),
+                    Status = PaymentStatus.Pending,
+                };
+
+                var amountCents = (int)Math.Round(amount * 100);
+                var body = new Dictionary<string, object?>
+                {
+                    ["amount"] = amountCents,
+                    ["currency"] = "EGP",
+                    ["merchant_order_id"] = payment.Id,
+                    ["payment_methods"] = new[]
+                    {
+                        int.Parse(_configuration["Paymob:CardIntegrationId"] ?? "0"),
+                        int.Parse(_configuration["Paymob:WalletIntegrationId"] ?? "0")
+                    },
+                    ["billing_data"] = new
+                    {
+                        first_name = string.IsNullOrWhiteSpace(user.FullName) ? "Captain" : user.FullName,
+                        last_name = "NA",
+                        phone_number = string.IsNullOrWhiteSpace(user.PhoneNumber) ? "+201000000000" : user.PhoneNumber,
+                        email = string.IsNullOrWhiteSpace(user.Email) ? $"captain_{user.Id}@vgo-eg.com" : user.Email,
+                    }
+                };
+
+                using var requestMessage = new HttpRequestMessage(HttpMethod.Post, "https://accept.paymob.com/v1/intention/");
+                requestMessage.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Token", secretKey);
+                requestMessage.Content = JsonContent.Create(body);
+
+                using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(20));
+                var response = await _httpClient.SendAsync(requestMessage, cts.Token);
+                if (!response.IsSuccessStatusCode)
+                {
+                    var errBody = await response.Content.ReadAsStringAsync();
+                    Log.Error("Paymob settlement intention failed: {Status} body={Body}", response.StatusCode, errBody);
+                    return Response<SettlementIntentDTO>.Failure("تعذّر إنشاء عملية الدفع، حاول تاني بعد شوية", 503);
+                }
+                var intent = await response.Content.ReadFromJsonAsync<PaymobIntentResponseDTO>();
+                if (intent == null || string.IsNullOrEmpty(intent.ClientSecret))
+                    return Response<SettlementIntentDTO>.Failure("تعذّر إنشاء عملية الدفع", 503);
+
+                payment.OrderId = intent.IntentionOrderId.ToString();
+                _context.Payments.Add(payment);
+                await _context.SaveChangesAsync();
+
+                var publicKey = _configuration["Paymob:PublicKey"];
+                return Response<SettlementIntentDTO>.Success(new SettlementIntentDTO
+                {
+                    PaymentId = payment.Id,
+                    Amount = amount,
+                    ClientSecret = intent.ClientSecret,
+                    PublicKey = publicKey,
+                    CheckoutUrl = $"https://accept.paymob.com/unifiedcheckout/?publicKey={publicKey}&clientSecret={intent.ClientSecret}",
+                }, "تم إنشاء عملية السداد", 200);
+            }
+            catch (OperationCanceledException)
+            {
+                Log.Error("CreateDriverSettlementIntent timed out calling Paymob (>20s).");
+                return Response<SettlementIntentDTO>.Failure("تعذّر الاتصال بخدمة الدفع. حاول تاني بعد شوية", 503);
+            }
+            catch (Exception ex)
+            {
+                Log.Error(ex, "CreateDriverSettlementIntent error for {DriverId}", driverId);
+                return Response<SettlementIntentDTO>.Failure("حدث خطأ غير متوقع، حاول تاني بعد شوية", 500);
+            }
+        }
+
+        // Pulls a still-pending settlement's real status from Paymob (missed webhook).
+        public async Task RefreshSettlementAsync(string paymentId, string driverId)
+        {
+            var payment = await _context.Payments.FirstOrDefaultAsync(p => p.Id == paymentId && p.UserId == driverId
+                && p.Purpose == PaymentPurpose.DriverSettlement);
+            if (payment != null && payment.Status == PaymentStatus.Pending)
+                await ReconcileFromGatewayAsync(payment);
+        }
+
         public async Task<Response<string>> PayTripInCashAsync(string tripId, string userId)
         {
             try
@@ -1012,6 +1140,7 @@ namespace Masafet_Elseka.Infrastructure.Services.PaymentService
 
                 _context.Payments.Add(payment);
                 await _context.SaveChangesAsync();
+                await _finance.SyncTripLedgerAsync(tripId);
                 return Response<string>.Success("سيتم دفع الرحلة نقدا للسائق", "سيتم دفع الرحلة نقدا للسائق", 200);
             }
             catch (Exception ex)
@@ -1059,6 +1188,7 @@ namespace Masafet_Elseka.Infrastructure.Services.PaymentService
                 };
                 _context.Payments.Add(payment);
                 await _context.SaveChangesAsync();
+                await _finance.SyncTripLedgerAsync(tripId);
                 return Response<string>.Success(clientId, "تم تأكيد استلام الدفع نقدًا", 200);
             }
             catch (Exception ex)
@@ -1115,6 +1245,8 @@ namespace Masafet_Elseka.Infrastructure.Services.PaymentService
                     });
                     await _context.SaveChangesAsync();
                 }
+                // A refused cash trip means the captain never got the fare: undo the commission.
+                await _finance.SyncTripLedgerAsync(tripId);
                 return Response<string>.Success(clientId, "تم تسجيل رفض العميل للدفع", 200);
             }
             catch (Exception ex)

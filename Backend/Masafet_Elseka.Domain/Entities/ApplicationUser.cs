@@ -23,6 +23,19 @@ namespace Masafet_Elseka.Domain.Entities
         public bool IsDeleted { get; set; }
         public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 
+        // Captain verification (KYC). Only meaningful for the Driver role.
+        public Masafet_Elseka.Domain.Enums.DriverVerificationStatus VerificationStatus { get; set; }
+        public string? VerificationNote { get; set; }
+        // Grace period for captains approved before documents were required: once it
+        // passes without a full set of documents they can't go online.
+        public DateTime? DocumentsDeadline { get; set; }
+
+        // Where the company sends the captain's balance (InstaPay / mobile wallet).
+        public Masafet_Elseka.Domain.Enums.PayoutMethod? PayoutMethod { get; set; }
+        public string? PayoutAccount { get; set; }
+        public string? PayoutAccountName { get; set; }
+        public DateTime? PayoutUpdatedAt { get; set; }
+
         public virtual Scooter? Scooter { get; set; }
         public virtual ICollection<Message> Messages { get; set; }
         public virtual ICollection<UserChat> UserChats { get; set; }
@@ -34,6 +47,7 @@ namespace Masafet_Elseka.Domain.Entities
         public virtual ICollection<SavedCard>? SavedCards { get; set; } = new List<SavedCard>();
         public virtual ICollection<UserDevice> UserDevices { get; set; } = new List<UserDevice>();
         public virtual ICollection<Notification> Notifications { get; set; } = new List<Notification>();
+        public virtual ICollection<DriverDocument> DriverDocuments { get; set; } = new List<DriverDocument>();
 
     }
 }

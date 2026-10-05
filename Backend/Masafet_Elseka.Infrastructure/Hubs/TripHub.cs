@@ -5,6 +5,7 @@ using Masafet_Elseka.Application.DTOs.User;
 using Masafet_Elseka.Application.DTOs.UserTripDTO;
 using Masafet_Elseka.Application.ExternalInterfaces.ICachService;
 using Masafet_Elseka.Application.Helpers;
+using Masafet_Elseka.Application.Interfaces.IDriverFinanceService;
 using Masafet_Elseka.Application.Interfaces.IDriverService;
 using Masafet_Elseka.Application.Interfaces.INotificationService;
 using Masafet_Elseka.Application.Interfaces.IPaymentService;
@@ -53,11 +54,14 @@ namespace Masafet_Elseka.Infrastructure.Hubs
         private readonly IServiceScopeFactory _scopeFactory;
         private readonly INotificationService _notificationService;
         private readonly IPaymentService _paymentService;
+        private readonly IDriverFinanceService _finance;
 
         public TripHub(ITripService tripService, IUserTripService userTripService, IUnitOfWork unitOfWork, UserManager<ApplicationUser> userManage,
             IDriverService driverService, Context context, IUserService userService, IRatingService ratingService, ILogger<TripHub> logger,
-            IServiceScopeFactory scopeFactory, INotificationService notificationService, IPaymentService paymentService)
+            IServiceScopeFactory scopeFactory, INotificationService notificationService, IPaymentService paymentService,
+            IDriverFinanceService finance)
         {
+            _finance = finance;
             _tripService = tripService;
             _userTripService = userTripService;
             _unitOfWork = unitOfWork;
@@ -278,6 +282,12 @@ namespace Masafet_Elseka.Infrastructure.Hubs
                     .FirstOrDefaultAsync(u => u.Id == driverId);
                 if (driver == null || !await _userManager.IsInRoleAsync(driver, "Driver"))
                     return Response<string>.Failure("السائق غير موجود", 404);
+
+                // Cash limit / verification / suspension: the server is the gate, not the app.
+                // Checked first so a blocked captain sees why, not just "unavailable".
+                var eligibility = await _finance.CheckOnlineEligibilityAsync(driverId);
+                if (!eligibility.CanGoOnline)
+                    return Response<string>.Failure(eligibility.Message ?? "لا يمكنك قبول رحلات حالياً", 403);
 
                 if (driver.IsAvailable==false)
                     return Response<string>.Failure("السائق غير متاح حالياً", 400);
@@ -515,6 +525,11 @@ namespace Masafet_Elseka.Infrastructure.Hubs
                 // No-op for cash / non-pre-auth trips (returns without charging).
                 try { await _paymentService.CaptureRidePaymentAsync(tripId); }
                 catch (Exception capEx) { Log.Error(capEx, "Capture after EndTrip failed for trip {TripId}", tripId); }
+
+                // Post the trip to the captain's account (cash commission now; card share
+                // once paid), then stop him going back online if that crossed his limit.
+                await _finance.SyncTripLedgerAsync(tripId);
+                await _finance.EnforceEligibilityAsync(driverId);
 
                 return Response<object>.Success(result.Data, result.Message, result.StatusCode);
             }
