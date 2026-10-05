@@ -68,11 +68,14 @@ class _EarningsViewState extends State<EarningsView> {
               .toList()
             ..sort((a, b) => (b.createdAt ?? DateTime(0))
                 .compareTo(a.createdAt ?? DateTime(0)));
-          final paid = completed.where((t) => t.isPaid).toList();
-          final pending = completed.where((t) => !t.isPaid).toList();
+          // Cash counts as soon as the trip ends; only unsettled card trips wait.
+          final paid = completed.where((t) => t.isSettled).toList();
+          final pending = completed.where((t) => !t.isSettled).toList();
 
-          final earnings = paid.fold<double>(0, (s, t) => s + t.price);
-          final pendingAmount = pending.fold<double>(0, (s, t) => s + t.price);
+          final gross = paid.fold<double>(0, (s, t) => s + t.price);
+          final earnings = paid.fold<double>(0, (s, t) => s + state.shareOf(t));
+          final pendingAmount =
+              pending.fold<double>(0, (s, t) => s + state.shareOf(t));
           final distance = completed.fold<double>(0, (s, t) => s + t.distanceKm);
           final avg = paid.isEmpty ? 0.0 : earnings / paid.length;
 
@@ -88,6 +91,8 @@ class _EarningsViewState extends State<EarningsView> {
                 SizedBox(height: 16.h),
                 _HeroCard(
                   earnings: earnings,
+                  gross: gross,
+                  showBreakdown: state.commissionPct != null,
                   trips: completed.length,
                   distance: distance,
                   avg: avg,
@@ -98,7 +103,7 @@ class _EarningsViewState extends State<EarningsView> {
                   _PendingBanner(count: pending.length, amount: pendingAmount),
                 ],
                 SizedBox(height: 20.h),
-                _WeeklyChart(trips: state.trips),
+                _WeeklyChart(trips: state.trips, shareOf: state.shareOf),
                 SizedBox(height: 20.h),
                 Row(
                   children: [
@@ -116,7 +121,8 @@ class _EarningsViewState extends State<EarningsView> {
                             style: AppStyle.hint)),
                   )
                 else
-                  ...completed.map((t) => _TransactionCard(trip: t)),
+                  ...completed.map((t) =>
+                      _TransactionCard(trip: t, share: state.shareOf(t))),
                 SizedBox(height: 20.h),
               ],
             ),
@@ -173,12 +179,16 @@ class _RangeSelector extends StatelessWidget {
 class _HeroCard extends StatelessWidget {
   const _HeroCard({
     required this.earnings,
+    required this.gross,
+    required this.showBreakdown,
     required this.trips,
     required this.distance,
     required this.avg,
     required this.rangeLabel,
   });
   final double earnings;
+  final double gross;
+  final bool showBreakdown;
   final int trips;
   final double distance;
   final double avg;
@@ -198,6 +208,15 @@ class _HeroCard extends StatelessWidget {
           SizedBox(height: 6.h),
           Text('${earnings.toStringAsFixed(0)} ج.م',
               style: AppStyle.heading.copyWith(color: AppColors.primary)),
+          if (showBreakdown && gross > 0) ...[
+            SizedBox(height: 6.h),
+            Text(
+              'إجمالي الرحلات ${gross.toStringAsFixed(0)} ج.م  •  '
+              'عمولة التطبيق ${(gross - earnings).toStringAsFixed(0)} ج.م',
+              style: AppStyle.hint,
+              textAlign: TextAlign.center,
+            ),
+          ],
           SizedBox(height: 18.h),
           Row(
             children: [
@@ -261,10 +280,11 @@ class _PendingBanner extends StatelessWidget {
   }
 }
 
-/// Simple dependency-free bar chart of the last 7 days' paid earnings.
+/// Simple dependency-free bar chart of the last 7 days' settled earnings.
 class _WeeklyChart extends StatelessWidget {
-  const _WeeklyChart({required this.trips});
+  const _WeeklyChart({required this.trips, required this.shareOf});
   final List<TripModel> trips;
+  final double Function(TripModel) shareOf;
 
   static const _weekdayShort = ['إثن', 'ثلا', 'أرب', 'خمي', 'جمع', 'سبت', 'أحد'];
 
@@ -275,13 +295,12 @@ class _WeeklyChart extends StatelessWidget {
       final day = start.subtract(Duration(days: 6 - i));
       final amount = trips
           .where((t) =>
-              t.isCompleted &&
-              t.isPaid &&
+              t.isSettled &&
               t.createdAt != null &&
               t.createdAt!.year == day.year &&
               t.createdAt!.month == day.month &&
               t.createdAt!.day == day.day)
-          .fold<double>(0, (s, t) => s + t.price);
+          .fold<double>(0, (s, t) => s + shareOf(t));
       return (day: day, amount: amount);
     });
   }
@@ -348,12 +367,15 @@ class _WeeklyChart extends StatelessWidget {
 }
 
 class _TransactionCard extends StatelessWidget {
-  const _TransactionCard({required this.trip});
+  const _TransactionCard({required this.trip, required this.share});
   final TripModel trip;
+  final double share;
 
   @override
   Widget build(BuildContext context) {
-    final paid = trip.isPaid;
+    final paid = trip.isSettled;
+    final statusLabel =
+        !paid ? 'بانتظار الدفع' : (trip.isCash ? 'كاش' : 'فيزا • مدفوعة');
     return InkWell(
       borderRadius: BorderRadius.circular(14.r),
       onTap: () => Navigator.of(context).push(
@@ -373,7 +395,9 @@ class _TransactionCard extends StatelessWidget {
               backgroundColor: (paid ? AppColors.success : AppColors.primaryOrange)
                   .withValues(alpha: 0.18),
               child: Icon(
-                paid ? Icons.check : Icons.hourglass_bottom,
+                !paid
+                    ? Icons.hourglass_bottom
+                    : (trip.isCash ? Icons.payments_outlined : Icons.check),
                 color: paid ? AppColors.success : AppColors.primaryOrange,
                 size: 20.r,
               ),
@@ -398,14 +422,14 @@ class _TransactionCard extends StatelessWidget {
               children: [
                 Text(
                   paid
-                      ? '+${trip.price.toStringAsFixed(0)} ج.م'
-                      : '${trip.price.toStringAsFixed(0)} ج.م',
+                      ? '+${share.toStringAsFixed(0)} ج.م'
+                      : '${share.toStringAsFixed(0)} ج.م',
                   style: AppStyle.body.copyWith(
                     color: paid ? AppColors.success : AppColors.white,
                   ),
                 ),
                 SizedBox(height: 4.h),
-                Text(paid ? 'مدفوعة' : 'بانتظار الدفع',
+                Text(statusLabel,
                     style: AppStyle.hint.copyWith(
                       color: paid ? AppColors.success : AppColors.primaryOrange,
                     )),

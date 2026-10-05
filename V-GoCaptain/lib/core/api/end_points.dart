@@ -38,6 +38,9 @@ abstract class EndPoint {
   // settling a card payment whose webhook was missed.
   static String paymentStatus(String tripId) => 'Payment/status/$tripId';
 
+  // Pricing — the captain's share of each fare, in percent.
+  static const String driverCommission = 'PricingRule/getDriverCommission';
+
   // Notifications
   static const String getNotifications = 'Notification/GetAll';
 

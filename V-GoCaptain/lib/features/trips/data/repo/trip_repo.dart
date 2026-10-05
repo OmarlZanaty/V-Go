@@ -10,4 +10,7 @@ abstract class TripRepo {
   /// Asks the backend to reconcile this trip's card payment with Paymob (recovers
   /// a missed webhook). Best-effort; errors are swallowed.
   Future<void> syncPayment(String tripId);
+
+  /// The captain's share of each fare, in percent (admin-set). Null if unknown.
+  Future<double?> getDriverCommission();
 }

@@ -37,6 +37,17 @@ class TripRepoImpl implements TripRepo {
   }
 
   @override
+  Future<double?> getDriverCommission() async {
+    try {
+      final response = await _apiServices.get(EndPoint.driverCommission);
+      final v = response is Map ? (response['data'] ?? response['Data']) : null;
+      return v is num ? v.toDouble() : double.tryParse(v?.toString() ?? '');
+    } catch (_) {
+      return null;
+    }
+  }
+
+  @override
   Future<List<TripModel>> getPendingTrips() async {
     final response = await _apiServices.get(EndPoint.allPendingTrips);
     final list = response is List

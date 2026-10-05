@@ -29,6 +29,11 @@ class TripModel {
   });
 
   bool get isCompleted => status == 'Completed';
+  bool get isCash => paymentMethod.toLowerCase() == 'cash';
+
+  /// Completed and the money is in: cash is collected by the captain at drop-off
+  /// (it never gets a payment record), card needs a settled Paymob payment.
+  bool get isSettled => isCompleted && (isCash || isPaid);
   bool get isCanceled => status == 'Canceled';
   bool get isActive =>
       status == 'Accepted' || status == 'Arrived' || status == 'InProgress';

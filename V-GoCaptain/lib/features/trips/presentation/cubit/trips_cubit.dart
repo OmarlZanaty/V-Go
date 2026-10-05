@@ -14,10 +14,16 @@ class TripsCubit extends Cubit<TripsState> {
   Future<void> load() async {
     emit(state.copyWith(status: TripsStatus.loading, clearError: true));
     try {
+      final commission = _repo.getDriverCommission();
       final trips = await _repo.getMyTrips();
       trips.sort((a, b) =>
           (b.createdAt ?? DateTime(0)).compareTo(a.createdAt ?? DateTime(0)));
-      emit(state.copyWith(status: TripsStatus.loaded, trips: trips));
+      emit(state.copyWith(
+        status: TripsStatus.loaded,
+        trips: trips,
+        // A failed fetch keeps the last known value.
+        commissionPct: await commission,
+      ));
     } catch (e) {
       emit(state.copyWith(
         status: TripsStatus.error,
