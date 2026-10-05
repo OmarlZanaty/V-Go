@@ -367,6 +367,9 @@ builder.Services.AddCors(options =>
             "https://www.vgo-eg.com",
             "https://v-go-two.vercel.app",
             "https://vgo-admin-792221536894.europe-west1.run.app",
+            // Admin dashboard on the Hetzner box (sslip name works before DNS).
+            "https://admin-vgo.almobarmg.com",
+            "https://vgo-admin-46-224-129-250.sslip.io",
         };
         if (builder.Environment.IsDevelopment())
         {
