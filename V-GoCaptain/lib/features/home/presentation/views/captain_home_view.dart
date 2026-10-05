@@ -11,6 +11,7 @@ import '../../../../core/theming/app_style.dart';
 import '../../../../core/utils/app_constants.dart';
 import '../logic/cubit/captain_home_cubit.dart';
 import '../widgets/active_trip_panel.dart';
+import '../widgets/location_disclosure_dialog.dart';
 import '../widgets/incoming_trip_card.dart';
 import '../widgets/missing_phone_prompt.dart';
 import '../widgets/missing_photo_prompt.dart';
@@ -311,7 +312,10 @@ class _StatusCard extends StatelessWidget {
             Switch(
               value: state.isOnline,
               activeThumbColor: AppColors.primary,
-              onChanged: (v) => v ? cubit.goOnline() : cubit.goOffline(),
+              onChanged: (v) async {
+                if (!v) return cubit.goOffline();
+                if (await confirmLocationDisclosure(context)) cubit.goOnline();
+              },
             ),
         ],
       ),
