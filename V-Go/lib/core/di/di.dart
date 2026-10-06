@@ -23,6 +23,7 @@ import '../utils/repo/statistics_repo/statistics_repo.dart';
 import '../utils/repo/statistics_repo/statistics_repo_impl.dart';
 import '../utils/repo/user_repo/user_repo.dart';
 import '../utils/repo/user_repo/user_repo_impl.dart';
+import '../../features/client/data/repo/home_banner_repo.dart';
 
 final getIt = GetIt.instance;
 
@@ -31,6 +32,10 @@ void setupGetIt() {
   final Dio dio = DioFactory.getDio();
   final Dio mapDio = DioUtil.instance;
   getIt.registerLazySingleton<ApiServices>(() => ApiServices(dio: dio));
+  // Home carousel banners
+  getIt.registerLazySingleton<HomeBannerRepo>(
+    () => HomeBannerRepo(apiServices: getIt<ApiServices>()),
+  );
   // Auth Repository
   getIt.registerLazySingleton<AuthRepo>(
     () => AuthRepoImpl(apiServices: getIt<ApiServices>()),

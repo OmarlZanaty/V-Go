@@ -37,5 +37,22 @@ namespace Masafet_Elseka.Infrastructure.ExternalService.PrivateFileStorage
 
             return $"{_baseUrl}{RequestPath}/{relative}";
         }
+
+        public void Delete(string url)
+        {
+            try
+            {
+                var marker = $"{RequestPath}/";
+                var i = url.IndexOf(marker, StringComparison.Ordinal);
+                if (i < 0) return; // not ours (e.g. an old Cloudinary URL)
+                var full = Path.GetFullPath(Path.Combine(_root, url[(i + marker.Length)..]));
+                if (full.StartsWith(_root + Path.DirectorySeparatorChar, StringComparison.Ordinal) && File.Exists(full))
+                    File.Delete(full);
+            }
+            catch
+            {
+                // A leftover file is harmless; never fail the request over cleanup.
+            }
+        }
     }
 }

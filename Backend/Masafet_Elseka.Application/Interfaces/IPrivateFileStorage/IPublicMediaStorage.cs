@@ -6,5 +6,7 @@ namespace Masafet_Elseka.Application.Interfaces.IPrivateFileStorage
     {
         // Returns the public URL of the saved file.
         Task<string> SaveAsync(Stream content, string folder, string extension);
+        // Removes a file previously returned by SaveAsync; ignores URLs it doesn't own.
+        void Delete(string url);
     }
 }

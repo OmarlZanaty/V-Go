@@ -14,6 +14,11 @@ import '../../../../core/theming/app_style.dart';
 import '../../../driver/presentation/widgets/current_trip_item.dart';
 import '../../../trips/presentation/logic/realtime_trip_cubit/realtime_trip_cubit.dart';
 import '../../../trips/presentation/logic/realtime_trip_cubit/realtime_trip_extension.dart';
+import 'package:cached_network_image/cached_network_image.dart';
+import 'package:url_launcher/url_launcher.dart';
+import '../../../../core/di/di.dart';
+import '../../data/model/home_banner_model.dart';
+import '../../data/repo/home_banner_repo.dart';
 
 class ClientDashboardView extends StatelessWidget {
   const ClientDashboardView({super.key});
@@ -264,13 +269,26 @@ class CaroselView extends StatefulWidget {
   State<CaroselView> createState() => _CaroselViewState();
 }
 
+/// A carousel slide: an ad slot from the dashboard, or a bundled default image.
+class _Slide {
+  const _Slide.asset(this.asset) : banner = null;
+  const _Slide.banner(HomeBannerModel this.banner) : asset = null;
+
+  final String? asset;
+  final HomeBannerModel? banner;
+}
+
 class _CaroselViewState extends State<CaroselView> {
-  final List<String> images = [
-    'assets/images/b6.jpg',
-    'assets/images/b7.jpg',
-    'assets/images/b3.jpg',
-    'assets/images/b4.jpg',
+  // Shown when the dashboard has no live banners (or before the first load).
+  static const List<_Slide> _defaults = [
+    _Slide.asset('assets/images/b6.jpg'),
+    _Slide.asset('assets/images/b7.jpg'),
+    _Slide.asset('assets/images/b3.jpg'),
+    _Slide.asset('assets/images/b4.jpg'),
   ];
+
+  final HomeBannerRepo _repo = getIt<HomeBannerRepo>();
+  List<_Slide> _slides = _defaults;
   int _currentIndex = 0;
   late final PageController _pageController;
   late final Timer _timer;
@@ -279,9 +297,11 @@ class _CaroselViewState extends State<CaroselView> {
   void initState() {
     super.initState();
     _pageController = PageController(initialPage: _currentIndex);
+    _apply(_repo.cached());
+    _load();
     _timer = Timer.periodic(const Duration(seconds: 4), (timer) {
       if (_pageController.hasClients) {
-        final int n = images.length;
+        final int n = _slides.length;
         if (n > 1) {
           final int period = 2 * (n - 1);
           final int tick = (timer.tick - 1) % period;
@@ -300,11 +320,55 @@ class _CaroselViewState extends State<CaroselView> {
     });
   }
 
+  Future<void> _load() async {
+    try {
+      final banners = await _repo.fetch();
+      if (mounted) setState(() => _apply(banners));
+    } catch (_) {
+      // Offline / server down: keep the cached or default slides.
+    }
+  }
+
+  void _apply(List<HomeBannerModel>? banners) {
+    final next = (banners == null || banners.isEmpty)
+        ? _defaults
+        : banners.map(_Slide.banner).toList();
+    _slides = next;
+    if (_currentIndex >= _slides.length) {
+      _currentIndex = 0;
+      if (_pageController.hasClients) _pageController.jumpToPage(0);
+    }
+  }
+
+  Future<void> _onTap(_Slide slide) async {
+    final banner = slide.banner;
+    final link = banner?.linkUrl;
+    if (banner == null || link == null || link.isEmpty) return;
+    unawaited(_repo.recordClick(banner.id));
+    final uri = Uri.tryParse(link);
+    if (uri == null) return;
+    try {
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
+    } catch (_) {}
+  }
+
   @override
   void dispose() {
     _timer.cancel();
     _pageController.dispose();
     super.dispose();
+  }
+
+  Widget _image(_Slide slide) {
+    if (slide.asset != null) {
+      return Image.asset(slide.asset!, fit: BoxFit.fill);
+    }
+    return CachedNetworkImage(
+      imageUrl: slide.banner!.imageUrl,
+      fit: BoxFit.cover,
+      placeholder: (_, _) => Container(color: AppColors.darkGrey),
+      errorWidget: (_, _, _) => Container(color: AppColors.darkGrey),
+    );
   }
 
   @override
@@ -316,16 +380,21 @@ class _CaroselViewState extends State<CaroselView> {
           width: double.infinity,
           child: PageView.builder(
             controller: _pageController,
-            itemCount: images.length,
+            itemCount: _slides.length,
             onPageChanged: (index) {
               setState(() {
                 _currentIndex = index;
               });
             },
             itemBuilder: (context, index) {
-              return ClipRRect(
-                borderRadius: BorderRadius.circular(25),
-                child: Image.asset(images[index], fit: BoxFit.fill),
+              final slide = _slides[index];
+              final linked = slide.banner?.linkUrl?.isNotEmpty == true;
+              return GestureDetector(
+                onTap: linked ? () => _onTap(slide) : null,
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(25),
+                  child: _image(slide),
+                ),
               );
             },
           ),
@@ -333,7 +402,7 @@ class _CaroselViewState extends State<CaroselView> {
         verticalSpace(14),
         Row(
           mainAxisAlignment: MainAxisAlignment.center,
-          children: List.generate(images.length, (index) {
+          children: List.generate(_slides.length, (index) {
             return GestureDetector(
               onTap: () {
                 _pageController.animateToPage(

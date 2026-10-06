@@ -58,6 +58,8 @@ OLD=$(docker run --rm -v /srv/vgo-staging/e2e:/e2e node:20-alpine node -e "conso
 sql MasafetElseka_Staging "UPDATE AspNetUsers SET DocumentsDeadline = DATEADD(day,-1,GETDATE()) WHERE Id='$OLD'"
 node_run overdue || TOTAL_FAIL=1
 
+echo; echo "== phase: banners"; node_run banners || TOTAL_FAIL=1
+
 echo; echo "== ledger integrity: balance = sum of entries, no duplicate settlement credit"
 sql MasafetElseka_Staging "SELECT COUNT(*) FROM (SELECT PaymentId FROM DriverLedgerEntries WHERE PaymentId IS NOT NULL GROUP BY PaymentId HAVING COUNT(*)>1) d" | sed 's/^/duplicate settlement credits: /'
 echo; echo "== backend errors during the run"

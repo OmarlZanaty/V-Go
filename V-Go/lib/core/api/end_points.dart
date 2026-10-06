@@ -5,12 +5,17 @@ abstract class EndPoint {
   static String get baseUrl => AppConfig.apiBaseUrl;
 
   // Auth Endpoints
+  // Home carousel ad slots (no login needed).
+  static const String activeBanners = 'HomeBanners/active';
+  static String bannerClick(int id) => 'HomeBanners/$id/click';
+
   static const String login = 'Auth/login';
-  static const String phoneLogin = 'Auth/phone-login';       // phone + password
+  static const String phoneLogin = 'Auth/phone-login'; // phone + password
   static const String phoneRegister = 'Auth/phone-register'; // phone + password
-  static const String phoneExists = 'Auth/phone-exists';     // new-vs-returning check
+  static const String phoneExists =
+      'Auth/phone-exists'; // new-vs-returning check
   static const String phoneResetPassword =
-      'Auth/phone-reset-password';                            // forgot password (OTP)
+      'Auth/phone-reset-password'; // forgot password (OTP)
   static const String register = 'Auth/register';
   static const String logout = 'Auth/logout';
   static const String confirmOtp = 'Auth/confirmOtp';

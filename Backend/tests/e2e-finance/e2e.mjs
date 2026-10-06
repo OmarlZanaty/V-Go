@@ -477,11 +477,87 @@ async function overdue() {
   check('grace period over without documents -> DOCS_OVERDUE', el?.code === 'DOCS_OVERDUE', JSON.stringify(el) + ' ' + v?.documentsDeadline);
 }
 
+async function banners() {
+  const A = state.admin.token;
+  const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', 'base64');
+  const form = (fields, img = JPEG, name = 'ad.jpg') => {
+    const f = new FormData();
+    for (const [k, v] of Object.entries(fields)) if (v !== undefined) f.append(k, String(v));
+    if (img) f.append('image', new Blob([img]), name);
+    return f;
+  };
+  const active = async () => data(await http('GET', 'HomeBanners/active'));
+  const all = async () => data(await http('GET', 'HomeBanners/admin', { token: A }));
+
+  const empty = await http('GET', 'HomeBanners/active');
+  check('banners: app can read active banners without login', empty.status === 200 && Array.isArray(data(empty)), empty.text);
+
+  let r = await http('POST', 'HomeBanners/admin', { token: A, form: form({ isActive: true }, null) });
+  check('banners: image required', r.status === 400, r.text);
+  r = await http('POST', 'HomeBanners/admin', { token: A, form: form({ linkUrl: 'javascript:alert(1)', isActive: true }) });
+  check('banners: non-http link rejected', r.status === 400, r.text);
+  r = await http('POST', 'HomeBanners/admin', { token: A, form: form({ isActive: true }, Buffer.from('not an image'), 'x.jpg') });
+  check('banners: non-image file rejected', r.status === 400, r.text);
+  r = await http('POST', 'HomeBanners/admin', { token: A, form: form({ isActive: true, startsAt: '2030-01-02T00:00', endsAt: '2030-01-01T00:00' }) });
+  check('banners: end before start rejected', r.status === 400, r.text);
+
+  const a = data(await http('POST', 'HomeBanners/admin', { token: A, form: form({ title: 'Ad A', linkUrl: 'example.com/promo', isActive: true }) }));
+  check('banners: link normalised to https', a?.linkUrl === 'https://example.com/promo', JSON.stringify(a));
+  const b = data(await http('POST', 'HomeBanners/admin', { token: A, form: form({ title: 'Ad B', isActive: true }, PNG, 'b.png') }));
+  check('banners: banner without link allowed', !!b?.id && b.linkUrl == null, JSON.stringify(b));
+  const hidden = data(await http('POST', 'HomeBanners/admin', { token: A, form: form({ title: 'Hidden', isActive: false }) }));
+  const future = data(await http('POST', 'HomeBanners/admin', { token: A, form: form({ title: 'Future', isActive: true, startsAt: '2030-01-01T00:00' }) }));
+  const expired = data(await http('POST', 'HomeBanners/admin', { token: A, form: form({ title: 'Expired', isActive: true, endsAt: '2020-01-01T00:00' }) }));
+  check('banners: future/expired campaigns marked not live', future?.isLive === false && expired?.isLive === false && a?.isLive === true);
+
+  let act = await active();
+  check('banners: app sees only live banners, in order', act.length === 2 && act[0].id === a.id && act[1].id === b.id, JSON.stringify(act));
+  const img = await fetch(act[0].imageUrl);
+  check('banners: image served publicly from /media', img.status === 200 && (img.headers.get('content-type') ?? '').startsWith('image/'), `${img.status} ${act[0].imageUrl}`);
+
+  const ids = (await all()).map((x) => x.id);
+  const reordered = [b.id, a.id, ...ids.filter((x) => x !== a.id && x !== b.id)];
+  r = await http('PUT', 'HomeBanners/admin/order', { token: A, body: reordered });
+  act = await active();
+  check('banners: reorder changes the carousel order', r.status === 200 && act[0].id === b.id && act[1].id === a.id, JSON.stringify(act));
+  r = await http('PUT', 'HomeBanners/admin/order', { token: A, body: [a.id] });
+  check('banners: partial reorder rejected', r.status === 400, r.text);
+
+  const oldUrl = a.imageUrl;
+  r = await http('PUT', `HomeBanners/admin/${a.id}`, { token: A, form: form({ title: 'Ad A2', linkUrl: '', isActive: true }, PNG, 'a2.png') });
+  const a2 = data(r);
+  check('banners: update replaces image and clears link', r.status === 200 && a2.imageUrl !== oldUrl && a2.linkUrl == null, r.text);
+  check('banners: replaced image file removed', (await fetch(oldUrl)).status === 404);
+  r = await http('PUT', `HomeBanners/admin/${hidden.id}`, { token: A, form: form({ title: 'Hidden', isActive: true }, null) });
+  check('banners: enabling a hidden banner shows it (no new image needed)', r.status === 200 && (await active()).some((x) => x.id === hidden.id), r.text);
+
+  for (let i = 0; i < 3; i++) await http('POST', `HomeBanners/${b.id}/click`);
+  const bAfter = (await all()).find((x) => x.id === b.id);
+  check('banners: taps are counted', bAfter?.clickCount === 3, JSON.stringify(bAfter));
+
+  r = await http('DELETE', `HomeBanners/admin/${b.id}`, { token: A });
+  check('banners: delete removes it from the app', r.status === 200 && !(await active()).some((x) => x.id === b.id), r.text);
+  check('banners: deleted image file removed', (await fetch(b.imageUrl)).status === 404);
+
+  const asClient = await http('GET', 'HomeBanners/admin', { token: state.client.token });
+  check('banners: rider cannot manage banners', asClient.status === 403, `${asClient.status}`);
+  const anon = await http('POST', 'HomeBanners/admin', { form: form({ isActive: true }) });
+  check('banners: anonymous cannot create banners', anon.status === 401, `${anon.status}`);
+
+  let created = (await all()).length;
+  while (created < 10) { await http('POST', 'HomeBanners/admin', { token: A, form: form({ isActive: false }) }); created++; }
+  r = await http('POST', 'HomeBanners/admin', { token: A, form: form({ isActive: true }) });
+  check('banners: capped at 10 slots', r.status === 400, r.text);
+  const audit = data(await http('GET', 'DriverFinance/admin/audit?pageSize=100', { token: A }));
+  check('banners: changes are in the audit log', ['BannerCreated', 'BannerUpdated', 'BannerDeleted', 'BannersReordered'].every((x) => audit.data.some((e) => e.action === x)));
+}
+
 try {
   if (PHASE === 'setup') await setup();
   else if (PHASE === 'main') await main();
   else if (PHASE === 'settle') await settle2();
   else if (PHASE === 'overdue') await overdue();
+  else if (PHASE === 'banners') await banners();
 } catch (e) {
   failed++;
   results.push(`FAIL  crashed: ${e.stack ?? e}`);
