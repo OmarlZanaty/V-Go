@@ -12,6 +12,9 @@ import '../../features/auth/presentation/views/new_password_view.dart';
 import '../../features/auth/presentation/views/otp_view.dart';
 import '../../features/auth/presentation/views/register_view.dart';
 import '../../features/auth/presentation/views/reset_password_view.dart';
+import '../../features/collection/data/repo/collection_repo.dart';
+import '../../features/collection/presentation/cubit/collection_cubit.dart';
+import '../../features/collection/presentation/views/collection_view.dart';
 import '../../features/profile/data/repo/profile_repo.dart';
 import '../../features/profile/presentation/cubit/ratings_cubit.dart';
 import '../../features/profile/presentation/cubit/scooter_cubit.dart';
@@ -27,6 +30,7 @@ import '../../features/verification/data/repo/verification_repo.dart';
 import '../../features/verification/presentation/cubit/verification_cubit.dart';
 import '../../features/verification/presentation/views/verification_view.dart';
 import '../di/di.dart';
+import '../services/realtime_service.dart';
 import '../utils/app_constants.dart';
 import 'routes.dart';
 
@@ -149,6 +153,16 @@ class AppRouter {
           BlocProvider(
             create: (_) => VerificationCubit(getIt<VerificationRepo>())..load(),
             child: const VerificationView(),
+          ),
+        );
+
+      case Routes.collectionViewRoute:
+        return _page(
+          BlocProvider(
+            create: (_) =>
+                CollectionCubit(getIt<CollectionRepo>(), getIt<RealtimeService>())
+                  ..load(),
+            child: const CollectionView(),
           ),
         );
 

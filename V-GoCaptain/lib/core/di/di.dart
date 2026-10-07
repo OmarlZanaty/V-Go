@@ -3,6 +3,7 @@ import 'package:get_it/get_it.dart';
 
 import '../../features/auth/data/repo/auth_repo.dart';
 import '../../features/auth/data/repo/auth_repo_impl.dart';
+import '../../features/collection/data/repo/collection_repo.dart';
 import '../../features/finance/data/repo/finance_repo.dart';
 import '../../features/finance/data/repo/finance_repo_impl.dart';
 import '../../features/profile/data/repo/profile_repo.dart';
@@ -39,6 +40,10 @@ void setupGetIt() {
 
   getIt.registerLazySingleton<FinanceRepo>(
     () => FinanceRepoImpl(apiServices: getIt<ApiServices>()),
+  );
+
+  getIt.registerLazySingleton<CollectionRepo>(
+    () => CollectionRepo(apiServices: getIt<ApiServices>()),
   );
 
   getIt.registerLazySingleton<VerificationRepo>(

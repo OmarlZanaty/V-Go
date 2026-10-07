@@ -21,5 +21,15 @@ namespace Masafet_Elseka.Domain.Entities
         // Trips that ended before this moment are not posted to captain ledgers.
         public DateTime? LedgerStartAt { get; set; }
 
+        // Daily wallet collection. At NoticeHour (Egypt time) captains who owe more than
+        // the tolerance are asked to transfer; at DeadlineHour (the next day when it is
+        // not after NoticeHour) anyone still above the tolerance is kept offline until
+        // the receipt SMS confirms the transfer. Off until an admin enables it.
+        public bool CollectionEnabled { get; set; }
+        public int CollectionNoticeHour { get; set; } = 20;
+        public int CollectionDeadlineHour { get; set; } = 0;
+        [System.ComponentModel.DataAnnotations.Schema.Column(TypeName = "decimal(18,2)")]
+        public decimal CollectionTolerance { get; set; } = 50;
+
     }
 }

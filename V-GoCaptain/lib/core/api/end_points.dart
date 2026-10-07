@@ -52,6 +52,11 @@ abstract class EndPoint {
   static String driverFinanceSettleStatus(String paymentId) =>
       'DriverFinance/me/settle/$paymentId';
 
+  // Daily collection by wallet transfer
+  static const String collectionMe = 'Collection/me';
+  static const String collectionRequests = 'Collection/me/requests';
+  static String collectionRequest(int id) => 'Collection/me/requests/$id';
+
   // Driver verification
   static const String driverVerificationMe = 'DriverVerification/me';
   static const String driverVerificationDocuments =

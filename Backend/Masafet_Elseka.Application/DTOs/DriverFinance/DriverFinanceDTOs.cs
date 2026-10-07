@@ -9,6 +9,13 @@ namespace Masafet_Elseka.Application.DTOs.DriverFinance
         // Warn the captain once his debt reaches this percent of the limit.
         public int WarningPercent { get; set; }
         public DateTime? LedgerStartAt { get; set; }
+
+        // Daily wallet collection. Nullable so an older dashboard that doesn't send
+        // them leaves them unchanged.
+        public bool? CollectionEnabled { get; set; }
+        public int? CollectionNoticeHour { get; set; }
+        public int? CollectionDeadlineHour { get; set; }
+        public decimal? CollectionTolerance { get; set; }
     }
 
     public class PeriodTotalsDTO
@@ -26,7 +33,7 @@ namespace Masafet_Elseka.Application.DTOs.DriverFinance
     {
         public bool CanGoOnline { get; set; }
         // null when allowed; otherwise one of: NOT_DRIVER, BLOCKED, SUSPENDED, KYC_PENDING,
-        // KYC_UNDER_REVIEW, KYC_REJECTED, DOCS_OVERDUE, CASH_LIMIT.
+        // KYC_UNDER_REVIEW, KYC_REJECTED, DOCS_OVERDUE, COLLECTION_OVERDUE, CASH_LIMIT.
         public string? Code { get; set; }
         public string? Message { get; set; }
     }
@@ -48,6 +55,11 @@ namespace Masafet_Elseka.Application.DTOs.DriverFinance
         public decimal LimitUsedPercent { get; set; }
         public bool IsNearLimit { get; set; }
         public bool IsLocked { get; set; }
+
+        // Daily wallet collection: missed the deadline and still owes above the tolerance.
+        public bool CollectionEnabled { get; set; }
+        public bool CollectionLocked { get; set; }
+        public decimal CollectionTolerance { get; set; }
 
         public PeriodTotalsDTO Today { get; set; } = new();
         public PeriodTotalsDTO Week { get; set; } = new();
@@ -135,6 +147,7 @@ namespace Masafet_Elseka.Application.DTOs.DriverFinance
         public decimal Balance { get; set; }
         public bool IsLocked { get; set; }
         public bool IsNearLimit { get; set; }
+        public bool CollectionLocked { get; set; }
         public bool IsAvailable { get; set; }
         public string VerificationStatus { get; set; } = string.Empty;
         public string? PayoutMethod { get; set; }

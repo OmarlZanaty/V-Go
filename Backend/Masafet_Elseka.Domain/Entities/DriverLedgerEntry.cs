@@ -27,6 +27,8 @@ namespace Masafet_Elseka.Domain.Entities
 
         // Settlement entries point at the Paymob payment that funded them.
         public string? PaymentId { get; set; }
+        // Wallet-collection entries point at the receipt SMS that confirmed them.
+        public long? WalletSmsId { get; set; }
 
         public string Description { get; set; } = string.Empty;
         public string? Reference { get; set; }      // payout transfer reference

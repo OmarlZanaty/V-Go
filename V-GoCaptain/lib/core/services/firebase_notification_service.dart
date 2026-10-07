@@ -42,7 +42,7 @@ class FirebaseNotificationService {
 
       // App opened from a terminated state by tapping a notification.
       final initial = await _messaging.getInitialMessage();
-      if (initial != null) _openHome();
+      if (initial != null) _onMessageOpened(initial);
     } catch (e) {
       log('FirebaseNotificationService init failed: $e');
     }
@@ -58,7 +58,18 @@ class FirebaseNotificationService {
     }
   }
 
-  void _onMessageOpened(RemoteMessage message) => _openHome();
+  void _onMessageOpened(RemoteMessage message) {
+    _openHome();
+    // Collection reminders / lock / confirmation open the transfer screen.
+    final type = message.data['type']?.toString() ?? '';
+    if (type.startsWith('driver_collection_')) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        NavigationHandler.navigatorKey.currentState?.pushNamed(
+          Routes.collectionViewRoute,
+        );
+      });
+    }
+  }
 
   /// New-trip alerts are served on the home shell (the live offer card), so a
   /// tap simply brings the captain there.

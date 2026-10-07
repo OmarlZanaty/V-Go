@@ -1013,6 +1013,11 @@ namespace Masafet_Elseka.Infrastructure.Services.PaymentService
                 if (user == null)
                     return Response<SettlementIntentDTO>.Failure("الكابتن غير موجود", 404);
 
+                // Once daily wallet collection is on, captains pay by wallet transfer only.
+                if (await _context.PricingRules.AsNoTracking().OrderBy(r => r.Id).Select(r => r.CollectionEnabled).FirstOrDefaultAsync())
+                    return Response<SettlementIntentDTO>.Failure(
+                        "السداد بقى عن طريق التحويل على محفظة الشركة. حدّث التطبيق وادخل صفحة الحسابات.", 410);
+
                 var balance = await _finance.GetBalanceAsync(driverId);
                 var amount = Math.Round(-balance, 2, MidpointRounding.AwayFromZero);
                 if (amount <= 0)

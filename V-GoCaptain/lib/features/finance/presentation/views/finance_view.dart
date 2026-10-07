@@ -3,6 +3,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:flutter_spinkit/flutter_spinkit.dart';
 
+import '../../../../core/routing/routes.dart';
 import '../../../../core/theming/app_colors.dart';
 import '../../../../core/theming/app_style.dart';
 import '../../../../core/utils/payment_method_badge.dart';
@@ -45,6 +46,12 @@ class _FinanceViewState extends State<FinanceView> {
 
   Future<void> _settle() async {
     final cubit = context.read<FinanceCubit>();
+    // Daily wallet collection replaces the Paymob checkout once it's enabled.
+    if (cubit.state.summary?.collectionEnabled == true) {
+      await Navigator.of(context).pushNamed(Routes.collectionViewRoute);
+      if (mounted) await cubit.refresh();
+      return;
+    }
     final checkout = await cubit.createSettlement();
     if (!mounted || checkout == null || checkout.checkoutUrl.isEmpty) return;
     final redirect = await Navigator.of(context).push<String>(
@@ -195,6 +202,13 @@ class _BalanceCard extends StatelessWidget {
             'رحلات الكاش بتحصل أجرتها وبتبقى عليك عمولة الشركة، والرحلات الإلكتروني الشركة بتحصلها وبيبقى ليك صافيك. الاتنين بيتخصموا من بعض تلقائي.',
             style: AppStyle.hint,
           ),
+          if (summary.collectionLocked) ...[
+            SizedBox(height: 12.h),
+            Text(
+              'استقبال الرحلات متوقف لحد ما تحويل المستحقات يتأكد.',
+              style: AppStyle.body.copyWith(color: AppColors.danger),
+            ),
+          ],
           if (balance < 0) ...[
             SizedBox(height: 14.h),
             SizedBox(
@@ -202,7 +216,9 @@ class _BalanceCard extends StatelessWidget {
               child: ElevatedButton.icon(
                 onPressed: onSettle,
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: summary.isLocked || summary.isNearLimit
+                  backgroundColor: summary.isLocked ||
+                          summary.isNearLimit ||
+                          summary.collectionLocked
                       ? color
                       : AppColors.primary,
                   shape: RoundedRectangleBorder(
@@ -213,7 +229,10 @@ class _BalanceCard extends StatelessWidget {
                   Icons.payments_outlined,
                   color: AppColors.black,
                 ),
-                label: Text('سدّد المستحقات', style: AppStyle.button),
+                label: Text(
+                  summary.collectionEnabled ? 'حوّل المستحقات' : 'سدّد المستحقات',
+                  style: AppStyle.button,
+                ),
               ),
             ),
           ],
@@ -500,7 +519,8 @@ class _LedgerTile extends StatelessWidget {
               ),
             ),
           ],
-          if (entry.isPayout && (entry.reference ?? '').isNotEmpty) ...[
+          if ((entry.isPayout || entry.type == 'WalletCollection') &&
+              (entry.reference ?? '').isNotEmpty) ...[
             SizedBox(height: 8.h),
             Text('المرجع: ${entry.reference}', style: AppStyle.hint),
           ],
@@ -706,6 +726,7 @@ String _typeLabel(String type) {
     'Settlement' => 'سداد مستحقات',
     'Payout' => 'تحويل ليك',
     'Adjustment' => 'تسوية إدارية',
+    'WalletCollection' => 'تحويل مستحقات على المحفظة',
     _ => type,
   };
 }

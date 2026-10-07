@@ -81,6 +81,9 @@ class FinanceSummary extends Equatable {
     required this.limitUsedPercent,
     required this.isNearLimit,
     required this.isLocked,
+    this.collectionEnabled = false,
+    this.collectionLocked = false,
+    this.collectionTolerance = 0,
     required this.today,
     required this.week,
     required this.month,
@@ -102,6 +105,10 @@ class FinanceSummary extends Equatable {
   final double limitUsedPercent;
   final bool isNearLimit;
   final bool isLocked;
+  // Daily wallet collection (replaces Paymob settlement once enabled).
+  final bool collectionEnabled;
+  final bool collectionLocked;
+  final double collectionTolerance;
   final FinancePeriodStats today;
   final FinancePeriodStats week;
   final FinancePeriodStats month;
@@ -124,6 +131,9 @@ class FinanceSummary extends Equatable {
       limitUsedPercent: _double(json['limitUsedPercent']),
       isNearLimit: json['isNearLimit'] == true,
       isLocked: json['isLocked'] == true,
+      collectionEnabled: json['collectionEnabled'] == true,
+      collectionLocked: json['collectionLocked'] == true,
+      collectionTolerance: _double(json['collectionTolerance']),
       today: FinancePeriodStats.fromJson(_map(json['today'])),
       week: FinancePeriodStats.fromJson(_map(json['week'])),
       month: FinancePeriodStats.fromJson(_map(json['month'])),
@@ -170,6 +180,9 @@ class FinanceSummary extends Equatable {
     limitUsedPercent,
     isNearLimit,
     isLocked,
+    collectionEnabled,
+    collectionLocked,
+    collectionTolerance,
     today,
     week,
     month,

@@ -60,8 +60,11 @@ node_run overdue || TOTAL_FAIL=1
 
 echo; echo "== phase: banners"; node_run banners || TOTAL_FAIL=1
 
+echo; echo "== phase: collection (wallet transfers + receipt SMS + deadline lock)"; node_run collection || TOTAL_FAIL=1
+
 echo; echo "== ledger integrity: balance = sum of entries, no duplicate settlement credit"
 sql MasafetElseka_Staging "SELECT COUNT(*) FROM (SELECT PaymentId FROM DriverLedgerEntries WHERE PaymentId IS NOT NULL GROUP BY PaymentId HAVING COUNT(*)>1) d" | sed 's/^/duplicate settlement credits: /'
+sql MasafetElseka_Staging "SELECT COUNT(*) FROM (SELECT WalletSmsId FROM DriverLedgerEntries WHERE WalletSmsId IS NOT NULL GROUP BY WalletSmsId HAVING COUNT(*)>1) d" | sed 's/^/duplicate wallet-SMS credits: /'
 echo; echo "== backend errors during the run"
 docker logs --since 30m vgo-backend-staging 2>&1 | grep -E "\[ERR\]|Exception" | grep -viE "PreAuthExpiry|BackgroundServerProcess|Hangfire" | sort | uniq -c | head -20
 

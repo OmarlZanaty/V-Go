@@ -9,7 +9,8 @@ namespace Masafet_Elseka.Domain.Enums
         TripCorrection = 3,     // reverses an earlier trip entry when the trip's settlement changed
         Settlement = 4,         // captain paid his debt to the company through Paymob (+)
         Payout = 5,             // company transferred the captain's balance to him (-)
-        Adjustment = 6          // manual bonus / penalty by an admin, always with a reason (+/-)
+        Adjustment = 6,         // manual bonus / penalty by an admin, always with a reason (+/-)
+        WalletCollection = 7    // captain transferred his dues to a company wallet, confirmed by the receipt SMS (+)
     }
 
     // What a Payment row is for. Trip payments keep the default so existing rows are unaffected.

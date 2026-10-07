@@ -67,6 +67,9 @@ namespace Masafet_Elseka.Infrastructure.Migrations
                     b.Property<int>("AccessFailedCount")
                         .HasColumnType("int");
 
+                    b.Property<DateTime?>("CollectionLockedAt")
+                        .HasColumnType("datetime2");
+
                     b.Property<string>("ConcurrencyStamp")
                         .IsConcurrencyToken()
                         .HasColumnType("nvarchar(max)");
@@ -214,6 +217,202 @@ namespace Masafet_Elseka.Infrastructure.Migrations
                     b.ToTable("Chats", (string)null);
                 });
 
+            modelBuilder.Entity("Masafet_Elseka.Domain.Entities.CollectionCycle", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<DateTime>("CycleDate")
+                        .HasColumnType("date");
+
+                    b.Property<DateTime?>("LockAppliedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("LockNote")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<int>("LockedCount")
+                        .HasColumnType("int");
+
+                    b.Property<int>("NoticeCount")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime?>("NoticeSentAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int>("ReminderCount")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime?>("ReminderSentAt")
+                        .HasColumnType("datetime2");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CycleDate")
+                        .IsUnique();
+
+                    b.ToTable("CollectionCycles");
+                });
+
+            modelBuilder.Entity("Masafet_Elseka.Domain.Entities.CollectionRequest", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("Id"));
+
+                    b.Property<decimal>("Amount")
+                        .HasColumnType("decimal(18,2)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<decimal>("DebtAtRequest")
+                        .HasColumnType("decimal(18,2)");
+
+                    b.Property<string>("DriverId")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(450)");
+
+                    b.Property<string>("Note")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<DateTime?>("ResolvedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("ResolvedByUserId")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("SenderPhone")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.Property<int>("Status")
+                        .HasColumnType("int");
+
+                    b.Property<int>("WalletId")
+                        .HasColumnType("int");
+
+                    b.Property<long?>("WalletSmsId")
+                        .HasColumnType("bigint");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("WalletId");
+
+                    b.HasIndex("DriverId", "CreatedAt");
+
+                    b.HasIndex("Status", "SenderPhone");
+
+                    b.ToTable("CollectionRequests");
+                });
+
+            modelBuilder.Entity("Masafet_Elseka.Domain.Entities.CollectionWallet", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<Guid?>("DeviceId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("HolderName")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("bit");
+
+                    b.Property<DateTime?>("LastSmsAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("PhoneNumber")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.Property<int>("Provider")
+                        .HasColumnType("int");
+
+                    b.Property<int>("SortOrder")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("DeviceId");
+
+                    b.HasIndex("Provider", "PhoneNumber")
+                        .IsUnique();
+
+                    b.ToTable("CollectionWallets");
+                });
+
+            modelBuilder.Entity("Masafet_Elseka.Domain.Entities.CollectorDevice", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("AppVersion")
+                        .HasMaxLength(40)
+                        .HasColumnType("nvarchar(40)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("CreatedByUserId")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("KeyHash")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<DateTime?>("LastSeenAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("LastStatus")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<DateTime?>("PairedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("PairingCode")
+                        .HasMaxLength(12)
+                        .HasColumnType("nvarchar(12)");
+
+                    b.Property<DateTime?>("PairingExpiresAt")
+                        .HasColumnType("datetime2");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("PairingCode")
+                        .IsUnique()
+                        .HasFilter("[PairingCode] IS NOT NULL");
+
+                    b.ToTable("CollectorDevices");
+                });
+
             modelBuilder.Entity("Masafet_Elseka.Domain.Entities.DriverDocument", b =>
                 {
                     b.Property<string>("Id")
@@ -314,6 +513,9 @@ namespace Masafet_Elseka.Infrastructure.Migrations
                     b.Property<int>("Type")
                         .HasColumnType("int");
 
+                    b.Property<long?>("WalletSmsId")
+                        .HasColumnType("bigint");
+
                     b.HasKey("Id");
 
                     b.HasIndex("PaymentId")
@@ -321,6 +523,10 @@ namespace Masafet_Elseka.Infrastructure.Migrations
                         .HasFilter("[PaymentId] IS NOT NULL");
 
                     b.HasIndex("TripId");
+
+                    b.HasIndex("WalletSmsId")
+                        .IsUnique()
+                        .HasFilter("[WalletSmsId] IS NOT NULL");
 
                     b.HasIndex("DriverId", "CreatedAt");
 
@@ -535,6 +741,18 @@ namespace Masafet_Elseka.Infrastructure.Migrations
                     SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
 
                     b.Property<decimal>("CashLimit")
+                        .HasColumnType("decimal(18,2)");
+
+                    b.Property<int>("CollectionDeadlineHour")
+                        .HasColumnType("int");
+
+                    b.Property<bool>("CollectionEnabled")
+                        .HasColumnType("bit");
+
+                    b.Property<int>("CollectionNoticeHour")
+                        .HasColumnType("int");
+
+                    b.Property<decimal>("CollectionTolerance")
                         .HasColumnType("decimal(18,2)");
 
                     b.Property<decimal>("DriverCommissionPercentage")
@@ -815,6 +1033,98 @@ namespace Masafet_Elseka.Infrastructure.Migrations
                     b.ToTable("UserTrips", (string)null);
                 });
 
+            modelBuilder.Entity("Masafet_Elseka.Domain.Entities.WalletSms", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("Id"));
+
+                    b.Property<decimal?>("Amount")
+                        .HasColumnType("decimal(18,2)");
+
+                    b.Property<decimal?>("BalanceAfter")
+                        .HasColumnType("decimal(18,2)");
+
+                    b.Property<string>("Body")
+                        .IsRequired()
+                        .HasMaxLength(2000)
+                        .HasColumnType("nvarchar(2000)");
+
+                    b.Property<string>("ClientId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<long?>("CollectionRequestId")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("CounterpartyPhone")
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.Property<Guid>("DeviceId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("DriverId")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<DateTime>("IngestedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int>("Kind")
+                        .HasColumnType("int");
+
+                    b.Property<int>("MatchStatus")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Note")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<int?>("Provider")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime>("ReceivedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime?>("ReviewedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("ReviewedByUserId")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("Sender")
+                        .IsRequired()
+                        .HasMaxLength(60)
+                        .HasColumnType("nvarchar(60)");
+
+                    b.Property<string>("TxnRef")
+                        .HasMaxLength(60)
+                        .HasColumnType("nvarchar(60)");
+
+                    b.Property<int?>("WalletId")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ReceivedAt");
+
+                    b.HasIndex("WalletId");
+
+                    b.HasIndex("DeviceId", "ClientId")
+                        .IsUnique();
+
+                    b.HasIndex("MatchStatus", "CounterpartyPhone");
+
+                    b.HasIndex("Provider", "TxnRef")
+                        .IsUnique()
+                        .HasFilter("[TxnRef] IS NOT NULL AND [Provider] IS NOT NULL");
+
+                    b.ToTable("WalletSms");
+                });
+
             modelBuilder.Entity("Microsoft.AspNetCore.Identity.IdentityRole", b =>
                 {
                     b.Property<string>("Id")
@@ -995,6 +1305,35 @@ namespace Masafet_Elseka.Infrastructure.Migrations
                     b.Navigation("Trip");
                 });
 
+            modelBuilder.Entity("Masafet_Elseka.Domain.Entities.CollectionRequest", b =>
+                {
+                    b.HasOne("Masafet_Elseka.Domain.Entities.ApplicationUser", "Driver")
+                        .WithMany()
+                        .HasForeignKey("DriverId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("Masafet_Elseka.Domain.Entities.CollectionWallet", "Wallet")
+                        .WithMany()
+                        .HasForeignKey("WalletId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Driver");
+
+                    b.Navigation("Wallet");
+                });
+
+            modelBuilder.Entity("Masafet_Elseka.Domain.Entities.CollectionWallet", b =>
+                {
+                    b.HasOne("Masafet_Elseka.Domain.Entities.CollectorDevice", "Device")
+                        .WithMany()
+                        .HasForeignKey("DeviceId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.Navigation("Device");
+                });
+
             modelBuilder.Entity("Masafet_Elseka.Domain.Entities.DriverDocument", b =>
                 {
                     b.HasOne("Masafet_Elseka.Domain.Entities.ApplicationUser", "Driver")
@@ -1171,6 +1510,24 @@ namespace Masafet_Elseka.Infrastructure.Migrations
                     b.Navigation("Trip");
 
                     b.Navigation("User");
+                });
+
+            modelBuilder.Entity("Masafet_Elseka.Domain.Entities.WalletSms", b =>
+                {
+                    b.HasOne("Masafet_Elseka.Domain.Entities.CollectorDevice", "Device")
+                        .WithMany()
+                        .HasForeignKey("DeviceId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("Masafet_Elseka.Domain.Entities.CollectionWallet", "Wallet")
+                        .WithMany()
+                        .HasForeignKey("WalletId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.Navigation("Device");
+
+                    b.Navigation("Wallet");
                 });
 
             modelBuilder.Entity("Microsoft.AspNetCore.Identity.IdentityRoleClaim<string>", b =>

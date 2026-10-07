@@ -137,6 +137,7 @@ class _CaptainShellViewState extends State<CaptainShellView> {
     final code = block.code ?? '';
     final action = switch (code) {
       'CASH_LIMIT' => 'سدّد المستحقات',
+      'COLLECTION_OVERDUE' => 'حوّل المستحقات',
       'KYC_PENDING' || 'KYC_REJECTED' || 'DOCS_OVERDUE' => 'ارفع المستندات',
       'SUSPENDED' || 'BLOCKED' => 'الدعم الفني',
       _ => 'تمام',
@@ -165,6 +166,8 @@ class _CaptainShellViewState extends State<CaptainShellView> {
                 Navigator.of(context).pop();
                 if (code == 'CASH_LIMIT') {
                   setState(() => _index = 2);
+                } else if (code == 'COLLECTION_OVERDUE') {
+                  Navigator.of(context).pushNamed(Routes.collectionViewRoute);
                 } else if (code == 'KYC_PENDING' ||
                     code == 'KYC_REJECTED' ||
                     code == 'DOCS_OVERDUE') {

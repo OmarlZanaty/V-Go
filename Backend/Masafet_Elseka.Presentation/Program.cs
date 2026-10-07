@@ -67,6 +67,8 @@ using Masafet_Elseka.Infrastructure.Services.NotificationService;
 using Masafet_Elseka.Infrastructure.Services.OnlineTrackerService;
 using Masafet_Elseka.Infrastructure.Services.PaymentService;
 using Masafet_Elseka.Infrastructure.Services.DriverFinanceService;
+using Masafet_Elseka.Infrastructure.Services.CollectionService;
+using Masafet_Elseka.Application.Interfaces.ICollectionService;
 using Masafet_Elseka.Infrastructure.Services.DriverVerificationService;
 using Masafet_Elseka.Infrastructure.ExternalService.PrivateFileStorage;
 using Masafet_Elseka.Infrastructure.Services.PricingRoleService;
@@ -210,6 +212,7 @@ builder.Services.AddSignalR(options =>
 
 builder.Services.AddHostedService<DriverStatusSyncService>();
 builder.Services.AddHostedService<PreAuthExpiryService>();
+builder.Services.AddHostedService<CollectionCycleService>();
 
 #endregion
 
@@ -236,6 +239,7 @@ builder.Services.AddScoped<IRatingService, RatingService>();
 //builder.Services.AddScoped<IDriverNotifier, DriverNotifier>();
 builder.Services.AddScoped<IPaymentService, PaymentService>();
 builder.Services.AddScoped<IDriverFinanceService, DriverFinanceService>();
+builder.Services.AddScoped<ICollectionService, CollectionService>();
 builder.Services.AddScoped<IDriverVerificationService, DriverVerificationService>();
 builder.Services.AddSingleton<IPrivateFileStorage, LocalPrivateFileStorage>();
 builder.Services.AddSingleton<IPublicMediaStorage, LocalPublicMediaStorage>();

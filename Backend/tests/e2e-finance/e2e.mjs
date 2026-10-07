@@ -5,6 +5,7 @@
 //   (restart the backend so the launch bootstrap runs)
 //   PHASE=main   node e2e.mjs   -> everything else
 //   PHASE=overdue node e2e.mjs  -> after the grace deadline is moved into the past
+//   PHASE=banners / collection   -> home ad slots / daily wallet collection
 //
 // Env: BASE (default http://127.0.0.1:8090), HMAC (staging Paymob HMAC secret).
 import * as signalR from '@microsoft/signalr';
@@ -552,12 +553,276 @@ async function banners() {
   check('banners: changes are in the audit log', ['BannerCreated', 'BannerUpdated', 'BannerDeleted', 'BannersReordered'].every((x) => audit.data.some((e) => e.action === x)));
 }
 
+// ---------------------------------------------------------------------------
+// Daily wallet collection: collector phone pairing, SMS relay, request <-> SMS
+// matching (in order, out of order, concurrent), every review path, the deadline
+// lock and its automatic release.
+async function collection() {
+  const A = state.admin.token;
+  const KEY_HEADER = 'X-Device-Key';
+  const collector = async (path, key, body) => {
+    let res;
+    for (let attempt = 0; ; attempt++) {
+      res = await fetch(API + `Collector/${path}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...(key ? { [KEY_HEADER]: key } : {}) },
+        body: JSON.stringify(body ?? {}),
+      });
+      if (res.status !== 429 || attempt >= 12) break;
+      await sleep(5000);
+    }
+    const text = await res.text();
+    let json = null; try { json = JSON.parse(text); } catch { /* */ }
+    return { status: res.status, json, text };
+  };
+  let seq = 0;
+  const sms = (key, sender, body, extra = {}) =>
+    collector('sms', key, { messages: [{ clientId: `e2e-${Date.now()}-${++seq}`, sender, body, receivedAtMs: Date.now(), ...extra }] });
+  const smsResult = (r) => data(r)?.[0];
+  const me = async (cap) => data(await http('GET', 'Collection/me', { token: cap.token }));
+  const eligibility = async (cap) => data(await http('GET', 'DriverFinance/me/eligibility', { token: cap.token }));
+  const adjust = (cap, amount) => http('POST', `DriverFinance/admin/drivers/${cap.id}/adjustments`, { token: A, body: { amount, reason: 'e2e collection debt' } });
+  const request = (cap, walletId, senderPhone, amount) =>
+    http('POST', 'Collection/me/requests', { token: cap.token, body: { walletId, senderPhone, amount } });
+  const settings = (extra) => http('PUT', 'DriverFinance/admin/settings', {
+    token: A, body: { companyCommissionPercent: 10, cashLimit: 100000, warningPercent: 80, ...extra },
+  });
+
+  async function approvedCaptain(name) {
+    const cap = await registerDriver(name);
+    for (const t of ['Selfie', 'NationalIdFront', 'NationalIdBack']) await uploadDoc(cap, t);
+    for (const t of ['DriverLicense', 'VehicleLicense']) await uploadDoc(cap, t, { expiry: future });
+    const docs = data(await http('GET', `DriverVerification/admin/drivers/${cap.id}`, { token: A })).documents;
+    for (const d of docs) await http('POST', `DriverVerification/admin/documents/${d.id}/review`, { token: A, body: { approve: true } });
+    return cap;
+  }
+
+  // ---------- server identity + settings ----------
+  const ping = await fetch(API + 'Collector/ping').then((r) => r.json());
+  check('collector: ping identifies a V-Go server', ping?.service === 'vgo-collector', JSON.stringify(ping));
+  const H = new Date(ping.time).getHours(); // Egypt wall clock from the server
+
+  // Window open now: notice at the current hour, deadline two hours later.
+  let r = await settings({ collectionEnabled: true, collectionNoticeHour: H, collectionDeadlineHour: (H + 2) % 24, collectionTolerance: 50 });
+  check('settings: enable daily collection', r.status === 200 && data(r)?.collectionEnabled === true, r.text);
+  r = await settings({ collectionNoticeHour: 5, collectionDeadlineHour: 5 });
+  check('settings: notice and deadline must differ', r.status === 400, r.text);
+  r = await http('PUT', 'DriverFinance/admin/settings', { token: A, body: { companyCommissionPercent: 10, cashLimit: 100000, warningPercent: 80 } });
+  check('settings: an older dashboard (no collection fields) leaves them unchanged', data(r)?.collectionEnabled === true && data(r)?.collectionTolerance === 50, r.text);
+
+  // ---------- collector phone ----------
+  const dev = data(await http('POST', 'Collection/admin/devices', { token: A, body: { name: 'E2E phone' } }));
+  check('device: created with a pairing code', /^[A-Z0-9]{8}$/.test(dev?.pairingCode ?? ''), JSON.stringify(dev));
+  r = await collector('pair', null, { code: 'WRONG123' });
+  check('device: wrong pairing code rejected', r.status === 400, r.text);
+  r = await collector('pair', null, { code: dev.pairingCode.toLowerCase(), deviceName: 'Pixel', appVersion: '1.0.0' });
+  const KEY = data(r)?.deviceKey;
+  check('device: paired with the code (case-insensitive)', r.status === 200 && !!KEY, r.text);
+  r = await collector('pair', null, { code: dev.pairingCode });
+  check('device: pairing code is single-use', r.status === 400, r.text);
+  r = await collector('heartbeat', null, {});
+  check('device: heartbeat without key -> 401', r.status === 401, r.text);
+  r = await collector('heartbeat', KEY.slice(0, -2) + 'xx', {});
+  check('device: heartbeat with a forged key -> 401', r.status === 401, r.text);
+
+  // ---------- wallets ----------
+  r = await http('POST', 'Collection/admin/wallets', { token: A, body: { provider: 'VodafoneCash', phoneNumber: '0100000', holderName: 'V-Go' } });
+  check('wallet: invalid number rejected', r.status === 400, r.text);
+  const vf = data(await http('POST', 'Collection/admin/wallets', { token: A, body: { provider: 'VodafoneCash', phoneNumber: '01000000001', holderName: 'V-Go VF', isActive: true, sortOrder: 1, deviceId: dev.id } }));
+  const et = data(await http('POST', 'Collection/admin/wallets', { token: A, body: { provider: 'EtisalatCash', phoneNumber: '+201100000002', holderName: 'V-Go ET', isActive: true, sortOrder: 2, deviceId: dev.id } }));
+  check('wallet: vodafone + etisalat added (number normalised)', vf?.id && et?.phoneNumber === '01100000002', JSON.stringify([vf, et]));
+  r = await http('POST', 'Collection/admin/wallets', { token: A, body: { provider: 'VodafoneCash', phoneNumber: '01000000001', holderName: 'dup' } });
+  check('wallet: duplicate rejected', r.status === 400, r.text);
+  r = await collector('heartbeat', KEY, { appVersion: '1.0.0', battery: 80, smsPermission: true, pending: 0 });
+  check('device: heartbeat returns its wallets and sender hints', data(r)?.wallets?.length === 2 && data(r)?.senderHints?.length > 0, r.text);
+  const devices = data(await http('GET', 'Collection/admin/devices', { token: A }));
+  check('device: shows online in the dashboard', devices.find((d) => d.id === dev.id)?.online === true, JSON.stringify(devices));
+
+  // ---------- captains with debt ----------
+  const c1 = await approvedCaptain('Collect One');
+  const c2 = await approvedCaptain('Collect Two');
+  const c3 = await approvedCaptain('Collect Three');
+  const c4 = await approvedCaptain('Collect Four');
+  await adjust(c1, -200); await adjust(c2, -150); await adjust(c3, -30); await adjust(c4, -40);
+  let m = await me(c1);
+  check('captain: sees debt, must pay, both wallets online', m?.enabled && m.owedToCompany === 200 && m.mustPay && m.wallets.length === 2 && m.wallets.every((w) => w.isOnline), JSON.stringify(m));
+  check('captain: window is open now', m?.inWindow === true, JSON.stringify(m));
+  m = await me(c3);
+  check('captain: within tolerance does not have to pay', m?.mustPay === false, JSON.stringify(m));
+
+  // ---------- validation / authz ----------
+  r = await request(c1, vf.id, '01000000001', 200);
+  check('request: company wallet as sender rejected', r.status === 400, r.text);
+  r = await request(c1, vf.id, '0101', 200);
+  check('request: invalid sender rejected', r.status === 400, r.text);
+  r = await request(c1, 999999, '01011111111', 200);
+  check('request: unknown wallet rejected', r.status === 400, r.text);
+  r = await http('GET', 'Collection/admin/overview', { token: c1.token });
+  check('authz: captain cannot read collection admin', r.status === 403, `${r.status}`);
+  r = await http('POST', 'DriverFinance/me/settle', { token: c1.token });
+  check('paymob settlement switched off once wallet collection is on', r.status === 410, r.text);
+
+  // ---------- 1) request first, then SMS ----------
+  r = await request(c1, vf.id, '01011111111', 200);
+  check('flow1: request filed -> Pending', r.status === 201 && data(r)?.status === 'Pending', r.text);
+  const again = await request(c1, vf.id, '01011111111', 200);
+  check('flow1: double submit returns the same request', again.status === 200 && data(again)?.id === data(r)?.id, again.text);
+  const body1 = 'تم استلام مبلغ 200.00 جنيه من رقم 01011111111؛ المسجل بإسم ONE; رصيدك الحالي 1200.00 جنيه. رقم العملية: 900000001';
+  const cid1 = `e2e-fixed-${Date.now()}`;
+  r = await collector('sms', KEY, { messages: [{ clientId: cid1, sender: 'VF-Cash', body: body1, receivedAtMs: Date.now() }] });
+  check('flow1: receipt SMS matched', smsResult(r)?.status === 'stored' && smsResult(r)?.matchStatus === 'Matched', r.text);
+  check('flow1: ledger credited, debt cleared', (await balance(c1)) === 0);
+  const l1 = await ledger(c1);
+  check('flow1: WalletCollection entry with the transfer reference', l1.some((e) => e.type === 'WalletCollection' && e.amount === 200 && e.reference === '900000001'), JSON.stringify(l1.slice(0, 3)));
+  m = await me(c1);
+  check('flow1: captain sees the request confirmed', m?.recent?.[0]?.status === 'Confirmed' && m.recent[0].receivedAmount === 200, JSON.stringify(m?.recent?.[0]));
+
+  // ---------- duplicates ----------
+  r = await collector('sms', KEY, { messages: [{ clientId: cid1, sender: 'VF-Cash', body: body1, receivedAtMs: Date.now() }] });
+  check('dup: same message retried -> duplicate', smsResult(r)?.status === 'duplicate', r.text);
+  r = await sms(KEY, 'VF-Cash', body1);
+  check('dup: same transfer reference from a new upload id -> duplicate', smsResult(r)?.status === 'duplicate', r.text);
+  check('dup: balance credited once', (await balance(c1)) === 0);
+
+  // ---------- 2) SMS first, then request (out of order) ----------
+  r = await sms(KEY, 'Etisalat Cash', 'تم استقبال مبلغ 150 جنيه من 01022222222 بنجاح. رقم العملية 900000002. رصيدك الحالي هو 500.00 جنيه');
+  check('flow2: SMS before any request -> Unclaimed', smsResult(r)?.matchStatus === 'Unclaimed', r.text);
+  r = await request(c2, et.id, '01022222222', 150);
+  check('flow2: request matches the waiting SMS at once', data(r)?.status === 'Confirmed', r.text);
+  check('flow2: debt cleared', (await balance(c2)) === 0);
+
+  // ---------- 3) concurrent request + SMS ----------
+  await adjust(c2, -70);
+  const [rq, rs] = await Promise.all([
+    request(c2, vf.id, '01022222222', 70),
+    sms(KEY, 'VF-Cash', 'You have received 70.00 EGP from 01022222222. Your current balance is 570 EGP. Transaction ID: 900000003'),
+  ]);
+  await sleep(500);
+  check('race: request and SMS at the same moment still credit exactly once', (await balance(c2)) === 0, `${rq.text} ${rs.text}`);
+  const l2 = await ledger(c2);
+  check('race: one ledger line for that transfer', l2.filter((e) => e.reference === '900000003').length === 1, JSON.stringify(l2.slice(0, 4)));
+
+  // ---------- 4) amount mismatch -> review -> admin assigns ----------
+  await adjust(c2, -100);
+  const mm = data(await request(c2, vf.id, '01022222222', 100));
+  r = await sms(KEY, 'VF-Cash', 'تم استلام مبلغ 90 جنيه من رقم 01022222222 رقم العملية 900000004');
+  check('mismatch: SMS goes to review', smsResult(r)?.matchStatus === 'NeedsReview', r.text);
+  const mmSmsId = smsResult(r)?.id;
+  m = await me(c2);
+  check('mismatch: captain sees it under review', m?.pending?.id === mm?.id && m.pending.status === 'NeedsReview', JSON.stringify(m?.pending));
+  const review = data(await http('GET', 'Collection/admin/requests?status=review&pageSize=50', { token: A }));
+  check('mismatch: listed for the admin', review?.data?.some((x) => x.id === mm.id), JSON.stringify(review));
+  r = await http('POST', `Collection/admin/sms/${mmSmsId}/assign`, { token: A, body: { requestId: mm.id } });
+  check('mismatch: admin confirms with the SMS amount', r.status === 200 && data(r)?.matchStatus === 'Assigned', r.text);
+  check('mismatch: credited what actually arrived (90)', (await balance(c2)) === -10);
+  r = await http('POST', `Collection/admin/sms/${mmSmsId}/assign`, { token: A, body: { requestId: mm.id } });
+  check('mismatch: assigning twice is refused', r.status === 400, r.text);
+
+  // ---------- 5) ambiguous: two captains claim the same transfer ----------
+  await adjust(c1, -80); await adjust(c3, -80);
+  const amb1 = data(await request(c1, vf.id, '01033333333', 80));
+  const amb3 = data(await request(c3, vf.id, '01033333333', 80));
+  r = await sms(KEY, 'VF-Cash', 'تم استلام مبلغ 80 جنيه من رقم 01033333333 رقم العملية 900000005');
+  check('ambiguous: two captains, same number + amount -> review', smsResult(r)?.matchStatus === 'NeedsReview', r.text);
+  const ambSmsId = smsResult(r)?.id;
+  check('ambiguous: nobody credited automatically', (await balance(c1)) === -80 && (await balance(c3)) === -110);
+  r = await http('POST', `Collection/admin/sms/${ambSmsId}/assign`, { token: A, body: { requestId: amb1.id } });
+  check('ambiguous: admin assigns to the right captain', r.status === 200 && (await balance(c1)) === 0, r.text);
+  r = await http('POST', `Collection/admin/requests/${amb3.id}/reject`, { token: A, body: {} });
+  check('ambiguous: reject needs a reason', r.status === 400, r.text);
+  r = await http('POST', `Collection/admin/requests/${amb3.id}/reject`, { token: A, body: { note: 'التحويل ده بتاع كابتن تاني' } });
+  check('ambiguous: other claim rejected', r.status === 200 && data(r)?.status === 'Rejected', r.text);
+
+  // ---------- 6) money nobody claimed / not ours / unreadable ----------
+  r = await sms(KEY, 'VF-Cash', 'تم استلام مبلغ 500 جنيه من رقم 01099999999 رقم العملية 900000006');
+  const personal = smsResult(r);
+  check('unclaimed: transfer with no request stays Unclaimed', personal?.matchStatus === 'Unclaimed', r.text);
+  r = await http('POST', `Collection/admin/sms/${personal.id}/dismiss`, { token: A, body: { note: 'تحويل شخصي' } });
+  check('unclaimed: admin dismisses a personal transfer', r.status === 200 && data(r)?.matchStatus === 'Dismissed', r.text);
+  r = await sms(KEY, 'VF-Cash', 'تم تحويل مبلغ 100 جنيه الى رقم 01012345678 بنجاح. رقم العملية 900000007');
+  check('outgoing transfer -> Outgoing / not applicable', smsResult(r)?.kind === 'Outgoing' && smsResult(r)?.matchStatus === 'NotApplicable', r.text);
+  r = await sms(KEY, 'Vodafone', 'استمتع بخصم 20% مع فودافون كاش واكسب 50 جنيه كاش باك');
+  check('advert -> ignored', smsResult(r)?.kind === 'Ignored', r.text);
+  r = await sms(KEY, 'VF-Cash', 'تم استلام تحويل من رقم 01012345678، برجاء مراجعة رصيدك');
+  check('unreadable transfer -> review', smsResult(r)?.kind === 'Unparsed' && smsResult(r)?.matchStatus === 'NeedsReview', r.text);
+  r = await sms(KEY, 'VF-Cash', 'تم استلام مبلغ ٤٥ جنيه من رقم ٠١٠٤٤٤٤٤٤٤٤ رقم العملية ٩٠٠٠٠٠٠٠٨');
+  check('arabic digits parsed', smsResult(r)?.kind === 'Incoming', r.text);
+  const open = data(await http('GET', 'Collection/admin/sms?status=open&pageSize=100', { token: A }));
+  check('admin: open SMS list has the unread + unclaimed ones', open?.data?.some((s) => s.kind === 'Unparsed') && open.data.some((s) => s.counterpartyPhone === '01044444444'), JSON.stringify(open?.data?.map((s) => s.matchStatus)));
+
+  // ---------- 7) cancel ----------
+  await adjust(c4, -100); // c4 now owes 140
+  const cx = data(await request(c4, vf.id, '01055555555', 140));
+  r = await http('DELETE', `Collection/me/requests/${cx.id}`, { token: c4.token });
+  check('cancel: captain withdraws a pending request', r.status === 200 && data(r)?.status === 'Cancelled', r.text);
+  r = await http('DELETE', `Collection/me/requests/${cx.id}`, { token: c4.token });
+  check('cancel: twice refused', r.status === 400, r.text);
+  await adjust(c4, 100); // back to 40, within tolerance
+
+  // ---------- 8) deadline lock ----------
+  await adjust(c1, -120); // c1 owes 120 (> 50); c3 owes 110; c4 owes 40 (<= 50)
+  r = await settings({ collectionNoticeHour: (H + 23) % 24, collectionDeadlineHour: H });
+  check('lock: move the deadline into the past', r.status === 200, r.text);
+  await collector('heartbeat', KEY, { appVersion: '1.0.0' });
+  let cycle = null;
+  for (let i = 0; i < 30 && !cycle?.lockAppliedAt; i++) {
+    await sleep(5000);
+    const ov = data(await http('GET', 'Collection/admin/overview', { token: A }));
+    cycle = ov?.recentCycles?.find((c) => c.lockAppliedAt);
+  }
+  check('lock: the background job applied the deadline', !!cycle?.lockAppliedAt && cycle.lockedCount >= 2, JSON.stringify(cycle));
+  let el = await eligibility(c1);
+  check('lock: captain above tolerance blocked (COLLECTION_OVERDUE)', el?.code === 'COLLECTION_OVERDUE', JSON.stringify(el));
+  el = await eligibility(c4);
+  check('lock: captain within tolerance keeps working', el?.canGoOnline === true, JSON.stringify(el));
+  m = await me(c1);
+  check('lock: captain screen shows locked', m?.isLocked === true, JSON.stringify(m));
+  const form = new FormData(); form.append('id', c3.id);
+  r = await http('PUT', 'Driver/updateDriverStatus?isAvailable=true', { token: c3.token, form });
+  check('lock: REST online switch refused too', r.status === 403, `${r.status} ${r.text}`);
+  const fOther = new FormData(); fOther.append('id', c4.id);
+  r = await http('PUT', 'Driver/updateDriverStatus?isAvailable=true', { token: c3.token, form: fOther });
+  check('authz: a captain cannot switch another captain online', r.status === 403, `${r.status}`);
+  const lockedList = data(await http('GET', 'DriverFinance/admin/drivers?filter=collection&pageSize=50', { token: A }));
+  check('admin: locked captains listed under "collection"', lockedList?.data?.some((d) => d.driverId === c1.id && d.collectionLocked), JSON.stringify(lockedList?.data?.map((d) => d.name)));
+
+  // ---------- 9) paying unlocks by itself ----------
+  r = await request(c1, vf.id, '01011111111', 120);
+  r = await sms(KEY, 'VF-Cash', 'تم استلام مبلغ 120 جنيه من رقم 01011111111 رقم العملية 900000009');
+  check('unlock: transfer confirmed', smsResult(r)?.matchStatus === 'Matched', r.text);
+  el = await eligibility(c1);
+  check('unlock: lock lifted automatically after the receipt SMS', el?.canGoOnline === true, JSON.stringify(el));
+  m = await me(c1);
+  check('unlock: captain screen no longer locked', m?.isLocked === false, JSON.stringify(m));
+
+  // ---------- 10) admin override ----------
+  r = await http('POST', `Collection/admin/drivers/${c3.id}/unlock`, { token: A, body: { note: 'اتفقنا يدفع بكرة' } });
+  check('override: admin releases a locked captain', r.status === 200, r.text);
+  el = await eligibility(c3);
+  check('override: released captain can go online', el?.canGoOnline === true, JSON.stringify(el));
+
+  // ---------- 11) turning collection off ----------
+  await adjust(c1, -300);
+  r = await settings({ collectionEnabled: false });
+  check('off: collection disabled', data(r)?.collectionEnabled === false, r.text);
+  r = await request(c1, vf.id, '01011111111', 300);
+  check('off: requests refused while disabled', r.status === 400, r.text);
+  r = await http('POST', `Collection/admin/devices/${dev.id}/active/false`, { token: A });
+  r = await collector('heartbeat', KEY, {});
+  check('device: disabled phone is cut off', r.status === 401, r.text);
+
+  const audit = data(await http('GET', 'DriverFinance/admin/audit?pageSize=100', { token: A }));
+  check('audit: collection actions logged', ['WalletSmsAssigned', 'WalletSmsDismissed', 'CollectionRequestRejected', 'CollectionLockReleased', 'CollectionWalletAdded', 'CollectorDeviceAdded']
+    .every((x) => audit.data.some((e) => e.action === x)), JSON.stringify(audit.data.map((e) => e.action)));
+}
+
 try {
   if (PHASE === 'setup') await setup();
   else if (PHASE === 'main') await main();
   else if (PHASE === 'settle') await settle2();
   else if (PHASE === 'overdue') await overdue();
   else if (PHASE === 'banners') await banners();
+  else if (PHASE === 'collection') await collection();
 } catch (e) {
   failed++;
   results.push(`FAIL  crashed: ${e.stack ?? e}`);

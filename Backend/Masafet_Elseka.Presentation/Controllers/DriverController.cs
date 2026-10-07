@@ -1,6 +1,7 @@
 ﻿using Masafet_Elseka.Application.Common.Pagination;
 using Masafet_Elseka.Application.DTOs.Driver;
 using Masafet_Elseka.Application.DTOs.Pagination;
+using Masafet_Elseka.Application.Interfaces.IDriverFinanceService;
 using Masafet_Elseka.Application.Interfaces.IDriverService;
 using Masafet_Elseka.Application.Interfaces.IEmergencyService;
 using Masafet_Elseka.Domain.Enums;
@@ -8,6 +9,7 @@ using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
+using System.Security.Claims;
 
 namespace Masafet_Elseka.Presentation.Controllers
 {
@@ -18,11 +20,13 @@ namespace Masafet_Elseka.Presentation.Controllers
     {
         private readonly IDriverService _driverService;
         private readonly IEmergencyService _emergencyService;
+        private readonly IDriverFinanceService _finance;
 
-        public DriverController(IDriverService driverService, IEmergencyService emergencyService)
+        public DriverController(IDriverService driverService, IEmergencyService emergencyService, IDriverFinanceService finance)
         {
             _driverService = driverService;
             _emergencyService = emergencyService;
+            _finance = finance;
         }
 
         [HttpGet("driver/{id}")]
@@ -50,6 +54,18 @@ namespace Masafet_Elseka.Presentation.Controllers
         [HttpPut("updateDriverStatus")]
         public async Task<IActionResult> UpdateStatus([FromForm]  string id, bool isAvailable)
         {
+            // Only the captain himself or the operations staff, and going online must pass
+            // the same checks as the hub (verification, collection deadline, cash limit).
+            var isStaff = User.IsInRole("Admin") || User.IsInRole("Dispatcher");
+            if (!isStaff && id != User.FindFirstValue(ClaimTypes.NameIdentifier))
+                return Forbid();
+            if (isAvailable)
+            {
+                var eligibility = await _finance.CheckOnlineEligibilityAsync(id);
+                if (!eligibility.CanGoOnline)
+                    return StatusCode(403, eligibility.Message);
+            }
+
             var response = await _driverService.UpdateAvailability(id, isAvailable);
             return StatusCode(response.StatusCode, response.Message);
         }

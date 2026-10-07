@@ -17,6 +17,12 @@ namespace Masafet_Elseka.Application.Interfaces.IDriverFinanceService
         // re-syncs the trip for trip payments.
         Task OnPaymentUpdatedAsync(string paymentId);
 
+        // Wallet collection: post the confirmed transfer (inside the matcher's
+        // transaction), then, after commit, notify and lift the collection lock.
+        Task<(decimal Before, decimal After, bool Posted)> PostWalletCollectionAsync(
+            string driverId, long walletSmsId, decimal amount, string description, string? reference, string? actorUserId);
+        Task AfterWalletCollectionAsync(string driverId, decimal before, decimal after, decimal amount);
+
         // ---- gatekeeping ----
         Task<OnlineEligibilityDTO> CheckOnlineEligibilityAsync(string driverId, bool useCache = false);
         void InvalidateEligibility(string driverId);

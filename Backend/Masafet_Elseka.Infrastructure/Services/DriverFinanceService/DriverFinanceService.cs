@@ -74,6 +74,10 @@ namespace Masafet_Elseka.Infrastructure.Services.DriverFinanceService
                 CashLimit = rule.CashLimit,
                 WarningPercent = rule.WarningPercent,
                 LedgerStartAt = rule.LedgerStartAt,
+                CollectionEnabled = rule.CollectionEnabled,
+                CollectionNoticeHour = rule.CollectionNoticeHour,
+                CollectionDeadlineHour = rule.CollectionDeadlineHour,
+                CollectionTolerance = rule.CollectionTolerance,
             };
         }
 
@@ -85,6 +89,10 @@ namespace Masafet_Elseka.Infrastructure.Services.DriverFinanceService
                 return Response<DriverFinanceSettingsDTO>.Failure("حد المديونية غير صالح", 400);
             if (dto.WarningPercent < 1 || dto.WarningPercent > 100)
                 return Response<DriverFinanceSettingsDTO>.Failure("نسبة التنبيه لازم تكون بين 1 و 100", 400);
+            if (dto.CollectionNoticeHour is < 0 or > 23 || dto.CollectionDeadlineHour is < 0 or > 23)
+                return Response<DriverFinanceSettingsDTO>.Failure("مواعيد التحصيل لازم تكون ساعة من 0 لـ 23", 400);
+            if (dto.CollectionTolerance is < 0 or > 100_000)
+                return Response<DriverFinanceSettingsDTO>.Failure("الحد المسموح بعد التحصيل غير صالح", 400);
 
             var rule = await _context.PricingRules.OrderBy(r => r.Id).FirstOrDefaultAsync();
             if (rule == null)
@@ -92,17 +100,34 @@ namespace Masafet_Elseka.Infrastructure.Services.DriverFinanceService
                 rule = new PricingRule { LedgerStartAt = Now };
                 _context.PricingRules.Add(rule);
             }
-            var before = $"commission={CompanyPercent(rule)}%, limit={rule.CashLimit}, warning={rule.WarningPercent}%";
+            static string Describe(PricingRule r) =>
+                $"commission={CompanyPercent(r)}%, limit={r.CashLimit}, warning={r.WarningPercent}%, " +
+                $"collection={(r.CollectionEnabled ? "on" : "off")} {r.CollectionNoticeHour}:00->{r.CollectionDeadlineHour}:00 tolerance={r.CollectionTolerance}";
+            var before = Describe(rule);
+            var wasEnabled = rule.CollectionEnabled;
+
+            var noticeHour = dto.CollectionNoticeHour ?? rule.CollectionNoticeHour;
+            var deadlineHour = dto.CollectionDeadlineHour ?? rule.CollectionDeadlineHour;
+            if (noticeHour == deadlineHour)
+                return Response<DriverFinanceSettingsDTO>.Failure("ميعاد آخر مهلة لازم يختلف عن ميعاد إشعار التحصيل", 400);
 
             rule.DriverCommissionPercentage = Money(100 - dto.CompanyCommissionPercent);
             rule.CashLimit = Money(dto.CashLimit);
             rule.WarningPercent = dto.WarningPercent;
+            if (dto.CollectionEnabled != null) rule.CollectionEnabled = dto.CollectionEnabled.Value;
+            rule.CollectionNoticeHour = noticeHour;
+            rule.CollectionDeadlineHour = deadlineHour;
+            if (dto.CollectionTolerance != null) rule.CollectionTolerance = Money(dto.CollectionTolerance.Value);
             rule.LastUpdated = Now;
             await _context.SaveChangesAsync();
 
+            // Turning collection off releases everyone it was holding.
+            if (wasEnabled && !rule.CollectionEnabled)
+                await _context.Users.Where(u => u.CollectionLockedAt != null)
+                    .ExecuteUpdateAsync(x => x.SetProperty(u => u.CollectionLockedAt, (DateTime?)null));
+
             _eligibilityCache.Clear();
-            await WriteAuditAsync(actorUserId, "FinanceSettingsUpdated", null,
-                $"{before} -> commission={dto.CompanyCommissionPercent}%, limit={rule.CashLimit}, warning={rule.WarningPercent}%");
+            await WriteAuditAsync(actorUserId, "FinanceSettingsUpdated", null, $"{before} -> {Describe(rule)}");
 
             return Response<DriverFinanceSettingsDTO>.Success(await GetSettingsAsync(), "تم حفظ إعدادات الماليات", 200);
         }
@@ -311,6 +336,58 @@ namespace Masafet_Elseka.Infrastructure.Services.DriverFinanceService
                 "driver_settlement_credited");
         }
 
+        // Credits a confirmed wallet transfer. Runs inside the caller's transaction (the
+        // matcher marks the SMS and the request in the same one); the unique WalletSmsId
+        // index guarantees one SMS is never credited twice.
+        public async Task<(decimal Before, decimal After, bool Posted)> PostWalletCollectionAsync(
+            string driverId, long walletSmsId, decimal amount, string description, string? reference, string? actorUserId)
+        {
+            return await InDriverLockAsync(driverId, async () =>
+            {
+                var balance = await SumBalanceAsync(driverId);
+                if (await _context.DriverLedgerEntries.IgnoreQueryFilters().AnyAsync(e => e.WalletSmsId == walletSmsId))
+                    return (balance, balance, false);
+
+                var credit = Money(amount);
+                _context.DriverLedgerEntries.Add(new DriverLedgerEntry
+                {
+                    DriverId = driverId,
+                    Type = LedgerEntryType.WalletCollection,
+                    Amount = credit,
+                    WalletSmsId = walletSmsId,
+                    Reference = reference,
+                    Description = description,
+                    CreatedByUserId = actorUserId,
+                    CreatedAt = Now,
+                });
+                await _context.SaveChangesAsync();
+                return (balance, balance + credit, true);
+            });
+        }
+
+        // After the collection transaction committed: refresh the app, lift the daily
+        // collection lock if the debt is back within the tolerance, and tell the captain.
+        public async Task AfterWalletCollectionAsync(string driverId, decimal before, decimal after, decimal amount)
+        {
+            await AfterBalanceChangedAsync(driverId, before, after, warn: false);
+
+            var rule = await GetRuleAsync();
+            var owed = after < 0 ? -after : 0;
+            var unlocked = false;
+            if (owed <= rule.CollectionTolerance)
+            {
+                unlocked = await _context.Users.Where(u => u.Id == driverId && u.CollectionLockedAt != null)
+                    .ExecuteUpdateAsync(x => x.SetProperty(u => u.CollectionLockedAt, (DateTime?)null)) > 0;
+                InvalidateEligibility(driverId);
+            }
+
+            var body = owed > 0
+                ? $"وصلنا {Money(amount):0.##} ج.م. المتبقي عليك {owed:0.##} ج.م."
+                : $"وصلنا {Money(amount):0.##} ج.م وحسابك متسوّي.";
+            if (unlocked) body += " اتفتح استقبال الرحلات، تقدر تشتغل دلوقتي.";
+            await SafeNotifyAsync(driverId, "تم تأكيد التحويل ✅", body, "driver_collection_confirmed", save: true);
+        }
+
         // Pushes the new balance to the captain's app and, when his debt grew, warns him
         // as it crosses the warning line or the limit.
         private async Task AfterBalanceChangedAsync(string driverId, decimal before, decimal after, bool warn = true)
@@ -350,12 +427,15 @@ namespace Masafet_Elseka.Infrastructure.Services.DriverFinanceService
             }
         }
 
-        private async Task SafeNotifyAsync(string userId, string title, string body, string type)
+        private async Task SafeNotifyAsync(string userId, string title, string body, string type, bool save = false)
         {
             try
             {
-                await _notificationService.SendNotificationToUserAsync(userId, title, body,
-                    new Dictionary<string, string> { { "type", type } });
+                var data = new Dictionary<string, string> { { "type", type } };
+                if (save)
+                    await _notificationService.SendNotificationToUserWithSavingAsync(userId, title, body, data);
+                else
+                    await _notificationService.SendNotificationToUserAsync(userId, title, body, data);
             }
             catch (Exception ex)
             {
@@ -387,7 +467,7 @@ namespace Masafet_Elseka.Infrastructure.Services.DriverFinanceService
         {
             var user = await _context.Users.AsNoTracking()
                 .Where(u => u.Id == driverId)
-                .Select(u => new { u.IsBlocked, u.VerificationStatus, u.VerificationNote, u.DocumentsDeadline })
+                .Select(u => new { u.IsBlocked, u.VerificationStatus, u.VerificationNote, u.DocumentsDeadline, u.CollectionLockedAt })
                 .FirstOrDefaultAsync();
             if (user == null) return Blocked("NOT_DRIVER", "الحساب غير موجود");
             if (user.IsBlocked) return Blocked("BLOCKED", "حسابك موقوف، تواصل مع الدعم");
@@ -419,6 +499,20 @@ namespace Masafet_Elseka.Infrastructure.Services.DriverFinanceService
             }
 
             var rule = await GetRuleAsync();
+
+            // Missed the daily collection deadline: offline until the transfer is confirmed.
+            if (user.CollectionLockedAt != null)
+            {
+                var owed = -await GetBalanceAsync(driverId);
+                if (rule.CollectionEnabled && owed > rule.CollectionTolerance)
+                    return Blocked("COLLECTION_OVERDUE",
+                        $"عليك {owed:0.##} ج.م للشركة وعدّى ميعاد التحصيل. حوّل المبلغ على محفظة الشركة من صفحة الحسابات، " +
+                        "وأول ما رسالة الاستلام توصل الحساب هيتفتح لوحده.");
+                // Paid (or collection turned off) since: release the lock.
+                await _context.Users.Where(u => u.Id == driverId)
+                    .ExecuteUpdateAsync(x => x.SetProperty(u => u.CollectionLockedAt, (DateTime?)null));
+            }
+
             if (rule.CashLimit > 0)
             {
                 var balance = await GetBalanceAsync(driverId);
@@ -515,6 +609,9 @@ namespace Masafet_Elseka.Infrastructure.Services.DriverFinanceService
                 LimitUsedPercent = limitUsed,
                 IsNearLimit = rule.CashLimit > 0 && limitUsed >= rule.WarningPercent,
                 IsLocked = rule.CashLimit > 0 && debt >= rule.CashLimit,
+                CollectionEnabled = rule.CollectionEnabled,
+                CollectionLocked = eligibility.Code == "COLLECTION_OVERDUE",
+                CollectionTolerance = rule.CollectionTolerance,
                 Today = Totals(final.Where(r => When(r) >= today)),
                 Week = Totals(final.Where(r => When(r) >= today.AddDays(-6))),
                 Month = Totals(final.Where(r => When(r) >= new DateTime(today.Year, today.Month, 1))),
@@ -690,7 +787,7 @@ namespace Masafet_Elseka.Infrastructure.Services.DriverFinanceService
                 LockedDrivers = rule.CashLimit > 0 ? balances.Count(b => -b >= rule.CashLimit) : 0,
                 NearLimitDrivers = rule.CashLimit > 0 ? balances.Count(b => -b >= warnDebt && -b < rule.CashLimit) : 0,
                 DriversAwaitingPayout = balances.Count(b => b > 0),
-                SettledThisMonth = monthRows.Where(r => r.Type == LedgerEntryType.Settlement).Sum(r => r.Amount),
+                SettledThisMonth = monthRows.Where(r => r.Type is LedgerEntryType.Settlement or LedgerEntryType.WalletCollection).Sum(r => r.Amount),
                 PaidOutThisMonth = -monthRows.Where(r => r.Type == LedgerEntryType.Payout).Sum(r => r.Amount),
                 CommissionThisMonth = FinalTripEntries(tripRows).Sum(r => r.Commission ?? 0),
             }, "", 200);
@@ -731,6 +828,10 @@ namespace Masafet_Elseka.Infrastructure.Services.DriverFinanceService
                 case "owed":
                     query = query.Where(x => x.Balance > 0);
                     break;
+                case "collection":
+                    var tolerance = rule.CollectionTolerance;
+                    query = query.Where(x => x.User.CollectionLockedAt != null && -x.Balance > tolerance);
+                    break;
             }
 
             var total = await query.CountAsync();
@@ -748,6 +849,7 @@ namespace Masafet_Elseka.Infrastructure.Services.DriverFinanceService
                 Balance = x.Balance,
                 IsLocked = limit > 0 && -x.Balance >= limit,
                 IsNearLimit = limit > 0 && -x.Balance >= warnDebt && -x.Balance < limit,
+                CollectionLocked = rule.CollectionEnabled && x.User.CollectionLockedAt != null && -x.Balance > rule.CollectionTolerance,
                 IsAvailable = x.User.IsAvailable == true,
                 VerificationStatus = x.User.VerificationStatus.ToString(),
                 PayoutMethod = x.User.PayoutMethod?.ToString(),
