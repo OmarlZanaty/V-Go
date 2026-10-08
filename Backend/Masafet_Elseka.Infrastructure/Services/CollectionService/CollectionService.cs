@@ -63,6 +63,11 @@ namespace Masafet_Elseka.Infrastructure.Services.CollectionService
             string.IsNullOrWhiteSpace(v) ? null : v.Trim().Length > max ? v.Trim()[..max] : v.Trim();
         private static decimal Money(decimal v) => Math.Round(v, 2, MidpointRounding.AwayFromZero);
 
+        // Amounts match on whole pounds: piasters are dropped on both sides so a
+        // 0.xx difference between the request and the receipt never forces a
+        // transfer into manual review.
+        private static bool SameAmount(decimal a, decimal b) => Math.Floor(a) == Math.Floor(b);
+
         public static string ProviderLabel(WalletProvider? p) => p switch
         {
             WalletProvider.VodafoneCash => "فودافون كاش",
@@ -305,7 +310,7 @@ namespace Masafet_Elseka.Infrastructure.Services.CollectionService
                     .Where(Live).ToList();
                 if (byPhone.Count > 0)
                 {
-                    var exact = byPhone.Where(r => r.Amount == sms.Amount).ToList();
+                    var exact = byPhone.Where(r => SameAmount(r.Amount, sms.Amount!.Value)).ToList();
                     if (exact.Count > 0 && exact.Select(r => r.DriverId).Distinct().Count() == 1)
                         await ConfirmAsync(exact[0], sms, credits);
                     else if (exact.Count > 1)
@@ -327,7 +332,7 @@ namespace Masafet_Elseka.Infrastructure.Services.CollectionService
                 .Select(r => (Request: r, Fit: CompareSender(sms, r)))
                 .Where(x => x.Fit != SenderFit.Conflict)
                 .ToList();
-            var exactFit = scored.Where(x => x.Request.Amount == sms.Amount).ToList();
+            var exactFit = scored.Where(x => SameAmount(x.Request.Amount, sms.Amount!.Value)).ToList();
             var strong = exactFit.Where(x => x.Fit == SenderFit.Strong).Select(x => x.Request).ToList();
 
             if (strong.Count > 0)
@@ -381,7 +386,7 @@ namespace Masafet_Elseka.Infrastructure.Services.CollectionService
                     .OrderBy(s => s.ReceivedAt).ToListAsync();
                 if (smsList.Count > 0)
                 {
-                    var exact = smsList.FirstOrDefault(s => s.Amount == request.Amount);
+                    var exact = smsList.FirstOrDefault(s => s.Amount != null && SameAmount(s.Amount.Value, request.Amount));
                     // Another captain may claim the same transfer at the same time; the
                     // global lock makes the first one win and the second stays pending.
                     if (exact != null) await ConfirmAsync(request, exact, credits);
@@ -534,9 +539,12 @@ namespace Masafet_Elseka.Infrastructure.Services.CollectionService
                     return Response<CollectionRequestDTO>.Failure("اكتب الرقم اللي حوّلت منه، مش رقم محفظة الشركة", 400);
             }
 
-            var amount = Money(dto.Amount);
+            // Collect in whole pounds: drop the piasters so the receipt SMS matches
+            // on a clean number. The small residual stays on the ledger, well under
+            // the collection tolerance.
+            var amount = Math.Floor(Money(dto.Amount));
             if (amount < 1 || amount > 100_000)
-                return Response<CollectionRequestDTO>.Failure("اكتب المبلغ اللي حوّلته بالظبط", 400);
+                return Response<CollectionRequestDTO>.Failure("مفيش مبلغ مطلوب تحويله", 400);
 
             var balance = await _finance.GetBalanceAsync(driverId);
             if (balance >= 0)
@@ -736,6 +744,14 @@ namespace Masafet_Elseka.Infrastructure.Services.CollectionService
                 }
 
                 var parsed = WalletSmsParser.Parse(sender, body, ownNumbers);
+                // Ads, promotions, OTPs, balance-info and other non-money SMS on the
+                // wallet line are not stored: only transfers and receipts belong in the
+                // collection records. The collector acks "ignored" so it won't resend.
+                if (parsed.Kind == WalletSmsKind.Ignored)
+                {
+                    results.Add(new CollectorSmsResultDTO { ClientId = clientId, Status = "ignored" });
+                    continue;
+                }
                 if (parsed.TxnRef != null && parsed.Provider != null
                     && await _context.WalletSms.AnyAsync(s => s.Provider == parsed.Provider && s.TxnRef == parsed.TxnRef))
                 {

@@ -26,7 +26,6 @@ class _CollectionViewState extends State<CollectionView> {
   final _sender = TextEditingController();
   final _account = TextEditingController(); // InstaPay address
   final _name = TextEditingController(); // name shown by InstaPay
-  final _amount = TextEditingController();
   int? _walletId;
   bool _prefilled = false;
   Timer? _clock;
@@ -46,7 +45,6 @@ class _CollectionViewState extends State<CollectionView> {
     _sender.dispose();
     _account.dispose();
     _name.dispose();
-    _amount.dispose();
     super.dispose();
   }
 
@@ -56,7 +54,6 @@ class _CollectionViewState extends State<CollectionView> {
     _sender.text = data.lastSenderPhone ?? '';
     _account.text = data.lastSenderAccount ?? '';
     _name.text = data.lastSenderName ?? '';
-    if (data.owedToCompany > 0) _amount.text = _plain(data.owedToCompany);
     _walletId = data.wallets.isNotEmpty ? data.wallets.first.id : null;
   }
 
@@ -68,7 +65,10 @@ class _CollectionViewState extends State<CollectionView> {
     final sender = _toLatinDigits(_sender.text).replaceAll(RegExp(r'[\s-]'), '');
     final account = _account.text.trim().toLowerCase().replaceAll(' ', '');
     final name = _name.text.trim();
-    final amount = double.tryParse(_toLatinDigits(_amount.text).trim());
+    // The captain doesn't type the amount: he transfers exactly what he owes,
+    // rounded down to whole pounds (piasters are dropped so the receipt SMS
+    // matches on a clean number instead of stalling in review).
+    final amount = data.owedToCompany.floorToDouble();
     final validPhone = RegExp(r'^01[0125]\d{8}$').hasMatch(sender);
     if (wallet == null) {
       errorToast(context, 'اختار الحساب', 'اختار رقم أو حساب الشركة اللي حوّلت عليه');
@@ -96,8 +96,8 @@ class _CollectionViewState extends State<CollectionView> {
       errorToast(context, 'راجع الرقم', 'اكتب رقم المحفظة اللي حوّلت منها (11 رقم)');
       return;
     }
-    if (amount == null || amount < 1) {
-      errorToast(context, 'راجع المبلغ', 'اكتب المبلغ اللي حوّلته بالظبط');
+    if (amount < 1) {
+      errorToast(context, 'مفيش مبلغ', 'مفيش مستحقات مطلوبة للتحويل دلوقتي');
       return;
     }
     FocusScope.of(context).unfocus();
@@ -139,8 +139,9 @@ class _CollectionViewState extends State<CollectionView> {
           }
           _prefill(data);
           final pending = data.pending;
+          final transferAmount = data.owedToCompany.floorToDouble();
           final showForm = data.enabled &&
-              data.owedToCompany > 0 &&
+              transferAmount >= 1 &&
               pending?.isPending != true;
           return RefreshIndicator(
             onRefresh: () => context.read<CollectionCubit>().refresh(),
@@ -215,17 +216,12 @@ class _CollectionViewState extends State<CollectionView> {
                       Icons.phone_android,
                     ),
                   SizedBox(height: 10.h),
-                  _field(
-                    _amount,
-                    'المبلغ اللي حوّلته بالظبط',
-                    Icons.payments_outlined,
-                    decimal: true,
-                  ),
+                  _AmountBox(amount: transferAmount),
                   SizedBox(height: 8.h),
                   Text(
                     _selected(data)?.isInstaPay == true
-                        ? 'لازم المبلغ والعنوان والاسم يكونوا زي اللي في التحويل بالظبط، علشان التأكيد يتم تلقائي.'
-                        : 'لازم الرقم والمبلغ يكونوا نفس اللي في رسالة التحويل بالظبط، علشان التأكيد يتم تلقائي.',
+                        ? 'حوّل المبلغ ده بالظبط (${_money(transferAmount)})، والعنوان والاسم زي اللي في انستاباي، علشان التأكيد يتم تلقائي.'
+                        : 'حوّل المبلغ ده بالظبط (${_money(transferAmount)}) من نفس الرقم، علشان التأكيد يتم تلقائي.',
                     style: AppStyle.hint,
                   ),
                   SizedBox(height: 16.h),
@@ -495,6 +491,37 @@ class _WalletTile extends StatelessWidget {
   }
 }
 
+/// Read-only amount the captain must transfer (he can't change it).
+class _AmountBox extends StatelessWidget {
+  const _AmountBox({required this.amount});
+
+  final double amount;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: EdgeInsets.symmetric(horizontal: 16.w, vertical: 16.h),
+      decoration: BoxDecoration(
+        color: AppColors.darkGrey,
+        borderRadius: BorderRadius.circular(14.r),
+        border: Border.all(color: AppColors.primary.withValues(alpha: 0.5)),
+      ),
+      child: Row(
+        children: [
+          Icon(Icons.payments_outlined, color: AppColors.grey),
+          SizedBox(width: 10.w),
+          Text('المبلغ المطلوب تحويله', style: AppStyle.body),
+          const Spacer(),
+          Text(
+            _money(amount),
+            style: AppStyle.heading.copyWith(color: AppColors.primary),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _PendingCard extends StatelessWidget {
   const _PendingCard({
     required this.request,
@@ -642,9 +669,6 @@ class _Note extends StatelessWidget {
 
 String _money(double value) =>
     '${value.toStringAsFixed(value.truncateToDouble() == value ? 0 : 2)} ج.م';
-
-String _plain(double value) =>
-    value.toStringAsFixed(value.truncateToDouble() == value ? 0 : 2);
 
 String _toLatinDigits(String input) {
   const arabic = '٠١٢٣٤٥٦٧٨٩';

@@ -257,7 +257,7 @@ object Relay {
                     val r = results.getJSONObject(i)
                     val clientId = r.optString("clientId")
                     val status = r.optString("status")
-                    if (status == "stored" || status == "duplicate") acked += clientId
+                    if (status == "stored" || status == "duplicate" || status == "ignored") acked += clientId
                     if (status == "stored") sent++
                     val sms = bySender[clientId] ?: continue
                     if (status == "stored") {
