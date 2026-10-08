@@ -219,7 +219,7 @@ namespace Masafet_Elseka.Infrastructure.Services.UserService
             foreach (var token in user.RefreshTokens?.Where(t => t.RevokedOn == null) ?? Enumerable.Empty<RefreshToken>())
                 token.RevokedOn = DateTime.Now;
 
-            await _context.UserDevices.Where(d => d.UserId == userId)
+            await _context.Set<UserDevice>().Where(d => d.UserId == userId)
                 .ExecuteUpdateAsync(s => s.SetProperty(d => d.IsActive, false));
             await _context.SaveChangesAsync();
             return Response<string>.Success("ok", "تم حذف الحساب", 200);
