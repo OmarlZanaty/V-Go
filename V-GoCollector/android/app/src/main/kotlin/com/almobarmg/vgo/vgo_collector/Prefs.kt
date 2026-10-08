@@ -30,6 +30,24 @@ class Prefs(context: Context) {
         get() = sp.getString("senderHints", null)?.split('|')?.filter { it.isNotBlank() } ?: DEFAULT_HINTS
         set(v) = sp.edit().putString("senderHints", v.joinToString("|")).apply()
 
+    /** SMS / notifications containing one of these are forwarded whatever the sender. */
+    var instaPayKeywords: List<String>
+        get() = sp.getString("instaPayKeywords", null)?.split('|')?.filter { it.isNotBlank() } ?: DEFAULT_INSTAPAY
+        set(v) = sp.edit().putString("instaPayKeywords", v.joinToString("|")).apply()
+
+    /** Apps whose notifications are forwarded (the InstaPay app). */
+    var notificationPackages: List<String>
+        get() = sp.getString("notificationPackages", null)?.split('|')?.filter { it.isNotBlank() } ?: DEFAULT_PACKAGES
+        set(v) = sp.edit().putString("notificationPackages", v.joinToString("|")).apply()
+
+    /**
+     * Notifications waiting for the server (unlike SMS there is no inbox to re-read, so
+     * they're kept here until acknowledged). JSON array of {clientId, sender, body, at, pkg}.
+     */
+    var notificationQueue: String
+        get() = sp.getString("notificationQueue", "[]") ?: "[]"
+        set(v) = sp.edit().putString("notificationQueue", v).commit().let { }
+
     var lookbackHours: Int
         get() = sp.getInt("lookbackHours", 48)
         set(v) = sp.edit().putInt("lookbackHours", v.coerceIn(1, 24 * 14)).apply()
@@ -90,6 +108,8 @@ class Prefs(context: Context) {
 
     companion object {
         const val DEFAULT_URL = "https://vgo.almobarmg.com"
-        val DEFAULT_HINTS = listOf("vfcash", "vodafone", "vf", "etisalat", "e&", "eand", "emoney", "etisalatcash")
+        val DEFAULT_HINTS = listOf("vfcash", "vodafone", "vf", "etisalat", "e&", "eand", "emoney", "etisalatcash", "instapay")
+        val DEFAULT_INSTAPAY = listOf("instapay", "insta pay", "انستاباي", "إنستاباي", "انستا باي", "إنستا باي")
+        val DEFAULT_PACKAGES = listOf("com.egyptianbanks.instapay")
     }
 }

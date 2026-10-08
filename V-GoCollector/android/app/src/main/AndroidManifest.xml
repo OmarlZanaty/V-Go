@@ -41,6 +41,17 @@
                 android:value="Relays the company wallet's payment receipt SMS to the company server for reconciliation" />
         </service>
 
+        <!-- InstaPay payment notifications (app push / bank app push). -->
+        <service
+            android:name=".NotifListener"
+            android:exported="true"
+            android:label="V-Go تحصيل"
+            android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE">
+            <intent-filter>
+                <action android:name="android.service.notification.NotificationListenerService" />
+            </intent-filter>
+        </service>
+
         <receiver
             android:name=".SmsReceiver"
             android:exported="true"

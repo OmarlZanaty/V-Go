@@ -4,7 +4,15 @@ namespace Masafet_Elseka.Domain.Enums
     public enum WalletProvider
     {
         VodafoneCash = 1,
-        EtisalatCash = 2
+        EtisalatCash = 2,
+        InstaPay = 3   // InstaPay address / account; receipts come as app notifications or bank SMS
+    }
+
+    // Where the collector phone read the receipt from.
+    public enum WalletSmsSource
+    {
+        Sms = 1,
+        Notification = 2
     }
 
     // What the parser made of a relayed SMS.

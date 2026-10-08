@@ -13,16 +13,20 @@ class CollectionWallet extends Equatable {
     required this.phoneNumber,
     required this.holderName,
     required this.isOnline,
+    this.bankName,
   });
 
   final int id;
-  final String provider; // VodafoneCash | EtisalatCash
+  final String provider; // VodafoneCash | EtisalatCash | InstaPay
   final String providerLabel;
+  /// Mobile number, or the InstaPay address for InstaPay.
   final String phoneNumber;
   final String holderName;
+  final String? bankName;
   final bool isOnline;
 
   bool get isVodafone => provider == 'VodafoneCash';
+  bool get isInstaPay => provider == 'InstaPay';
 
   factory CollectionWallet.fromJson(Map<String, dynamic> json) =>
       CollectionWallet(
@@ -31,6 +35,7 @@ class CollectionWallet extends Equatable {
         providerLabel: json['providerLabel']?.toString() ?? '',
         phoneNumber: json['phoneNumber']?.toString() ?? '',
         holderName: json['holderName']?.toString() ?? '',
+        bankName: json['bankName']?.toString(),
         isOnline: json['isOnline'] == true,
       );
 
@@ -43,7 +48,9 @@ class CollectionRequest extends Equatable {
   const CollectionRequest({
     required this.id,
     required this.walletId,
-    required this.senderPhone,
+    this.senderPhone,
+    this.senderAccount,
+    this.senderName,
     required this.amount,
     required this.status,
     this.walletPhone,
@@ -58,7 +65,9 @@ class CollectionRequest extends Equatable {
   final int walletId;
   final String? walletPhone;
   final String? provider;
-  final String senderPhone;
+  final String? senderPhone;
+  final String? senderAccount;
+  final String? senderName;
   final double amount;
   /// Pending | Confirmed | NeedsReview | Rejected | Expired | Cancelled
   final String status;
@@ -69,6 +78,9 @@ class CollectionRequest extends Equatable {
 
   bool get isPending => status == 'Pending';
   bool get isOpen => status == 'Pending' || status == 'NeedsReview';
+
+  /// Who the transfer came from, as the captain wrote it.
+  String get senderLabel => senderPhone ?? senderAccount ?? senderName ?? '';
 
   String get statusLabel => switch (status) {
     'Pending' => 'في انتظار رسالة الاستلام',
@@ -86,7 +98,9 @@ class CollectionRequest extends Equatable {
         walletId: (json['walletId'] as num?)?.toInt() ?? 0,
         walletPhone: json['walletPhone']?.toString(),
         provider: json['provider']?.toString(),
-        senderPhone: json['senderPhone']?.toString() ?? '',
+        senderPhone: json['senderPhone']?.toString(),
+        senderAccount: json['senderAccount']?.toString(),
+        senderName: json['senderName']?.toString(),
         amount: _double(json['amount']),
         status: json['status']?.toString() ?? '',
         note: json['note']?.toString(),
@@ -118,6 +132,8 @@ class MyCollection extends Equatable {
     this.lockedSince,
     this.pending,
     this.lastSenderPhone,
+    this.lastSenderAccount,
+    this.lastSenderName,
     this.serverTime,
   });
 
@@ -135,6 +151,8 @@ class MyCollection extends Equatable {
   final CollectionRequest? pending;
   final List<CollectionRequest> recent;
   final String? lastSenderPhone;
+  final String? lastSenderAccount;
+  final String? lastSenderName;
   final DateTime? serverTime;
 
   factory MyCollection.fromJson(Map<String, dynamic> json) {
@@ -160,6 +178,8 @@ class MyCollection extends Equatable {
           : null,
       recent: list(json['recent']).map(CollectionRequest.fromJson).toList(),
       lastSenderPhone: json['lastSenderPhone']?.toString(),
+      lastSenderAccount: json['lastSenderAccount']?.toString(),
+      lastSenderName: json['lastSenderName']?.toString(),
       serverTime: _date(json['serverTime']),
     );
   }

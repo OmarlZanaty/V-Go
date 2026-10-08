@@ -759,6 +759,71 @@ async function collection() {
   check('cancel: twice refused', r.status === 400, r.text);
   await adjust(c4, 100); // back to 40, within tolerance
 
+  // ---------- 7b) InstaPay: app notifications / bank SMS, matched by amount + sender ----------
+  const notif = (key, appLabel, body, extra = {}) =>
+    collector('sms', key, { messages: [{ clientId: `e2e-n-${Date.now()}-${++seq}`, sender: appLabel, body, receivedAtMs: Date.now(), source: 'notification', package: 'com.egyptianbanks.instapay', ...extra }] });
+  r = await http('POST', 'Collection/admin/wallets', { token: A, body: { provider: 'InstaPay', phoneNumber: 'not-an-address', holderName: 'V-Go' } });
+  check('instapay: invalid address rejected', r.status === 400, r.text);
+  const ip = data(await http('POST', 'Collection/admin/wallets', { token: A, body: { provider: 'InstaPay', phoneNumber: 'VGo.Company@InstaPay', holderName: 'V-Go LLC', bankName: 'CIB', isActive: true, sortOrder: 3, deviceId: dev.id } }));
+  check('instapay: account added (address normalised, bank kept)', ip?.phoneNumber === 'vgo.company@instapay' && ip?.bankName === 'CIB', JSON.stringify(ip));
+  r = await collector('heartbeat', KEY, { appVersion: '1.1.0' });
+  check('instapay: collector told which apps / keywords to forward', data(r)?.notificationPackages?.length > 0 && data(r)?.instaPayKeywords?.length > 0, r.text);
+
+  const i1 = await approvedCaptain('Ali Captain');
+  const i2 = await approvedCaptain('Karim Weak');
+  const i3 = await approvedCaptain('Hany Fathy');
+  const i4 = await approvedCaptain('Sami Twin');
+  await adjust(i1, -60); await adjust(i2, -40); await adjust(i3, -55); await adjust(i4, -77);
+  m = await me(i1);
+  check('instapay: captain sees the instapay account', m?.wallets?.some((w) => w.provider === 'InstaPay' && w.phoneNumber === 'vgo.company@instapay' && w.bankName === 'CIB'), JSON.stringify(m?.wallets));
+
+  r = await http('POST', 'Collection/me/requests', { token: i1.token, body: { walletId: ip.id, senderAccount: 'ali.capt@instapay', amount: 60 } });
+  check('instapay: request needs the sender name', r.status === 400, r.text);
+  r = await http('POST', 'Collection/me/requests', { token: i1.token, body: { walletId: ip.id, senderName: 'Ali Captain', amount: 60 } });
+  check('instapay: request needs an address or number', r.status === 400, r.text);
+  r = await http('POST', 'Collection/me/requests', { token: i1.token, body: { walletId: ip.id, senderAccount: 'ali.capt@gmail.com', senderName: 'Ali Captain', amount: 60 } });
+  check('instapay: bad address rejected', r.status === 400, r.text);
+
+  // Strong match: address + name on the push.
+  r = await http('POST', 'Collection/me/requests', { token: i1.token, body: { walletId: ip.id, senderAccount: 'Ali.Capt@instapay', senderName: 'Ali Captain', amount: 60 } });
+  check('instapay: request filed', data(r)?.status === 'Pending' && data(r)?.senderAccount === 'ali.capt@instapay', r.text);
+  r = await notif(KEY, 'InstaPay', 'Money received\nYou have received EGP 60.00 from ALI CAPTAIN (ali.capt@instapay). Reference: 880000001');
+  check('instapay: push with address + name matched', smsResult(r)?.matchStatus === 'Matched', r.text);
+  check('instapay: debt cleared', (await balance(i1)) === 0);
+  // The bank's SMS for the same transfer a moment later.
+  r = await sms(KEY, 'CIB', 'Your account **4521 was credited with EGP 60.00 via InstaPay from ALI CAPTAIN on 08/10 21:14.');
+  check('instapay: same transfer as bank SMS parked as a twin', smsResult(r)?.matchStatus === 'Dismissed', r.text);
+  check('instapay: twin not credited again', (await balance(i1)) === 0);
+
+  // Weak match: the push says nothing about the sender; only one captain waits for 40.
+  r = await http('POST', 'Collection/me/requests', { token: i2.token, body: { walletId: ip.id, senderAccount: 'karim.w@instapay', senderName: 'Karim Weak', amount: 40 } });
+  r = await notif(KEY, 'InstaPay', 'تم استلام 40 جنيه عبر انستاباي');
+  check('instapay: no sender data, single waiting captain -> matched by amount', smsResult(r)?.matchStatus === 'Matched', r.text);
+  check('instapay: weak match credited', (await balance(i2)) === 0);
+
+  // Name contradicts the only candidate: not credited.
+  r = await http('POST', 'Collection/me/requests', { token: i3.token, body: { walletId: ip.id, senderAccount: 'hany.f@instapay', senderName: 'Hany Fathy', amount: 55 } });
+  r = await notif(KEY, 'InstaPay', 'You have received EGP 55.00 from MOSTAFA KAMAL');
+  check('instapay: different sender name is not credited', smsResult(r)?.matchStatus === 'Unclaimed' && (await balance(i3)) === -55, r.text);
+  const mk = smsResult(r);
+  r = await http('POST', `Collection/admin/sms/${mk.id}/dismiss`, { token: A, body: { note: 'مش تحويل كابتن' } });
+  r = await notif(KEY, 'InstaPay', 'You have received EGP 55.00 from HANY F*** (hany.f@instapay)');
+  check('instapay: masked name + address still matches', smsResult(r)?.matchStatus === 'Matched' && (await balance(i3)) === 0, r.text);
+
+  // Two captains wait for the same amount and the push identifies nobody.
+  await adjust(i1, -77);
+  r = await http('POST', 'Collection/me/requests', { token: i1.token, body: { walletId: ip.id, senderAccount: 'ali.capt@instapay', senderName: 'Ali Captain', amount: 77 } });
+  const i4req = data(await http('POST', 'Collection/me/requests', { token: i4.token, body: { walletId: ip.id, senderAccount: 'sami.t@instapay', senderName: 'Sami Twin', amount: 77 } }));
+  r = await notif(KEY, 'InstaPay', 'تم استلام 77 جنيه عبر انستاباي');
+  check('instapay: two captains, same amount, anonymous push -> review', smsResult(r)?.matchStatus === 'NeedsReview', r.text);
+  check('instapay: nobody credited automatically', (await balance(i1)) === -77 && (await balance(i4)) === -77);
+  const anonymous = smsResult(r);
+  r = await http('POST', `Collection/admin/sms/${anonymous?.id}/assign`, { token: A, body: { requestId: i4req.id } });
+  check('instapay: admin settles the ambiguous push to the right captain', r.status === 200 && (await balance(i4)) === 0, r.text);
+  const ipList = data(await http('GET', 'Collection/admin/sms?search=instapay&pageSize=50', { token: A }));
+  check('instapay: admin sees source, account and name', ipList?.data?.some((s) => s.source === 'Notification' && s.counterpartyAccount === 'ali.capt@instapay' && s.counterpartyName === 'ALI CAPTAIN'), JSON.stringify(ipList?.data?.slice(0, 2)));
+  await adjust(i1, 77); // back to zero for the lock checks below
+
   // ---------- 8) deadline lock ----------
   await adjust(c1, -120); // c1 owes 120 (> 50); c3 owes 110; c4 owes 40 (<= 50)
   r = await settings({ collectionNoticeHour: (H + 23) % 24, collectionDeadlineHour: H });

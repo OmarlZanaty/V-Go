@@ -59,6 +59,10 @@ class MainActivity : FlutterActivity() {
                         result.success(null)
                     }
                     "openAutostart" -> result.success(openAutostart())
+                    "openNotificationAccess" -> {
+                        startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
+                        result.success(null)
+                    }
                     else -> result.notImplemented()
                 }
             }
@@ -88,6 +92,8 @@ class MainActivity : FlutterActivity() {
             "wallets" to p.walletsJson,
             "log" to p.logJson,
             "smsPermission" to Relay.hasSmsPermission(this),
+            "notificationAccess" to NotifListener.hasAccess(this),
+            "queuedNotifications" to org.json.JSONArray(p.notificationQueue).length(),
             "ignoringBattery" to (pm?.isIgnoringBatteryOptimizations(packageName) == true),
             "manufacturer" to Build.MANUFACTURER,
             "sdk" to Build.VERSION.SDK_INT,

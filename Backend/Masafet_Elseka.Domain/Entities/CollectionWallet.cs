@@ -9,10 +9,14 @@ namespace Masafet_Elseka.Domain.Entities
     {
         public int Id { get; set; }
         public WalletProvider Provider { get; set; }
-        [MaxLength(20)]
+        // Wallet mobile number, or the InstaPay address (name@instapay) for InstaPay.
+        [MaxLength(100)]
         public string PhoneNumber { get; set; } = string.Empty;
         [MaxLength(100)]
         public string HolderName { get; set; } = string.Empty;
+        // InstaPay: the bank behind the address, shown to the captain.
+        [MaxLength(100)]
+        public string? BankName { get; set; }
         public bool IsActive { get; set; } = true;
         public int SortOrder { get; set; }
         // The collector phone holding this SIM (null = not assigned yet).

@@ -18,14 +18,18 @@ class CollectionRepo {
   /// waiting for the SMS, or sent to review).
   Future<(CollectionRequest, String?)> createRequest({
     required int walletId,
-    required String senderPhone,
+    String? senderPhone,
+    String? senderAccount,
+    String? senderName,
     required double amount,
   }) async {
     final response = await _api.post(
       EndPoint.collectionRequests,
       data: {
         'walletId': walletId,
-        'senderPhone': senderPhone,
+        'senderPhone': ?senderPhone,
+        'senderAccount': ?senderAccount,
+        'senderName': ?senderName,
         'amount': amount,
       },
     );

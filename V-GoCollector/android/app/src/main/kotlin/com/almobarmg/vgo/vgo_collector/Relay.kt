@@ -114,6 +114,7 @@ object Relay {
                 .put("battery", if (level >= 0) level * 100 / scale else JSONObject.NULL)
                 .put("charging", plugged)
                 .put("smsPermission", hasSmsPermission(context))
+                .put("notificationAccess", NotifListener.hasAccess(context))
                 .put("pending", p.pending)
                 .put("lastError", p.lastError ?: JSONObject.NULL)
             val http = request(p.baseUrl, "heartbeat", "POST", body, key)
@@ -124,8 +125,10 @@ object Relay {
                 return
             }
             val data = JSONObject(http.body).getJSONObject("data")
-            val hints = data.optJSONArray("senderHints")
-            if (hints != null && hints.length() > 0) p.senderHints = (0 until hints.length()).map { hints.getString(it) }
+            fun list(name: String) = data.optJSONArray(name)?.let { a -> (0 until a.length()).map { a.getString(it) } }
+            list("senderHints")?.takeIf { it.isNotEmpty() }?.let { p.senderHints = it }
+            list("instaPayKeywords")?.takeIf { it.isNotEmpty() }?.let { p.instaPayKeywords = it }
+            list("notificationPackages")?.takeIf { it.isNotEmpty() }?.let { p.notificationPackages = it }
             p.lookbackHours = data.optInt("lookbackHours", p.lookbackHours)
             p.heartbeatSeconds = data.optInt("heartbeatSeconds", p.heartbeatSeconds)
             p.deviceName = data.optString("deviceName", p.deviceName)
@@ -152,24 +155,67 @@ object Relay {
         return hints.any { h -> if (h == "vf") s.startsWith("vf") else s.contains(h) }
     }
 
-    private data class Sms(val clientId: String, val sender: String, val body: String, val date: Long)
+    private fun mentionsInstaPay(text: String?, keywords: List<String>) =
+        !text.isNullOrBlank() && keywords.any { text.contains(it, ignoreCase = true) }
 
-    /** Uploads every wallet SMS the server hasn't acknowledged. Returns how many were sent. */
+    private data class Sms(
+        val clientId: String, val sender: String, val body: String, val date: Long,
+        val source: String = "sms", val pkg: String? = null,
+    )
+
+    // ---------------------------------------------------------------- notifications
+
+    /** Keeps a payment notification until the server acknowledges it. */
+    @Synchronized
+    fun enqueueNotification(context: Context, clientId: String, sender: String, body: String, at: Long, pkg: String) {
+        val p = Prefs(context)
+        val queue = JSONArray(p.notificationQueue)
+        for (i in 0 until queue.length()) if (queue.getJSONObject(i).optString("clientId") == clientId) return
+        if (clientId in p.acked) return
+        queue.put(JSONObject().put("clientId", clientId).put("sender", sender).put("body", body).put("at", at).put("pkg", pkg))
+        // Bounded: the oldest go first if the phone stays offline for very long.
+        val trimmed = JSONArray()
+        for (i in maxOf(0, queue.length() - 300) until queue.length()) trimmed.put(queue.get(i))
+        p.notificationQueue = trimmed.toString()
+    }
+
+    private fun queuedNotifications(p: Prefs): List<Sms> {
+        val queue = JSONArray(p.notificationQueue)
+        return (0 until queue.length()).map { queue.getJSONObject(it) }.map {
+            Sms(it.optString("clientId"), it.optString("sender"), it.optString("body"), it.optLong("at"),
+                "notification", it.optString("pkg"))
+        }
+    }
+
+    private fun dropFromQueue(p: Prefs, done: Set<String>, olderThan: Long) {
+        val queue = JSONArray(p.notificationQueue)
+        val keep = JSONArray()
+        for (i in 0 until queue.length()) {
+            val o = queue.getJSONObject(i)
+            if (o.optString("clientId") !in done && o.optLong("at") >= olderThan) keep.put(o)
+        }
+        p.notificationQueue = keep.toString()
+    }
+
+    /**
+     * Uploads every wallet / InstaPay SMS and queued payment notification the server
+     * hasn't acknowledged. Returns how many were sent.
+     */
     @Synchronized
     fun sweep(context: Context, timeoutMs: Int = 15000): Int {
         val p = Prefs(context)
         val key = p.deviceKey ?: return 0
         if (!p.enabled) return 0
-        if (!hasSmsPermission(context)) {
-            p.lastError = "صلاحية قراءة الرسايل مقفولة"
-            return 0
-        }
 
         val since = System.currentTimeMillis() - p.lookbackHours * 3_600_000L
         val hints = p.senderHints
+        val keywords = p.instaPayKeywords
         val acked = p.acked.toMutableSet()
         val fresh = mutableListOf<Sms>()
-        try {
+        var smsError: String? = null
+        if (!hasSmsPermission(context)) {
+            smsError = "صلاحية قراءة الرسايل مقفولة"
+        } else try {
             context.contentResolver.query(
                 Uri.parse("content://sms/inbox"),
                 arrayOf("_id", "address", "body", "date"),
@@ -178,16 +224,20 @@ object Relay {
                 while (c.moveToNext()) {
                     val id = c.getLong(0)
                     val address = c.getString(1)
+                    val body = c.getString(2) ?: ""
                     val date = c.getLong(3)
                     val clientId = "sms-$id-$date"
-                    if (clientId in acked || !isWalletSender(address, hints)) continue
-                    fresh += Sms(clientId, address ?: "", c.getString(2) ?: "", date)
+                    if (clientId in acked) continue
+                    // Wallet senders, plus bank SMS about InstaPay (never personal numbers).
+                    val personal = address != null && Regex("^\\+?\\d{6,}$").matches(address.replace(" ", ""))
+                    if (!isWalletSender(address, hints) && (personal || !mentionsInstaPay(body, keywords))) continue
+                    fresh += Sms(clientId, address ?: "", body, date)
                 }
             }
         } catch (e: SecurityException) {
-            p.lastError = "صلاحية قراءة الرسايل مقفولة"
-            return 0
+            smsError = "صلاحية قراءة الرسايل مقفولة"
         }
+        fresh += queuedNotifications(p).filter { it.clientId !in acked }
 
         var sent = 0
         var failure: String? = null
@@ -195,7 +245,8 @@ object Relay {
             val messages = JSONArray()
             chunk.forEach {
                 messages.put(JSONObject().put("clientId", it.clientId).put("sender", it.sender)
-                    .put("body", it.body).put("receivedAtMs", it.date))
+                    .put("body", it.body).put("receivedAtMs", it.date)
+                    .put("source", it.source).put("package", it.pkg ?: JSONObject.NULL))
             }
             try {
                 val http = request(p.baseUrl, "sms", "POST", JSONObject().put("messages", messages), key, timeoutMs)
@@ -228,11 +279,12 @@ object Relay {
 
         // Forget acknowledgements older than the scan window (their messages won't be read again).
         val cutoff = since - 3_600_000L
+        dropFromQueue(p, acked, cutoff)
         p.acked = acked.filterTo(HashSet()) { id -> id.substringAfterLast('-').toLongOrNull()?.let { it >= cutoff } ?: false }
         p.pending = fresh.count { it.clientId !in acked }
         p.sentTotal = p.sentTotal + sent
         p.lastSweepAt = System.currentTimeMillis()
-        p.lastError = failure
+        p.lastError = failure ?: smsError
         return sent
     }
 }

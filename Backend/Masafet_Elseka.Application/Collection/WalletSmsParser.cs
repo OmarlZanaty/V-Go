@@ -11,9 +11,14 @@ namespace Masafet_Elseka.Application.Collection
         decimal? Amount,
         string? CounterpartyPhone,
         string? TxnRef,
-        decimal? BalanceAfter);
+        decimal? BalanceAfter,
+        // InstaPay transfers name the sender by address (name@instapay) and/or name
+        // instead of a phone number.
+        string? CounterpartyAccount = null,
+        string? CounterpartyName = null);
 
-    // Reads Vodafone Cash / Etisalat (e&) Cash notification SMS in Arabic or English,
+    // Reads Vodafone Cash / Etisalat (e&) Cash SMS and InstaPay notifications (the
+    // InstaPay app, or a bank's SMS / push about an InstaPay transfer) in Arabic or English,
     // with Western or Arabic-Indic digits. Pure and stateless so it can be unit-tested
     // against real messages. Only "money received" messages can ever be matched to a
     // captain; everything else is classified so it shows up correctly for review.
@@ -23,7 +28,17 @@ namespace Masafet_Elseka.Application.Collection
 
         // Sender ids the collector phone forwards. Matched against the sender with spaces,
         // dashes and underscores removed, lower-cased.
-        public static readonly string[] SenderHints = { "vfcash", "vodafone", "vf", "etisalat", "e&", "eand", "emoney", "etisalatcash" };
+        public static readonly string[] SenderHints = { "vfcash", "vodafone", "vf", "etisalat", "e&", "eand", "emoney", "etisalatcash", "instapay" };
+
+        // Any SMS or app notification containing one of these is forwarded too: bank SMS
+        // and bank-app pushes about InstaPay transfers come from many different senders.
+        public static readonly string[] InstaPayKeywords = { "instapay", "insta pay", "انستاباي", "إنستاباي", "انستا باي", "إنستا باي" };
+
+        // Apps whose notifications the collector phone forwards (besides keyword matches).
+        public static readonly string[] NotificationPackages = { "com.egyptianbanks.instapay" };
+
+        public static bool MentionsInstaPay(string? text) =>
+            !string.IsNullOrEmpty(text) && InstaPayKeywords.Any(k => text.Contains(k, StringComparison.OrdinalIgnoreCase));
 
         public static WalletProvider? ProviderFromSender(string? sender)
         {
@@ -32,6 +47,7 @@ namespace Masafet_Elseka.Application.Collection
             if (s.Contains("vodafone") || s.StartsWith("vf")) return WalletProvider.VodafoneCash;
             if (s.Contains("etisalat") || s.Contains("e&") || s.StartsWith("eand") || s.Contains("emoney"))
                 return WalletProvider.EtisalatCash;
+            if (s.Contains("instapay")) return WalletProvider.InstaPay;
             return null;
         }
 
@@ -81,6 +97,13 @@ namespace Masafet_Elseka.Application.Collection
         private static readonly Regex FeeCue = new(@"رسوم|مصاريف|مصروفات|عمولة|fees?|charges?|commission", Opt);
 
         // ---- phone / reference ----
+
+        private static readonly Regex InstaPayAddress = new(@"([A-Za-z0-9][A-Za-z0-9._\-]{1,60}@instapay)\b", Opt);
+        // Sender name after "from / من" up to the next field (address, date, reference...).
+        private static readonly Regex NameAfterFrom = new(
+            @"(?:^|[\s:،,(])(?:from|من|بواسطة|المرسل|sender)\s*[:：]?\s*(?<name>[\p{L}*][\p{L}\s.'*\-]{1,60}?)\s*(?=$|[(\[،,.;:|\d]|\s(?:on|at|via|ref|بتاريخ|يوم|في|عبر|على|رقم|الساعة|to|الى|إلى)(?:\s|$))",
+            Opt);
+        private static readonly string[] NotNames = { "رقم", "الرقم", "محفظة", "حساب", "number", "account", "wallet", "mobile", "instapay", "انستاباي" };
 
         private static readonly Regex Phone = new(@"(?<!\d)(?:\+?2|002)?(01[0125]\d{8})(?!\d)", Opt);
         private static readonly Regex FromCue = new(@"(?:^|[\s:،,(])(?:من|from|by|بواسطة)(?:\s+(?:رقم|الرقم|محفظة|number|wallet|mobile))?\s*[:：]?\s*$", Opt);
@@ -163,17 +186,32 @@ namespace Masafet_Elseka.Application.Collection
                 if (token.Count(char.IsDigit) >= 5 && token != phone) { reference = token; break; }
             }
 
+            var account = InstaPayAddress.Matches(text)
+                .Select(m => m.Groups[1].Value.ToLowerInvariant())
+                .FirstOrDefault(x => !own.Contains(x));
+            string? name = null;
+            foreach (Match m in NameAfterFrom.Matches(text))
+            {
+                var candidate = Regex.Replace(m.Groups["name"].Value, @"\s{2,}", " ").Trim(' ', '.', '-', '*');
+                if (candidate.Length < 3 || NotNames.Any(n => candidate.StartsWith(n, StringComparison.OrdinalIgnoreCase))) continue;
+                name = candidate;
+                break;
+            }
+            // The InstaPay app itself, or a bank SMS / push about an InstaPay transfer.
+            if (provider == null && (account != null || MentionsInstaPay(text))) provider = WalletProvider.InstaPay;
+
             WalletSmsKind kind;
             if (Failed.IsMatch(text))
                 kind = WalletSmsKind.Ignored;
             else if (Incoming.IsMatch(text) && !OutgoingDominates(text))
-                kind = amount != null ? WalletSmsKind.Incoming : (phone != null ? WalletSmsKind.Unparsed : WalletSmsKind.Ignored);
+                kind = amount != null ? WalletSmsKind.Incoming
+                    : (phone != null || account != null || name != null) ? WalletSmsKind.Unparsed : WalletSmsKind.Ignored;
             else if (Outgoing.IsMatch(text))
                 kind = WalletSmsKind.Outgoing;
             else
                 kind = amount != null && phone != null ? WalletSmsKind.Unparsed : WalletSmsKind.Ignored;
 
-            return new(provider, kind, amount, phone, reference, balance);
+            return new(provider, kind, amount, phone, reference, balance, account, name);
         }
 
         // "تم تحويل مبلغ ... الى رقم ..." also contains "استلام" in some templates
@@ -185,6 +223,41 @@ namespace Masafet_Elseka.Application.Collection
             if (!o.Success) return false;
             if (Regex.IsMatch(text, @"(?:الى|إلى|لـ?)\s*(?:محفظتك|حسابك)|to your (?:wallet|account)", Opt)) return false;
             return o.Index < i.Index;
+        }
+
+        // InstaPay address in canonical lower-case form (name@instapay), or null.
+        public static string? NormalizeInstaPayAddress(string? raw)
+        {
+            if (string.IsNullOrWhiteSpace(raw)) return null;
+            var s = raw.Trim().ToLowerInvariant().Replace(" ", "");
+            return Regex.IsMatch(s, @"^[a-z0-9][a-z0-9._\-]{1,60}@instapay$") ? s : null;
+        }
+
+        private static List<string> NameTokens(string name)
+        {
+            // Normalize() already unifies the alef forms.
+            var s = Normalize(name).ToLowerInvariant().Replace('ة', 'ه').Replace('ى', 'ي');
+            // "عبد الله" / "abdel rahman" are one name however they're spaced.
+            s = Regex.Replace(s, @"(^|\s)(عبد|abd|abdel|abdul|abd el)\s+", "$1$2");
+            return Regex.Split(s, @"[^\p{L}]+").Where(t => t.Length >= 2).ToList();
+        }
+
+        // Does a name on a receipt (often shortened or masked: "MOHAMED A***") belong to
+        // the name the captain typed? null when they can't be compared (Arabic vs Latin).
+        public static bool? NamesMatch(string? a, string? b)
+        {
+            if (string.IsNullOrWhiteSpace(a) || string.IsNullOrWhiteSpace(b)) return null;
+            var x = NameTokens(a);
+            var y = NameTokens(b);
+            if (x.Count == 0 || y.Count == 0) return null;
+            static bool Latin(List<string> t) => t.All(w => w.All(c => c < 128));
+            if (Latin(x) != Latin(y)) return null;
+
+            var shared = x.Intersect(y).Count();
+            if (shared >= 2) return true;
+            // One side is just a first name (or the rest is masked): the first names agree.
+            if ((x.Count == 1 || y.Count == 1) && x[0] == y[0]) return true;
+            return false;
         }
 
         // Egyptian mobile in the canonical 01XXXXXXXXX form, or null.

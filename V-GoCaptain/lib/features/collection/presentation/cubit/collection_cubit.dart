@@ -53,7 +53,9 @@ class CollectionCubit extends Cubit<CollectionState> {
 
   Future<bool> submit({
     required int walletId,
-    required String senderPhone,
+    String? senderPhone,
+    String? senderAccount,
+    String? senderName,
     required double amount,
   }) async {
     emit(state.copyWith(submitting: true, clearError: true, clearSuccess: true));
@@ -61,6 +63,8 @@ class CollectionCubit extends Cubit<CollectionState> {
       final (request, message) = await _repo.createRequest(
         walletId: walletId,
         senderPhone: senderPhone,
+        senderAccount: senderAccount,
+        senderName: senderName,
         amount: amount,
       );
       if (isClosed) return false;

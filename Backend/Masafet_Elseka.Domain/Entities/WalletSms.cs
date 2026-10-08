@@ -19,6 +19,10 @@ namespace Masafet_Elseka.Domain.Entities
         public string Body { get; set; } = string.Empty;
         public DateTime ReceivedAt { get; set; }  // when the phone got it (Egypt time)
         public DateTime IngestedAt { get; set; }
+        public WalletSmsSource Source { get; set; } = WalletSmsSource.Sms;
+        // For notifications: the app that posted it.
+        [MaxLength(100)]
+        public string? SourcePackage { get; set; }
 
         public WalletProvider? Provider { get; set; }
         public int? WalletId { get; set; }
@@ -27,6 +31,11 @@ namespace Masafet_Elseka.Domain.Entities
         public decimal? Amount { get; set; }
         [MaxLength(20)]
         public string? CounterpartyPhone { get; set; }
+        // InstaPay: the sender's address (name@instapay) and / or name.
+        [MaxLength(100)]
+        public string? CounterpartyAccount { get; set; }
+        [MaxLength(100)]
+        public string? CounterpartyName { get; set; }
         [MaxLength(60)]
         public string? TxnRef { get; set; }
         [Column(TypeName = "decimal(18,2)")]

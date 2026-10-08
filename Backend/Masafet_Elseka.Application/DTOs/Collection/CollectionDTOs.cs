@@ -5,10 +5,12 @@ namespace Masafet_Elseka.Application.DTOs.Collection
     public class CollectionWalletDTO
     {
         public int Id { get; set; }
-        public string Provider { get; set; } = string.Empty;      // VodafoneCash | EtisalatCash
+        public string Provider { get; set; } = string.Empty;      // VodafoneCash | EtisalatCash | InstaPay
         public string ProviderLabel { get; set; } = string.Empty; // فودافون كاش ...
+        // Mobile number, or the InstaPay address for InstaPay.
         public string PhoneNumber { get; set; } = string.Empty;
         public string HolderName { get; set; } = string.Empty;
+        public string? BankName { get; set; }
         // The collector phone holding this SIM reported in recently, so a transfer
         // will be confirmed within minutes.
         public bool IsOnline { get; set; }
@@ -20,7 +22,9 @@ namespace Masafet_Elseka.Application.DTOs.Collection
         public int WalletId { get; set; }
         public string? WalletPhone { get; set; }
         public string? Provider { get; set; }
-        public string SenderPhone { get; set; } = string.Empty;
+        public string? SenderPhone { get; set; }
+        public string? SenderAccount { get; set; }
+        public string? SenderName { get; set; }
         public decimal Amount { get; set; }
         public string Status { get; set; } = string.Empty; // Pending | Confirmed | NeedsReview | Rejected | Expired | Cancelled
         public string? Note { get; set; }
@@ -48,13 +52,19 @@ namespace Masafet_Elseka.Application.DTOs.Collection
         public CollectionRequestDTO? Pending { get; set; }
         public List<CollectionRequestDTO> Recent { get; set; } = new();
         public string? LastSenderPhone { get; set; }
+        public string? LastSenderAccount { get; set; }
+        public string? LastSenderName { get; set; }
         public DateTime ServerTime { get; set; }
     }
 
     public class CreateCollectionRequestDTO
     {
         public int WalletId { get; set; }
-        public string SenderPhone { get; set; } = string.Empty;
+        // Mobile wallets: required. InstaPay: the sending address and / or number, plus
+        // the name it shows (at least one of the three).
+        public string? SenderPhone { get; set; }
+        public string? SenderAccount { get; set; }
+        public string? SenderName { get; set; }
         public decimal Amount { get; set; }
     }
 
@@ -80,6 +90,7 @@ namespace Masafet_Elseka.Application.DTOs.Collection
         public int? Battery { get; set; }
         public bool? Charging { get; set; }
         public bool? SmsPermission { get; set; }
+        public bool? NotificationAccess { get; set; } // InstaPay notifications
         public int? Pending { get; set; }       // messages queued on the phone, not yet uploaded
         public long? LastInboxId { get; set; }
         public string? LastError { get; set; }
@@ -97,6 +108,10 @@ namespace Masafet_Elseka.Application.DTOs.Collection
         public string DeviceName { get; set; } = string.Empty;
         public DateTime ServerTime { get; set; }
         public List<string> SenderHints { get; set; } = new();
+        // SMS / notifications containing one of these are forwarded whatever the sender.
+        public List<string> InstaPayKeywords { get; set; } = new();
+        // Apps whose notifications are forwarded.
+        public List<string> NotificationPackages { get; set; } = new();
         public List<CollectorWalletDTO> Wallets { get; set; } = new();
         // How far back the phone re-scans its inbox for anything it might have missed.
         public int LookbackHours { get; set; }
@@ -109,6 +124,8 @@ namespace Masafet_Elseka.Application.DTOs.Collection
         public string Sender { get; set; } = string.Empty;
         public string Body { get; set; } = string.Empty;
         public long ReceivedAtMs { get; set; } // unix epoch milliseconds from the phone
+        public string? Source { get; set; }    // "sms" (default) | "notification"
+        public string? Package { get; set; }   // notifications: the posting app
     }
 
     public class CollectorSmsBatchDTO
@@ -150,6 +167,10 @@ namespace Masafet_Elseka.Application.DTOs.Collection
         public string Kind { get; set; } = string.Empty;
         public decimal? Amount { get; set; }
         public string? CounterpartyPhone { get; set; }
+        public string? CounterpartyAccount { get; set; }
+        public string? CounterpartyName { get; set; }
+        public string Source { get; set; } = "Sms";
+        public string? SourcePackage { get; set; }
         public string? TxnRef { get; set; }
         public decimal? BalanceAfter { get; set; }
         public string MatchStatus { get; set; } = string.Empty;
@@ -179,6 +200,7 @@ namespace Masafet_Elseka.Application.DTOs.Collection
         public string Provider { get; set; } = string.Empty;
         public string PhoneNumber { get; set; } = string.Empty;
         public string HolderName { get; set; } = string.Empty;
+        public string? BankName { get; set; }
         public bool IsActive { get; set; } = true;
         public int SortOrder { get; set; }
         public Guid? DeviceId { get; set; }

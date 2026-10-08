@@ -80,6 +80,7 @@ class Status {
   int get pending => (raw['pending'] as num?)?.toInt() ?? 0;
   int get sentTotal => (raw['sentTotal'] as num?)?.toInt() ?? 0;
   bool get smsPermission => raw['smsPermission'] == true;
+  bool get notificationAccess => raw['notificationAccess'] == true;
   bool get ignoringBattery => raw['ignoringBattery'] == true;
   String get manufacturer => raw['manufacturer']?.toString() ?? '';
   int get sdk => (raw['sdk'] as num?)?.toInt() ?? 0;
@@ -393,7 +394,11 @@ class _StatusViewState extends State<StatusView> {
                   const Text('المحافظ على الموبايل ده', style: TextStyle(fontWeight: FontWeight.bold)),
                   const SizedBox(height: 6),
                   ...s.wallets.map((w) => Text(
-                        '${w['provider'] == 'VodafoneCash' ? 'فودافون كاش' : 'اتصالات كاش'}  ${w['phoneNumber']}',
+                        '${switch (w['provider']) {
+                          'VodafoneCash' => 'فودافون كاش',
+                          'EtisalatCash' => 'اتصالات كاش',
+                          _ => 'انستاباي',
+                        }}  ${w['phoneNumber']}',
                         textDirection: TextDirection.rtl,
                       )),
                 ],
@@ -469,6 +474,21 @@ class _Checklist extends StatelessWidget {
               child: TextButton(
                 onPressed: () => _native.invokeMethod('openAppSettings'),
                 child: const Text('افتح إعدادات التطبيق'),
+              ),
+            ),
+          _Step(
+            done: status.notificationAccess,
+            title: 'قراءة إشعارات انستاباي',
+            action: status.notificationAccess
+                ? null
+                : ('افتح', () => _native.invokeMethod('openNotificationAccess')),
+          ),
+          if (!status.notificationAccess)
+            const Padding(
+              padding: EdgeInsets.only(right: 34, bottom: 8),
+              child: Text(
+                'فعّل "V-Go تحصيل" في Notification access. لو مقفول: الإعدادات ← التطبيقات ← V-Go تحصيل ← ⋮ ← Allow restricted settings، وارجع فعّله. لازم تطبيق InstaPay (أو تطبيق البنك) يكون متسجّل عليه حساب الشركة والإشعارات شغالة.',
+                style: TextStyle(color: _orange, fontSize: 13),
               ),
             ),
           _Step(

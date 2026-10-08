@@ -24,6 +24,8 @@ class CollectionView extends StatefulWidget {
 
 class _CollectionViewState extends State<CollectionView> {
   final _sender = TextEditingController();
+  final _account = TextEditingController(); // InstaPay address
+  final _name = TextEditingController(); // name shown by InstaPay
   final _amount = TextEditingController();
   int? _walletId;
   bool _prefilled = false;
@@ -42,6 +44,8 @@ class _CollectionViewState extends State<CollectionView> {
   void dispose() {
     _clock?.cancel();
     _sender.dispose();
+    _account.dispose();
+    _name.dispose();
     _amount.dispose();
     super.dispose();
   }
@@ -50,18 +54,45 @@ class _CollectionViewState extends State<CollectionView> {
     if (_prefilled) return;
     _prefilled = true;
     _sender.text = data.lastSenderPhone ?? '';
+    _account.text = data.lastSenderAccount ?? '';
+    _name.text = data.lastSenderName ?? '';
     if (data.owedToCompany > 0) _amount.text = _plain(data.owedToCompany);
     _walletId = data.wallets.isNotEmpty ? data.wallets.first.id : null;
   }
 
+  CollectionWallet? _selected(MyCollection data) =>
+      data.wallets.where((w) => w.id == _walletId).firstOrNull;
+
   Future<void> _submit(MyCollection data) async {
+    final wallet = _selected(data);
     final sender = _toLatinDigits(_sender.text).replaceAll(RegExp(r'[\s-]'), '');
+    final account = _account.text.trim().toLowerCase().replaceAll(' ', '');
+    final name = _name.text.trim();
     final amount = double.tryParse(_toLatinDigits(_amount.text).trim());
-    if (_walletId == null) {
-      errorToast(context, 'اختار المحفظة', 'اختار رقم الشركة اللي حوّلت عليه');
+    final validPhone = RegExp(r'^01[0125]\d{8}$').hasMatch(sender);
+    if (wallet == null) {
+      errorToast(context, 'اختار الحساب', 'اختار رقم أو حساب الشركة اللي حوّلت عليه');
       return;
     }
-    if (!RegExp(r'^01[0125]\d{8}$').hasMatch(sender)) {
+    if (wallet.isInstaPay) {
+      if (account.isNotEmpty &&
+          !RegExp(r'^[a-z0-9][a-z0-9._\-]{1,60}@instapay$').hasMatch(account)) {
+        errorToast(context, 'راجع العنوان', 'عنوان انستاباي بيبقى بالشكل name@instapay');
+        return;
+      }
+      if (sender.isNotEmpty && !validPhone) {
+        errorToast(context, 'راجع الرقم', 'رقم الموبايل لازم يكون 11 رقم');
+        return;
+      }
+      if (account.isEmpty && sender.isEmpty) {
+        errorToast(context, 'ناقص بيانات', 'اكتب عنوان انستاباي أو رقم الموبايل اللي حوّلت منه');
+        return;
+      }
+      if (name.length < 3) {
+        errorToast(context, 'ناقص بيانات', 'اكتب اسمك زي ما بيظهر في انستاباي');
+        return;
+      }
+    } else if (!validPhone) {
       errorToast(context, 'راجع الرقم', 'اكتب رقم المحفظة اللي حوّلت منها (11 رقم)');
       return;
     }
@@ -71,8 +102,10 @@ class _CollectionViewState extends State<CollectionView> {
     }
     FocusScope.of(context).unfocus();
     await context.read<CollectionCubit>().submit(
-      walletId: _walletId!,
-      senderPhone: sender,
+      walletId: wallet.id,
+      senderPhone: sender.isEmpty ? null : sender,
+      senderAccount: wallet.isInstaPay && account.isNotEmpty ? account : null,
+      senderName: name.isEmpty ? null : name,
       amount: amount,
     );
   }
@@ -138,7 +171,7 @@ class _CollectionViewState extends State<CollectionView> {
                 ],
                 if (showForm) ...[
                   SizedBox(height: 18.h),
-                  _StepTitle(number: 1, text: 'حوّل المبلغ على رقم من أرقام الشركة'),
+                  _StepTitle(number: 1, text: 'حوّل المبلغ على محفظة أو حساب انستاباي للشركة'),
                   SizedBox(height: 10.h),
                   ...data.wallets.map(
                     (w) => _WalletTile(
@@ -155,11 +188,32 @@ class _CollectionViewState extends State<CollectionView> {
                   SizedBox(height: 18.h),
                   _StepTitle(number: 2, text: 'اكتب بيانات التحويل اللي عملته'),
                   SizedBox(height: 10.h),
-                  _field(
-                    _sender,
-                    'رقم المحفظة اللي حوّلت منها',
-                    Icons.phone_android,
-                  ),
+                  if (_selected(data)?.isInstaPay == true) ...[
+                    _field(
+                      _account,
+                      'عنوان انستاباي اللي حوّلت منه (name@instapay)',
+                      Icons.alternate_email,
+                      keyboard: TextInputType.emailAddress,
+                    ),
+                    SizedBox(height: 10.h),
+                    _field(
+                      _sender,
+                      'أو رقم الموبايل المربوط بانستاباي (اختياري)',
+                      Icons.phone_android,
+                    ),
+                    SizedBox(height: 10.h),
+                    _field(
+                      _name,
+                      'اسمك زي ما بيظهر في انستاباي',
+                      Icons.person_outline,
+                      keyboard: TextInputType.name,
+                    ),
+                  ] else
+                    _field(
+                      _sender,
+                      'رقم المحفظة اللي حوّلت منها',
+                      Icons.phone_android,
+                    ),
                   SizedBox(height: 10.h),
                   _field(
                     _amount,
@@ -169,7 +223,9 @@ class _CollectionViewState extends State<CollectionView> {
                   ),
                   SizedBox(height: 8.h),
                   Text(
-                    'لازم الرقم والمبلغ يكونوا نفس اللي في رسالة التحويل بالظبط، علشان التأكيد يتم تلقائي.',
+                    _selected(data)?.isInstaPay == true
+                        ? 'لازم المبلغ والعنوان والاسم يكونوا زي اللي في التحويل بالظبط، علشان التأكيد يتم تلقائي.'
+                        : 'لازم الرقم والمبلغ يكونوا نفس اللي في رسالة التحويل بالظبط، علشان التأكيد يتم تلقائي.',
                     style: AppStyle.hint,
                   ),
                   SizedBox(height: 16.h),
@@ -212,12 +268,14 @@ class _CollectionViewState extends State<CollectionView> {
     String hint,
     IconData icon, {
     bool decimal = false,
+    TextInputType? keyboard,
   }) {
     return TextField(
       controller: controller,
-      keyboardType: decimal
-          ? const TextInputType.numberWithOptions(decimal: true)
-          : TextInputType.phone,
+      keyboardType: keyboard ??
+          (decimal
+              ? const TextInputType.numberWithOptions(decimal: true)
+              : TextInputType.phone),
       style: AppStyle.body,
       decoration: InputDecoration(
         labelText: hint,
@@ -348,7 +406,11 @@ class _WalletTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final brand = wallet.isVodafone ? const Color(0xFFE60000) : const Color(0xFF6CBE45);
+    final brand = wallet.isVodafone
+        ? const Color(0xFFE60000)
+        : wallet.isInstaPay
+        ? const Color(0xFF9B59D0)
+        : const Color(0xFF6CBE45);
     return GestureDetector(
       onTap: onTap,
       child: Container(
@@ -390,10 +452,18 @@ class _WalletTile extends StatelessWidget {
                     textDirection: TextDirection.ltr,
                     child: Text(
                       wallet.phoneNumber,
-                      style: AppStyle.title.copyWith(letterSpacing: 1.2),
+                      style: AppStyle.title.copyWith(
+                        letterSpacing: wallet.isInstaPay ? 0 : 1.2,
+                      ),
                     ),
                   ),
-                  Text(wallet.holderName, style: AppStyle.hint),
+                  Text(
+                    [wallet.holderName, wallet.bankName]
+                        .whereType<String>()
+                        .where((s) => s.isNotEmpty)
+                        .join(' — '),
+                    style: AppStyle.hint,
+                  ),
                   if (!wallet.isOnline)
                     Text(
                       'التأكيد على الرقم ده ممكن يتأخر شوية',
@@ -403,12 +473,18 @@ class _WalletTile extends StatelessWidget {
               ),
             ),
             IconButton(
-              tooltip: 'نسخ الرقم',
+              tooltip: wallet.isInstaPay ? 'نسخ العنوان' : 'نسخ الرقم',
               icon: const Icon(Icons.copy_rounded, color: AppColors.primary),
               onPressed: () async {
                 await Clipboard.setData(ClipboardData(text: wallet.phoneNumber));
                 if (context.mounted) {
-                  successToast(context, 'اتنسخ', 'رقم ${wallet.providerLabel} اتنسخ');
+                  successToast(
+                    context,
+                    'اتنسخ',
+                    wallet.isInstaPay
+                        ? 'عنوان انستاباي اتنسخ'
+                        : 'رقم ${wallet.providerLabel} اتنسخ',
+                  );
                 }
               },
             ),
@@ -467,7 +543,7 @@ class _PendingCard extends StatelessWidget {
           ),
           SizedBox(height: 8.h),
           Text(
-            'تحويل ${_money(request.amount)} من ${request.senderPhone}',
+            'تحويل ${_money(request.amount)} من ${request.senderLabel}',
             style: AppStyle.body,
           ),
           SizedBox(height: 6.h),
@@ -528,7 +604,7 @@ class _HistoryTile extends StatelessWidget {
           ),
           SizedBox(height: 4.h),
           Text(
-            'من ${request.senderPhone}  •  ${_dateTime(request.createdAt)}',
+            'من ${request.senderLabel}  •  ${_dateTime(request.createdAt)}',
             style: AppStyle.hint,
           ),
           if ((request.note ?? '').isNotEmpty)

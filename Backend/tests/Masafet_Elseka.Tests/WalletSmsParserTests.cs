@@ -153,6 +153,72 @@ namespace Masafet_Elseka.Tests
             Assert.Equal(WalletSmsKind.Unparsed, r.Kind);
         }
 
+        // ---- InstaPay (app notification / bank SMS) ----
+
+        [Fact]
+        public void InstaPay_english_notification_with_name_and_address()
+        {
+            var r = WalletSmsParser.Parse("InstaPay",
+                "Money received\nYou have received EGP 350.00 from MOHAMED AHMED (mohamed.ahmed@instapay). Reference: 7788990011");
+            Assert.Equal(WalletProvider.InstaPay, r.Provider);
+            Assert.Equal(WalletSmsKind.Incoming, r.Kind);
+            Assert.Equal(350m, r.Amount);
+            Assert.Equal("mohamed.ahmed@instapay", r.CounterpartyAccount);
+            Assert.Equal("MOHAMED AHMED", r.CounterpartyName);
+            Assert.Null(r.CounterpartyPhone);
+            Assert.Equal("7788990011", r.TxnRef);
+        }
+
+        [Fact]
+        public void InstaPay_arabic_notification_name_only()
+        {
+            var r = WalletSmsParser.Parse("إنستاباي", "تم استلام 120 جنيه من محمد علي حسن عبر انستاباي");
+            Assert.Equal(WalletProvider.InstaPay, r.Provider);
+            Assert.Equal(WalletSmsKind.Incoming, r.Kind);
+            Assert.Equal(120m, r.Amount);
+            Assert.Equal("محمد علي حسن", r.CounterpartyName);
+        }
+
+        [Fact]
+        public void Bank_sms_about_instapay_is_instapay()
+        {
+            var r = WalletSmsParser.Parse("CIB",
+                "Your account **4521 was credited with EGP 275.50 via InstaPay from AHMED S*** on 08/10 21:14. Ref 556677");
+            Assert.Equal(WalletProvider.InstaPay, r.Provider);
+            Assert.Equal(WalletSmsKind.Incoming, r.Kind);
+            Assert.Equal(275.50m, r.Amount);
+            Assert.Equal("AHMED S", r.CounterpartyName);
+        }
+
+        [Fact]
+        public void Company_own_instapay_address_is_not_the_sender()
+        {
+            var r = WalletSmsParser.Parse("InstaPay",
+                "vgo@instapay: You have received EGP 90 from sara@instapay",
+                new[] { "vgo@instapay" });
+            Assert.Equal("sara@instapay", r.CounterpartyAccount);
+        }
+
+        [Theory]
+        [InlineData("MOHAMED AHMED", "Mohamed Ahmed Ali", true)]
+        [InlineData("MOHAMED A", "mohamed ahmed", true)]
+        [InlineData("AHMED S", "Ahmed Samir", true)]
+        [InlineData("محمد علي حسن", "محمد علي", true)]
+        [InlineData("عبد الله محمود", "عبدالله محمود", true)]
+        [InlineData("أحمد", "احمد سمير", true)]
+        [InlineData("MOHAMED AHMED", "Karim Hassan", false)]
+        [InlineData("محمد علي", "كريم حسن", false)]
+        [InlineData("MOHAMED AHMED", "محمد احمد", null)]
+        public void Names_match(string a, string b, bool? expected) =>
+            Assert.Equal(expected, WalletSmsParser.NamesMatch(a, b));
+
+        [Fact]
+        public void Normalize_instapay_address()
+        {
+            Assert.Equal("ali.m@instapay", WalletSmsParser.NormalizeInstaPayAddress(" Ali.M@InstaPay "));
+            Assert.Null(WalletSmsParser.NormalizeInstaPayAddress("ali@gmail.com"));
+        }
+
         [Theory]
         [InlineData("01012345678", "01012345678")]
         [InlineData("+20 101 234 5678", "01012345678")]
