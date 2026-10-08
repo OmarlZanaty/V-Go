@@ -158,6 +158,11 @@ class AuthRepoImpl implements AuthRepo {
   }
 
   @override
+  Future<void> deleteAccount() async {
+    await _apiServices.delete(EndPoint.deleteMyAccount);
+  }
+
+  @override
   Future<String> changePassword(
     String email,
     String oldPassword,

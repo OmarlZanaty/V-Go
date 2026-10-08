@@ -4,6 +4,7 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/widgets.dart';
 
+import '../../firebase_options.dart';
 import '../cache/cache_helper.dart';
 import '../helpers/navigation_handler.dart';
 import '../routing/routes.dart';
@@ -91,7 +92,7 @@ Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
   WidgetsFlutterBinding.ensureInitialized();
   try {
     if (Firebase.apps.isEmpty) {
-      await Firebase.initializeApp();
+      await Firebase.initializeApp(options: CaptainFirebaseOptions.currentPlatform);
     }
   } catch (_) {
     // Best-effort: never crash the background isolate.

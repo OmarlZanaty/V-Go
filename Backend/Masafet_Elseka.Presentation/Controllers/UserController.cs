@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
+using System.Security.Claims;
 
 namespace Masafet_Elseka.Presentation.Controllers
 {
@@ -61,6 +62,17 @@ namespace Masafet_Elseka.Presentation.Controllers
                 return StatusCode(result.StatusCode, result.Data);
             }
             return StatusCode(result.StatusCode, new { message = result.Message });
+        }
+
+        // The signed-in rider / captain deletes his own account.
+        [HttpDelete("me")]
+        [Authorize(AuthenticationSchemes = JwtBearerDefaults.AuthenticationScheme)]
+        public async Task<IActionResult> DeleteMyAccount()
+        {
+            var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+            if (string.IsNullOrEmpty(userId)) return Unauthorized();
+            var result = await _userService.DeleteOwnAccountAsync(userId);
+            return StatusCode(result.StatusCode, new { isSuccess = result.IsSuccess, message = result.Message });
         }
 
         [HttpPost("remove")]

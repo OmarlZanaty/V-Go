@@ -293,6 +293,24 @@ class AuthCubit extends Cubit<AuthState> {
     }
   }
 
+  /// Deletes the account on the server, then signs out like [logout] (same states).
+  Future<void> deleteAccount() async {
+    emit(state.copyWith(status: AuthStatus.logoutLoading));
+    try {
+      await _authRepo.deleteAccount();
+      await _clearData();
+      emit(state.copyWith(status: AuthStatus.logoutSuccess));
+    } catch (e) {
+      if (isClosed) return;
+      emit(
+        state.copyWith(
+          status: AuthStatus.logoutFailure,
+          errorMessage: ServerFailure.fromError(e).errMessage,
+        ),
+      );
+    }
+  }
+
   Future<void> _clearData() async {
     await Future.wait(<Future<void>>[
       CacheHelper.clearAllSecuredData(),

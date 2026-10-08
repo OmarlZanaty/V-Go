@@ -189,6 +189,42 @@ namespace Masafet_Elseka.Infrastructure.Services.UserService
                 return Response<UserDTO>.Failure($"حدث خطأ أثناء جلب بيانات المستخدم", 500);
             }
         }
+        // Self-service deletion. The account is closed for good: it can't sign in, its
+        // devices stop getting pushes, and its contact identifiers are released so the
+        // same phone / email can register again. Trip and finance records stay for the
+        // company's accounting (linked to the closed account, not to a reachable person).
+        public async Task<Response<string>> DeleteOwnAccountAsync(string userId)
+        {
+            var user = await _context.Users.Include(u => u.RefreshTokens)
+                .FirstOrDefaultAsync(u => u.Id == userId);
+            if (user == null) return Response<string>.Failure("الحساب غير موجود", 404);
+
+            var tag = $"deleted-{user.Id}";
+            user.IsDeleted = true;
+            user.IsAvailable = false;
+            user.LockoutEnabled = true;
+            user.LockoutEnd = DateTimeOffset.MaxValue;
+            user.UserName = tag;
+            user.NormalizedUserName = tag.ToUpperInvariant();
+            user.Email = null;
+            user.NormalizedEmail = null;
+            user.EmailConfirmed = false;
+            user.PhoneNumber = null;
+            user.PhoneNumberConfirmed = false;
+            user.ProfilePicture = null;
+            user.NationalId = null;
+            user.PayoutAccount = null;
+            user.PayoutAccountName = null;
+            user.SecurityStamp = Guid.NewGuid().ToString();
+            foreach (var token in user.RefreshTokens?.Where(t => t.RevokedOn == null) ?? Enumerable.Empty<RefreshToken>())
+                token.RevokedOn = DateTime.Now;
+
+            await _context.UserDevices.Where(d => d.UserId == userId)
+                .ExecuteUpdateAsync(s => s.SetProperty(d => d.IsActive, false));
+            await _context.SaveChangesAsync();
+            return Response<string>.Success("ok", "تم حذف الحساب", 200);
+        }
+
         public async Task<Response<BulkOperationResult>> RemoveUsersBulk(List<string> userIds)
         {
             try

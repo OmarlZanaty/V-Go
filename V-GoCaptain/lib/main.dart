@@ -7,6 +7,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 
 import 'core/cache/cache_helper.dart';
+import 'firebase_options.dart';
 import 'core/di/di.dart';
 import 'core/services/firebase_notification_service.dart';
 import 'core/services/local_notification_service.dart';
@@ -27,7 +28,7 @@ void main() async {
   // or an init failure must never block the app from starting.
   try {
     if (Firebase.apps.isEmpty) {
-      await Firebase.initializeApp();
+      await Firebase.initializeApp(options: CaptainFirebaseOptions.currentPlatform);
     }
     _initCrashReporting();
     FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);

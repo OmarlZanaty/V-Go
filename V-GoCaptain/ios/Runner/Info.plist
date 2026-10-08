@@ -7,7 +7,7 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
 	<key>CFBundleDisplayName</key>
-	<string>V Go Captain</string>
+	<string>V-Go Captain</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>
@@ -26,6 +26,39 @@
 	<string>$(FLUTTER_BUILD_NUMBER)</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>نستخدم موقعك علشان نوصلك بطلبات الركاب القريبة منك ونتابع الرحلة على الخريطة.</string>
+	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+	<string>وانت أونلاين أو في رحلة، بنحتاج موقعك حتى لو التطبيق في الخلفية علشان الراكب يتابعك وتوصلك الطلبات القريبة.</string>
+	<key>NSCameraUsageDescription</key>
+	<string>علشان تصوّر صورتك الشخصية والبطاقة والرخص لتوثيق حسابك.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>علشان تختار صور المستندات المطلوبة لتوثيق حسابك.</string>
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>location</string>
+		<string>remote-notification</string>
+	</array>
+	<key>LSApplicationQueriesSchemes</key>
+	<array>
+		<string>tel</string>
+		<string>sms</string>
+		<string>comgooglemaps</string>
+		<string>waze</string>
+	</array>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>app-1-1009005156907-ios-1e2f888c20a5508f0c686e</string>
+			</array>
+		</dict>
+	</array>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>

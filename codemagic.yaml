@@ -1,0 +1,87 @@
+# iOS builds for the App Store (no Mac needed). Codemagic builds on its macOS
+# machines, signs with certificates / profiles it creates through the App Store
+# Connect API key, and uploads the .ipa to App Store Connect. Store listing and
+# "Submit for Review" are done in App Store Connect.
+#
+# One-time setup in Codemagic (Team settings):
+#   1. Integrations -> App Store Connect -> add the API key, name it exactly "VGo ASC".
+#   2. Environment variables -> group "ios_signing" -> CERTIFICATE_PRIVATE_KEY
+#      (secure): an RSA private key used for the distribution certificate.
+# Start a build: Codemagic -> V-Go -> Start new build -> pick the workflow.
+
+definitions:
+  ios_env: &ios_env
+    flutter: stable
+    xcode: latest
+    cocoapods: default
+    groups:
+      - ios_signing
+  scripts:
+    - &signing
+      name: Code signing (certificate + App Store profile, created if missing)
+      script: |
+        keychain initialize
+        app-store-connect fetch-signing-files "$BUNDLE_ID" \
+          --type IOS_APP_STORE \
+          --create
+        keychain add-certificates
+        xcode-project use-profiles
+    - &pub_get
+      name: Flutter packages
+      script: flutter pub get
+    - &pods
+      name: CocoaPods
+      script: cd ios && pod install --repo-update
+    - &build_ipa
+      name: Build .ipa
+      script: |
+        # Build numbers only have to grow; Codemagic's run counter does that.
+        flutter build ipa --release \
+          --build-number=$((1000 + BUILD_NUMBER)) \
+          --export-options-plist=/Users/builder/export_options.plist
+  publishing: &publishing
+    app_store_connect:
+      auth: integration
+      submit_to_testflight: false
+      submit_to_app_store: false
+
+workflows:
+  rider-ios:
+    name: V-Go (rider) - iOS App Store
+    instance_type: mac_mini_m2
+    max_build_duration: 90
+    working_directory: V-Go
+    integrations:
+      app_store_connect: VGo ASC
+    environment:
+      <<: *ios_env
+      vars:
+        BUNDLE_ID: com.scooterapp.vgo
+    scripts:
+      - *pub_get
+      - *signing
+      - *pods
+      - *build_ipa
+    artifacts:
+      - build/ios/ipa/*.ipa
+    publishing: *publishing
+
+  captain-ios:
+    name: V-Go Captain - iOS App Store
+    instance_type: mac_mini_m2
+    max_build_duration: 90
+    working_directory: V-GoCaptain
+    integrations:
+      app_store_connect: VGo ASC
+    environment:
+      <<: *ios_env
+      vars:
+        BUNDLE_ID: com.scooterapp.vgo.vGoCaptain
+    scripts:
+      - *pub_get
+      - *signing
+      - *pods
+      - *build_ipa
+    artifacts:
+      - build/ios/ipa/*.ipa
+    publishing: *publishing

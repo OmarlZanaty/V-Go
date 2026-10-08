@@ -59,4 +59,6 @@ abstract class AuthRepo {
     String newPassword,
   );
   Future<void> logout({required String refreshToken});
+  // The signed-in user deletes his own account.
+  Future<void> deleteAccount();
 }

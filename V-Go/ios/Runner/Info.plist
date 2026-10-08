@@ -15,11 +15,26 @@
 		<key>CFBundleName</key>
 		<string>scooter_app</string>
 		<key>NSPhotoLibraryUsageDescription</key>
-		<string>We need access to your photo library to upload files.</string>
+		<string>علشان تختار صورة لحسابك.</string>
+		<key>NSCameraUsageDescription</key>
+		<string>علشان تصوّر صورة لحسابك.</string>
 		<key>NSLocationWhenInUseUsageDescription</key>
-		<string>We need your location to provide real-time tracking and routing for your scooter ride.</string>
+		<string>نستخدم موقعك علشان نحدد مكان ركوبك ونعرض الكابتن والرحلة على الخريطة.</string>
 		<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
-		<string>We need your location to provide real-time tracking and routing for your scooter ride.</string>
+		<string>نستخدم موقعك علشان نحدد مكان ركوبك ونعرض الكابتن والرحلة على الخريطة.</string>
+		<key>ITSAppUsesNonExemptEncryption</key>
+		<false/>
+		<key>CFBundleURLTypes</key>
+		<array>
+			<dict>
+				<key>CFBundleTypeRole</key>
+				<string>Editor</string>
+				<key>CFBundleURLSchemes</key>
+				<array>
+					<string>app-1-1009005156907-ios-f7eddfc9b38c710d0c686e</string>
+				</array>
+			</dict>
+		</array>
 		<key>CFBundlePackageType</key>
 		<string>APPL</string>
 		<key>CFBundleShortVersionString</key>
@@ -28,7 +43,6 @@
 		<string>????</string>
 		<key>UIBackgroundModes</key>
 		<array>
-			<string>location</string>
 			<string>remote-notification</string>
 		</array>
 		<key>LSApplicationQueriesSchemes</key>

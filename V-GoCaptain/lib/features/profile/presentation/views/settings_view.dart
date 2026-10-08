@@ -3,7 +3,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 
+import '../../../../core/api/api_service.dart';
+import '../../../../core/api/end_points.dart';
 import '../../../../core/cache/cache_helper.dart';
+import '../../../../core/errors/exception.dart';
+import '../../../../core/utils/widgets/custom_toastification.dart';
 import '../../../../core/di/di.dart';
 import '../../../../core/helpers/navigation_handler.dart';
 import '../../../../core/routing/routes.dart';
@@ -40,6 +44,44 @@ class SettingsView extends StatelessWidget {
     AppConstants.kUserName = '';
     AppConstants.kProfileImage = '';
     NavigationHandler.instance.goToLoginView();
+  }
+
+  // Permanently deletes the account (App Store / Google Play requirement), then
+  // signs out.
+  Future<void> _deleteAccount(BuildContext context) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        backgroundColor: AppColors.darkGrey,
+        title: Text('حذف الحساب نهائياً', style: AppStyle.title),
+        content: Text(
+          'حسابك وبياناتك الشخصية هيتحذفوا ومش هتقدر ترجعهم. لو عليك مستحقات للشركة هتفضل مسجّلة عليك. متأكد؟',
+          style: AppStyle.body,
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: Text('إلغاء', style: AppStyle.body),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: Text(
+              'احذف حسابي',
+              style: AppStyle.body.copyWith(color: AppColors.danger),
+            ),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    try {
+      await getIt<ApiServices>().delete(EndPoint.deleteMyAccount);
+      await _logout();
+    } catch (e) {
+      if (context.mounted) {
+        errorToast(context, 'حدث خطأ', ServerFailure.fromError(e).errMessage);
+      }
+    }
   }
 
   @override
@@ -125,6 +167,13 @@ class SettingsView extends StatelessWidget {
             color: AppColors.danger,
             trailing: const SizedBox.shrink(),
             onTap: _logout,
+          ),
+          SettingsItem(
+            title: 'حذف الحساب',
+            icon: Icons.delete_forever_outlined,
+            color: AppColors.danger,
+            trailing: const SizedBox.shrink(),
+            onTap: () => _deleteAccount(context),
           ),
 
           // ---------- Captain-only ----------

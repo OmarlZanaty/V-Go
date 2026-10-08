@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:animate_do/animate_do.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -68,6 +70,9 @@ class AccountTypeView extends StatelessWidget {
                   },
                 ),
               ),
+              // Google sign-in stays on Android; on iOS Apple would require
+              // "Sign in with Apple" next to it (App Store guideline 4.8).
+              if (!Platform.isIOS) ...[
               verticalSpace(12),
               SlideInLeft(
                 from: 200,
@@ -113,6 +118,7 @@ class AccountTypeView extends StatelessWidget {
                   },
                 ),
               ),
+              ],
             ],
           ),
         ),

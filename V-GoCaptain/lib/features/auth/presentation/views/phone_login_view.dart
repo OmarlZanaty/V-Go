@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
@@ -183,6 +185,9 @@ class _PhoneLoginViewState extends State<PhoneLoginView> {
                   cubit.checkPhone(p);
                 },
               ),
+        // Google sign-in stays on Android; on iOS Apple would require "Sign in
+        // with Apple" next to it (App Store guideline 4.8).
+        if (!Platform.isIOS) ...[
         verticalSpace(16),
         Row(children: [
           const Expanded(child: Divider(color: AppColors.grey)),
@@ -210,6 +215,7 @@ class _PhoneLoginViewState extends State<PhoneLoginView> {
             ),
           ),
         ),
+        ],
       ],
     );
   }

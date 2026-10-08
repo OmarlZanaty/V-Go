@@ -13,6 +13,7 @@ import '../../core/theming/app_style.dart';
 import '../../core/utils/widgets/custom_app_bar.dart';
 import '../auth/presentation/logic/cubit/auth_cubit.dart';
 import 'emergecy_settings_item.dart';
+import 'delete_account_settings_item.dart';
 import 'logout_settings_item.dart';
 import 'settings_item.dart';
 import '../../core/branding/al_mobarmg_branding.dart';
@@ -129,6 +130,10 @@ class SettingsView extends StatelessWidget {
                 BlocProvider(
                   create: (context) => AuthCubit(getIt()),
                   child: const LogOutSettingsItem(),
+                ),
+                BlocProvider(
+                  create: (context) => AuthCubit(getIt()),
+                  child: const DeleteAccountSettingsItem(),
                 ),
                 if (isDriver) ...[
                   const _SettingsHeader(title: 'الطوارئ'),

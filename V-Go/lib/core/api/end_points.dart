@@ -18,6 +18,7 @@ abstract class EndPoint {
       'Auth/phone-reset-password'; // forgot password (OTP)
   static const String register = 'Auth/register';
   static const String logout = 'Auth/logout';
+  static const String deleteMyAccount = 'User/me';
   static const String confirmOtp = 'Auth/confirmOtp';
   static const String resendOtp = 'Auth/resendotp';
   static const String newRefreshToken = 'Auth/newrefreshtoken';

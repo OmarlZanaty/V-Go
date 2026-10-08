@@ -21,6 +21,8 @@ namespace Masafet_Elseka.Application.Interfaces.User
         //public Task<Response<string>> BlockUser(string userId);
         //public Task<Response<string>> UnBlockUser(string userId);
         public Task<Response<BulkOperationResult>> RemoveUsersBulk(List<string> userIds);
+        // The signed-in user deletes his own account (App Store / Play requirement).
+        public Task<Response<string>> DeleteOwnAccountAsync(string userId);
         public Task<Response<BulkOperationResult>> BlockUsers(IEnumerable<string> userId);
         public Task<Response<BulkOperationResult>> UnblockUsers(IEnumerable<string> userId);
         public Task<Response<string>> UpdateAsync(string userId, UserUpdateDTO model);

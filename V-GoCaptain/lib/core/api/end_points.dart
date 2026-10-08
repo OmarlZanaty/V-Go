@@ -52,6 +52,9 @@ abstract class EndPoint {
   static String driverFinanceSettleStatus(String paymentId) =>
       'DriverFinance/me/settle/$paymentId';
 
+  // The signed-in captain deletes his own account.
+  static const String deleteMyAccount = 'User/me';
+
   // Daily collection by wallet transfer
   static const String collectionMe = 'Collection/me';
   static const String collectionRequests = 'Collection/me/requests';
