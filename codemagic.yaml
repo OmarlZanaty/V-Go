@@ -3,10 +3,12 @@
 # Connect API key, and uploads the .ipa to App Store Connect. Store listing and
 # "Submit for Review" are done in App Store Connect.
 #
-# One-time setup in Codemagic (Team settings):
-#   1. Integrations -> App Store Connect -> add the API key, name it exactly "VGo ASC".
-#   2. Environment variables -> group "ios_signing" -> CERTIFICATE_PRIVATE_KEY
-#      (secure): an RSA private key used for the distribution certificate.
+# One-time setup in Codemagic (V-Go app -> Environment variables):
+#   group "ios_signing" -> IOS_DIST_CERT_KEY (secure): the same base64 PEM key the
+#   Shopping Market app uses. The Apple team is capped at 3 distribution certs,
+#   so every app on it must reuse that one certificate.
+# The App Store Connect key "ShoppingMarket ASC Key" is already in the personal
+# account's Developer Portal integration.
 # Start a build: Codemagic -> V-Go -> Start new build -> pick the workflow.
 
 definitions:
@@ -21,14 +23,22 @@ definitions:
       name: Code signing (certificate + App Store profile, created if missing)
       script: |
         keychain initialize
+        if [ -z "$IOS_DIST_CERT_KEY" ]; then
+          echo "IOS_DIST_CERT_KEY missing (group ios_signing)"; exit 1
+        fi
+        printf '%s' "$IOS_DIST_CERT_KEY" | openssl base64 -d -A > /tmp/cert_key.pem
         app-store-connect fetch-signing-files "$BUNDLE_ID" \
           --type IOS_APP_STORE \
+          --certificate-key=@file:/tmp/cert_key.pem \
           --create
         keychain add-certificates
         xcode-project use-profiles
     - &pub_get
       name: Flutter packages
-      script: flutter pub get
+      script: |
+        # Plugins here are CocoaPods-only.
+        flutter config --no-enable-swift-package-manager
+        flutter pub get
     - &pods
       name: CocoaPods
       script: cd ios && pod install --repo-update
@@ -52,7 +62,7 @@ workflows:
     max_build_duration: 90
     working_directory: V-Go
     integrations:
-      app_store_connect: VGo ASC
+      app_store_connect: ShoppingMarket ASC Key
     environment:
       <<: *ios_env
       vars:
@@ -72,7 +82,7 @@ workflows:
     max_build_duration: 90
     working_directory: V-GoCaptain
     integrations:
-      app_store_connect: VGo ASC
+      app_store_connect: ShoppingMarket ASC Key
     environment:
       <<: *ios_env
       vars:

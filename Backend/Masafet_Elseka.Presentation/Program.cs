@@ -517,6 +517,13 @@ app.MapHub<RatingHub>("/ratingHub");
 
 app.MapControllers();
 
+// Public pages linked from the App Store listings (wwwroot/*.html).
+foreach (var page in new[] { "privacy", "support" })
+{
+    var file = Path.Combine(app.Environment.WebRootPath ?? Path.Combine(app.Environment.ContentRootPath, "wwwroot"), $"{page}.html");
+    app.MapGet($"/{page}", () => Results.File(file, "text/html; charset=utf-8")).AllowAnonymous();
+}
+
 #endregion
 
 app.Run();
