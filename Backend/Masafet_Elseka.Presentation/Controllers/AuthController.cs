@@ -223,7 +223,7 @@ namespace Masafet_Elseka.Presentation.Controllers
         }
 
         [HttpPost("logout")]
-        public async Task<IActionResult> Logout([FromHeader] string refreshToken)
+        public async Task<IActionResult> Logout([FromHeader] string? refreshToken)
         {
             var result = await _authService.LogoutAsync(refreshToken);
 

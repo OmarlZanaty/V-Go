@@ -29,7 +29,7 @@ namespace Masafet_Elseka.Application.Interfaces.IAuthService
         public Task<Response<string>> SetMyPhoneAsync(string userId, string phone);
         public Task<Response<object>> LoginToDashboardAsync(LoginDTO model);
         public Task<Response<string>> ConfirmOtp(string otp, OtpType type, string email);
-        public Task<Response<string>> LogoutAsync(string refreshToken);
+        public Task<Response<string>> LogoutAsync(string? refreshToken);
         public Task<Response<string>> LogoutFromDashboardAsync();
         public Task<Response<string>> ChangePasswordAsync(ChangePasswordDTO model);
         public Task<Response<string>> ForgotPasswordAsync(string email);

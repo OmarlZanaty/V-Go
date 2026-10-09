@@ -278,19 +278,16 @@ class AuthCubit extends Cubit<AuthState> {
 
   Future<void> logout({required String refreshToken}) async {
     emit(state.copyWith(status: AuthStatus.logoutLoading));
+    // Revoking the refresh token on the server is best-effort: a missing or
+    // stale token must never trap the user in the app.
     try {
-      await _authRepo.logout(refreshToken: refreshToken);
-      _clearData();
-      emit(state.copyWith(status: AuthStatus.logoutSuccess));
-    } catch (e) {
-      if (isClosed) return;
-      emit(
-        state.copyWith(
-          status: AuthStatus.logoutFailure,
-          errorMessage: ServerFailure.fromError(e).errMessage,
-        ),
-      );
-    }
+      if (refreshToken.isNotEmpty) {
+        await _authRepo.logout(refreshToken: refreshToken);
+      }
+    } catch (_) {}
+    await _clearData();
+    if (isClosed) return;
+    emit(state.copyWith(status: AuthStatus.logoutSuccess));
   }
 
   /// Deletes the account on the server, then signs out like [logout] (same states).

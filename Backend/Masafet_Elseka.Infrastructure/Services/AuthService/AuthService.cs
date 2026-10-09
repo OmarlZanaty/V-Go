@@ -708,10 +708,17 @@ namespace Masafet_Elseka.Infrastructure.Services.AuthService
 
         }
 
-        public async Task<Response<string>> LogoutAsync(string refreshToken)
+        public async Task<Response<string>> LogoutAsync(string? refreshToken)
         {
             try
             {
+                // No token (e.g. a phone login that never stored one) — nothing to revoke,
+                // logout is idempotent.
+                if (string.IsNullOrEmpty(refreshToken))
+                {
+                    return Response<string>.Success("تم تسجيل الخروج بنجاح", "تم تسجيل الخروج بنجاح", 200);
+                }
+
                 var egyptTime = DateTime.Now.ToEgyptTime();
                 var user = await _userManager.Users
                 .FirstOrDefaultAsync(u => u.RefreshTokens != null &&
@@ -721,15 +728,11 @@ namespace Masafet_Elseka.Infrastructure.Services.AuthService
                         t.ExpiresOn > egyptTime
                     )
                 );
-                if (user == null)
+                var token = user?.RefreshTokens?.FirstOrDefault(t => t.Token == refreshToken && t.IsActive);
+                if (user == null || token == null)
                 {
-                    return Response<string>.Failure("المستخدم غير موجود او غير نشط", 404);
-                }
-
-                var token = user.RefreshTokens?.FirstOrDefault(t => t.Token == refreshToken && t.IsActive);
-                if (token == null)
-                {
-                    return Response<string>.Failure("المستخدم غير نشط او سجل خروج بالفعل", 400);
+                    // Stale or already-revoked token: already logged out.
+                    return Response<string>.Success("تم تسجيل الخروج بنجاح", "تم تسجيل الخروج بنجاح", 200);
                 }
 
                 token.RevokedOn = DateTime.Now.ToEgyptTime();
