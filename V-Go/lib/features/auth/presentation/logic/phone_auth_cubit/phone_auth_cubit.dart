@@ -84,15 +84,20 @@ class PhoneAuthCubit extends Cubit<PhoneAuthState> {
     }
   }
 
-  /// New user: phone (from state) + the password they just set + profile data.
+  /// New user: phone + the password they just set + profile data. The sign-up
+  /// screen gets its own cubit, so the phone is passed in rather than read
+  /// from the login screen's state.
   Future<void> register({
+    required String phone,
     required String password,
     required String fullName,
     String? email,
     String? gender,
   }) async {
     emit(state.copyWith(
-        status: PhoneAuthStatus.authenticating, clearError: true));
+        status: PhoneAuthStatus.authenticating,
+        phone: phone,
+        clearError: true));
     try {
       // Saved with CacheHelper.setData (SharedPreferences), not secure storage.
       final fcmToken = CacheHelper.getString(AppConstants.fcmToken);

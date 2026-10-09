@@ -149,6 +149,7 @@ class _PhoneSignupViewState extends State<PhoneSignupView> {
     }
     final email = _emailController.text.trim();
     context.read<PhoneAuthCubit>().register(
+          phone: widget.phone,
           password: password,
           fullName: name,
           email: email.isEmpty ? null : email,
