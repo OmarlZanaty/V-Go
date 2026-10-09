@@ -7,7 +7,6 @@ import '../../../../core/routing/routes.dart';
 import '../../../../core/theming/app_colors.dart';
 import '../../../../core/theming/app_style.dart';
 import '../../../../core/utils/payment_method_badge.dart';
-import '../../../../core/utils/widgets/custom_payment_web_view.dart';
 import '../../../../core/utils/widgets/custom_toastification.dart';
 import '../../data/models/finance_models.dart';
 import '../cubit/finance_cubit.dart';
@@ -46,23 +45,10 @@ class _FinanceViewState extends State<FinanceView> {
 
   Future<void> _settle() async {
     final cubit = context.read<FinanceCubit>();
-    // Daily wallet collection replaces the Paymob checkout once it's enabled.
-    if (cubit.state.summary?.collectionEnabled == true) {
-      await Navigator.of(context).pushNamed(Routes.collectionViewRoute);
-      if (mounted) await cubit.refresh();
-      return;
-    }
-    final checkout = await cubit.createSettlement();
-    if (!mounted || checkout == null || checkout.checkoutUrl.isEmpty) return;
-    final redirect = await Navigator.of(context).push<String>(
-      MaterialPageRoute(
-        builder: (_) => CustomPaymentWebView(url: checkout.checkoutUrl),
-      ),
-    );
-    if (!mounted || redirect == null) return;
-    await cubit.confirmPaymentCallback(redirect);
-    if (!mounted) return;
-    await cubit.pollSettlement(checkout.paymentId);
+    // The captain settles his dues only by wallet transfer. (Paymob stays in
+    // place for riders paying for trips; it's just gone from the captain flow.)
+    await Navigator.of(context).pushNamed(Routes.collectionViewRoute);
+    if (mounted) await cubit.refresh();
   }
 
   @override
@@ -229,10 +215,7 @@ class _BalanceCard extends StatelessWidget {
                   Icons.payments_outlined,
                   color: AppColors.black,
                 ),
-                label: Text(
-                  summary.collectionEnabled ? 'حوّل المستحقات' : 'سدّد المستحقات',
-                  style: AppStyle.button,
-                ),
+                label: Text('حوّل المستحقات', style: AppStyle.button),
               ),
             ),
           ],
