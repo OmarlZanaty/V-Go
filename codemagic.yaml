@@ -14,7 +14,7 @@
 
 definitions:
   ios_env: &ios_env
-    flutter: stable
+    flutter: 3.41.9
     xcode: latest
     cocoapods: default
   scripts:
