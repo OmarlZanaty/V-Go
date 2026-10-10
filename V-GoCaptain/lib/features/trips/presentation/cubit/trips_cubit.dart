@@ -19,8 +19,10 @@ class TripsCubit extends Cubit<TripsState> {
         (a, b) =>
             (b.createdAt ?? DateTime(0)).compareTo(a.createdAt ?? DateTime(0)),
       );
+      if (isClosed) return;
       emit(state.copyWith(status: TripsStatus.loaded, trips: trips));
     } catch (e) {
+      if (isClosed) return;
       emit(
         state.copyWith(
           status: TripsStatus.error,

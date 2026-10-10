@@ -8,7 +8,7 @@ class CacheHelper {
   static late SharedPreferences _sharedPreferences;
 
   static AndroidOptions _getAndroidOptions() =>
-      const AndroidOptions(encryptedSharedPreferences: true);
+      const AndroidOptions(encryptedSharedPreferences: true, resetOnError: true);
 
   static final FlutterSecureStorage _flutterSecureStorage =
       FlutterSecureStorage(aOptions: _getAndroidOptions());
@@ -52,7 +52,18 @@ class CacheHelper {
   }
 
   static Future<String> getSecuredString(String key) async {
-    return await _flutterSecureStorage.read(key: key) ?? '';
+    try {
+      return await _flutterSecureStorage.read(key: key) ?? '';
+    } catch (e) {
+      // Stored data can't be decrypted (keystore key changed, e.g. after a
+      // reinstall/backup restore). Wipe it so the user just logs in again
+      // instead of the app dying on a white screen.
+      debugPrint('FlutterSecureStorage read failed, resetting: $e');
+      try {
+        await clearAllSecuredData();
+      } catch (_) {}
+      return '';
+    }
   }
 
   static Future<void> removeSecuredString(String key) async {

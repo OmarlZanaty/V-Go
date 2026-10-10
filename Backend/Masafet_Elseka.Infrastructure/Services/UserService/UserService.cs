@@ -8,6 +8,7 @@ using Masafet_Elseka.Application.DTOs.Trip;
 using Masafet_Elseka.Application.DTOs.User;
 using Masafet_Elseka.Application.ExternalInterfaces.ICloudinaryService;
 using Masafet_Elseka.Application.Interfaces.IDriverService;
+using Masafet_Elseka.Application.Interfaces.IPrivateFileStorage;
 using Masafet_Elseka.Application.Interfaces.IRatingService;
 using Masafet_Elseka.Application.Interfaces.ITripService;
 using Masafet_Elseka.Application.Interfaces.User;
@@ -17,6 +18,8 @@ using Masafet_Elseka.Infrastructure.Data;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
+using Serilog;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -36,9 +39,12 @@ namespace Masafet_Elseka.Infrastructure.Services.UserService
         private readonly IHttpContextAccessor _httpContextAccessor;
         private readonly IDriverService _driverService;
         private readonly IRatingService _ratingService;
+        private readonly IPublicMediaStorage _publicMedia;
+        private readonly IConfiguration _configuration;
 
         public UserService(UserManager<ApplicationUser> userManager, RoleManager<IdentityRole> roleManager, ICloudinaryService cloudinaryService
-            , Context context, ITripService tripService, IHttpContextAccessor httpContextAccessor, IDriverService driverService, IRatingService ratingService)
+            , Context context, ITripService tripService, IHttpContextAccessor httpContextAccessor, IDriverService driverService, IRatingService ratingService
+            , IPublicMediaStorage publicMedia, IConfiguration configuration)
         {
             _userManager = userManager;
             _roleManager = roleManager;
@@ -48,6 +54,23 @@ namespace Masafet_Elseka.Infrastructure.Services.UserService
             _httpContextAccessor = httpContextAccessor;
             _driverService = driverService;
             _ratingService = ratingService;
+            _publicMedia = publicMedia;
+            _configuration = configuration;
+        }
+
+        // Profile photos go to Cloudinary when the host has it configured,
+        // otherwise to the server's own /media folder.
+        private async Task<string> SaveProfilePictureAsync(IFormFile file)
+        {
+            if (!string.IsNullOrWhiteSpace(_configuration["Cloudinary:CloudName"]))
+            {
+                var (_, url) = await _cloudinaryService.UploadFileAsync(file, "ProfilePictures");
+                if (!string.IsNullOrEmpty(url)) return url;
+            }
+            var extension = Path.GetExtension(file.FileName).ToLowerInvariant();
+            if (extension is not (".jpg" or ".jpeg" or ".png" or ".webp")) extension = ".jpg";
+            await using var stream = file.OpenReadStream();
+            return await _publicMedia.SaveAsync(stream, "profile", extension);
         }
 
         public async Task<ApplicationUser> GetCurrentUserAsync()
@@ -377,8 +400,7 @@ namespace Masafet_Elseka.Infrastructure.Services.UserService
                 string? imgPath = null;
                 if (model.ProfilePicture is not null)
                 {
-                    var image = await _cloudinaryService.UploadFileAsync(model.ProfilePicture, "ProfilePictures");
-                    imgPath = image.Url;
+                    imgPath = await SaveProfilePictureAsync(model.ProfilePicture);
                 }
 
                 user.FullName = model.Name ?? user.FullName;
@@ -396,6 +418,7 @@ namespace Masafet_Elseka.Infrastructure.Services.UserService
             }
             catch (Exception ex)
             {
+                Log.Error(ex, "Updating user {UserId} failed", userId);
                 return Response<string>.Failure($"حدث خطأ اثناء تحديث البيانات", 500);
             }
         }
@@ -436,8 +459,7 @@ namespace Masafet_Elseka.Infrastructure.Services.UserService
                 string? imgPath = null;
                 if (model.ProfilePicture is not null)
                 {
-                    var image = await _cloudinaryService.UploadFileAsync(model.ProfilePicture, "ProfilePictures");
-                    imgPath = image.Url;
+                    imgPath = await SaveProfilePictureAsync(model.ProfilePicture);
                 }
 
                 user.FullName = model.Name ?? user.FullName;
@@ -471,6 +493,7 @@ namespace Masafet_Elseka.Infrastructure.Services.UserService
             }
             catch (Exception ex)
             {
+                Log.Error(ex, "Admin update of user {UserId} failed", userId);
                 return Response<UpdateAllDTO>.Failure($"حدث خطأ اثناء تحديث البيانات", 500);
             }
         }
