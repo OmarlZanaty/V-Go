@@ -28,7 +28,7 @@ namespace Masafet_Elseka.Application.Collection
 
         // Sender ids the collector phone forwards. Matched against the sender with spaces,
         // dashes and underscores removed, lower-cased.
-        public static readonly string[] SenderHints = { "vfcash", "vodafone", "vf", "etisalat", "e&", "eand", "emoney", "etisalatcash", "instapay" };
+        public static readonly string[] SenderHints = { "vfcash", "vodafone", "vf", "etisalat", "e&", "eand", "emoney", "etmoney", "etisalatcash", "instapay" };
 
         // Any SMS or app notification containing one of these is forwarded too: bank SMS
         // and bank-app pushes about InstaPay transfers come from many different senders.
@@ -45,7 +45,7 @@ namespace Masafet_Elseka.Application.Collection
             if (string.IsNullOrWhiteSpace(sender)) return null;
             var s = Regex.Replace(sender, @"[\s\-_.]", "").ToLowerInvariant();
             if (s.Contains("vodafone") || s.StartsWith("vf")) return WalletProvider.VodafoneCash;
-            if (s.Contains("etisalat") || s.Contains("e&") || s.StartsWith("eand") || s.Contains("emoney"))
+            if (s.Contains("etisalat") || s.Contains("e&") || s.StartsWith("eand") || s.Contains("emoney") || s.Contains("etmoney"))
                 return WalletProvider.EtisalatCash;
             if (s.Contains("instapay")) return WalletProvider.InstaPay;
             return null;
@@ -82,9 +82,9 @@ namespace Masafet_Elseka.Application.Collection
 
         private static readonly Regex Failed = new(@"لم يتم|فشل|مرفوض|رفض|failed|declined|unsuccessful|not completed|insufficient", Opt);
         private static readonly Regex Incoming = new(
-            @"استلام|استقبال|استلمت|وصل(?:ك|تك|ت لك)|تم اضافة|اضيف|ايداع|حول لك|حوّل لك|(?:الى|ل)\s*محفظتك|received|credited|deposited|added to your|transferred to you|to your wallet|you got", Opt);
+            @"استلام|استقبال|استلمت|وصل(?:ك|تك|ت لك)|تم اضافة|اضيف|ايداع|حول لك|حوّل لك|(?:الى|ل)\s*محفظتك|received|credited|deposited|added to your|transferred to you|(?:sent|transferred) to your|sent you|to your wallet|you got", Opt);
         private static readonly Regex Outgoing = new(
-            @"تم تحويل|حولت|تم دفع|تم الدفع|دفعت|تم سحب|سحب نقدي|تم شراء|تم شحن|you have sent|you sent|sent to|transferred to|paid|payment of|withdraw|debited|purchase", Opt);
+            @"تم تحويل|حولت|تم دفع|تم الدفع|دفعت|تم سحب|سحب نقدي|تم شراء|تم شحن|you have sent|you sent|sent to|transferred to|paid|payment of|withdraw|debited|purchase|recharged?|top(?:ped)?[\s\-]?up", Opt);
 
         // ---- money ----
 
@@ -103,7 +103,13 @@ namespace Masafet_Elseka.Application.Collection
         private static readonly Regex NameAfterFrom = new(
             @"(?:^|[\s:،,(])(?:from|من|بواسطة|المرسل|sender)\s*[:：]?\s*(?<name>[\p{L}*][\p{L}\s.'*\-]{1,60}?)\s*(?=$|[(\[،,.;:|\d]|\s(?:on|at|via|ref|بتاريخ|يوم|في|عبر|على|رقم|الساعة|to|الى|إلى)(?:\s|$))",
             Opt);
-        private static readonly string[] NotNames = { "رقم", "الرقم", "محفظة", "حساب", "number", "account", "wallet", "mobile", "instapay", "انستاباي" };
+        // Wallet receipts name the sender as the wallet's registered owner: «المسجل باسم X»
+        // (often with no space: «باسمOmar»), «registered to X». Ads follow the receipt, so
+        // the name stops at the next field or sentence.
+        private static readonly Regex RegisteredName = new(
+            @"(?:المسجل[ةه]?\s*ب\s*اسم|registered\s+(?:to|under|with|as|in\s+the\s+name\s+of)\s+(?:the\s+)?(?:name\s+)?)\s*[:：]?\s*(?<name>[\p{L}*][\p{L}\s.'*\-]{1,60}?)\s*(?=$|[(\[،,.;:؛|\d]|\s(?:على|علي|بنجاح|بتاريخ|في|الى|on|at|to|your|successfully|has|is|and)(?=\s|$|[.,،؛;:]))",
+            Opt);
+        private static readonly string[] NotNames ={ "رقم", "الرقم", "محفظة", "حساب", "number", "account", "wallet", "mobile", "instapay", "انستاباي" };
 
         private static readonly Regex Phone = new(@"(?<!\d)(?:\+?2|002)?(01[0125]\d{8})(?!\d)", Opt);
         private static readonly Regex FromCue = new(@"(?:^|[\s:،,(])(?:من|from|by|بواسطة)(?:\s+(?:رقم|الرقم|محفظة|number|wallet|mobile))?\s*[:：]?\s*$", Opt);
@@ -172,9 +178,11 @@ namespace Masafet_Elseka.Application.Collection
             foreach (Match m in Phone.Matches(text))
             {
                 var number = m.Groups[1].Value;
+                // "from <number>" is the sender even when it's another company wallet;
+                // otherwise our own numbers are the receiving side, never the sender.
+                if (FromCue.IsMatch(Before(text, m.Index, 22))) { phone = number; break; }
                 if (own.Contains(number)) continue;
                 fallback ??= number;
-                if (FromCue.IsMatch(Before(text, m.Index, 22))) { phone = number; break; }
             }
             phone ??= fallback;
 
@@ -190,7 +198,16 @@ namespace Masafet_Elseka.Application.Collection
                 .Select(m => m.Groups[1].Value.ToLowerInvariant())
                 .FirstOrDefault(x => !own.Contains(x));
             string? name = null;
-            foreach (Match m in NameAfterFrom.Matches(text))
+            var registered = RegisteredName.Match(text);
+            if (registered.Success)
+            {
+                var candidate = Regex.Replace(registered.Groups["name"].Value, @"\s{2,}", " ").Trim(' ', '.', '-', '*');
+                if (candidate.Length >= 2) name = candidate;
+            }
+            // "from X" only names the sender on InstaPay receipts: on Vodafone / e& it
+            // catches ad text after the receipt ("من تاريخ المعاملات", "من Buffalo Burger").
+            var walletReceipt = provider is WalletProvider.VodafoneCash or WalletProvider.EtisalatCash;
+            foreach (Match m in walletReceipt || name != null ? Enumerable.Empty<Match>() : NameAfterFrom.Matches(text))
             {
                 var candidate = Regex.Replace(m.Groups["name"].Value, @"\s{2,}", " ").Trim(' ', '.', '-', '*');
                 if (candidate.Length < 3 || NotNames.Any(n => candidate.StartsWith(n, StringComparison.OrdinalIgnoreCase))) continue;

@@ -229,10 +229,13 @@ namespace Masafet_Elseka.Infrastructure.Services.CollectionService
             {
                 if (string.Equals(s.CounterpartyAccount, r.SenderAccount, StringComparison.OrdinalIgnoreCase)) strong = true; else conflict = true;
             }
+            // A wallet receipt names the wallet's registered owner, who is often not the
+            // captain (a relative's wallet): a different name never blocks it. On InstaPay
+            // the name is the sender's identity, so there it does.
             switch (WalletSmsParser.NamesMatch(s.CounterpartyName, r.SenderName))
             {
                 case true: strong = true; break;
-                case false: conflict = true; break;
+                case false when s.Provider == WalletProvider.InstaPay: conflict = true; break;
             }
             return strong ? SenderFit.Strong : conflict ? SenderFit.Conflict : SenderFit.Unknown;
         }

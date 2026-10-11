@@ -108,7 +108,7 @@ class Prefs(context: Context) {
 
     companion object {
         const val DEFAULT_URL = "https://vgo.almobarmg.com"
-        val DEFAULT_HINTS = listOf("vfcash", "vodafone", "vf", "etisalat", "e&", "eand", "emoney", "etisalatcash", "instapay")
+        val DEFAULT_HINTS = listOf("vfcash", "vodafone", "vf", "etisalat", "e&", "eand", "emoney", "etmoney", "etisalatcash", "instapay")
         val DEFAULT_INSTAPAY = listOf("instapay", "insta pay", "انستاباي", "إنستاباي", "انستا باي", "إنستا باي")
         val DEFAULT_PACKAGES = listOf("com.egyptianbanks.instapay")
     }

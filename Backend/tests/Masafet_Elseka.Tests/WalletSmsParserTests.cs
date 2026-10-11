@@ -1,4 +1,5 @@
 using Masafet_Elseka.Application.Collection;
+using Masafet_Elseka.Domain.Entities;
 using Masafet_Elseka.Domain.Enums;
 using Masafet_Elseka.Infrastructure.Services.CollectionService;
 using Xunit;
@@ -60,10 +61,129 @@ namespace Masafet_Elseka.Tests
             Assert.Equal(175m, r.BalanceAfter);
         }
 
+        // A real receipt template (2026-10-07, number / name masked). Some wallet SIMs get it from «et money», not «e& money».
+        [Fact]
+        public void Et_money_real_receipt()
+        {
+            var r = WalletSmsParser.Parse("et money",
+                "تم إستلام مبلغ 5.00 ج.م من رقم 01022223333 المسجل باسمAhmed M Hassan  بنجاح. رصيد محفظتك الحالى 6236.91 ج.م.\n"
+                + "استخدم etisalat money هتكسب و العب هتكسب هدايا تانية كتير http://spr.ly/Spin_The_Wheel وكمان تقدر تستمتع بخصم 30%على وجبة كومبو من Buffalo Burger ب 160 جنيه بدل225 لما تدفع ب etisalat money");
+            Assert.Equal(WalletProvider.EtisalatCash, r.Provider);
+            Assert.Equal(WalletSmsKind.Incoming, r.Kind);
+            Assert.Equal(5m, r.Amount);
+            Assert.Equal("01022223333", r.CounterpartyPhone);
+            Assert.Equal(6236.91m, r.BalanceAfter);
+        }
+
+        // Real receipt templates (2026-10-11, numbers / names masked): one company wallet
+        // paying the other, so the sender is a company number, and the ads after the
+        // receipt contain "من ..." phrases that are not the sender.
+        private static readonly string[] CompanyWallets = { "01000000001", "01100000002" };
+
+        [Fact]
+        public void Vf_receipt_from_other_company_wallet()
+        {
+            var r = WalletSmsParser.Parse("VF-Cash",
+                "تم استلام مبلغ 11.00 جنيه من رقم 01100000002 المسجل بإسم Ahmed S Ali على رقم محفظتك  01000000001. رصيدك الحالي: 36.10 جنيه تاريخ العملية: 14:50 26-10-11 رقم العملية: 024600000001 تابع كل مصروفاتك من تاريخ المعاملات على أبلكيشن أنا فودافون http://vf.eg/vfcash ",
+                CompanyWallets);
+            Assert.Equal(WalletSmsKind.Incoming, r.Kind);
+            Assert.Equal(11m, r.Amount);
+            Assert.Equal("01100000002", r.CounterpartyPhone);
+            Assert.Equal("Ahmed S Ali", r.CounterpartyName);
+            Assert.Equal("024600000001", r.TxnRef);
+            Assert.Equal(36.10m, r.BalanceAfter);
+        }
+
+        [Fact]
+        public void Vf_receipt_full_name_after_semicolon()
+        {
+            var r = WalletSmsParser.Parse("VF-Cash",
+                "تم استلام مبلغ 10.00 جنيه من 01011112222؛ المسجل بإسم AHMED SAMIR ALI HASSAN MAHMOUD على رقم محفظتك 01000000001 بتاريخ 21:50 26-10-06. رصيدك الحالي: 21.10 جنيه رقم العملية: 024400000002  تقدر تتابع كل مصروفاتك من تاريخ المعاملات على أبلكيشن أنا فودافون http://vf.eg/vfcash",
+                CompanyWallets);
+            Assert.Equal("01011112222", r.CounterpartyPhone);
+            Assert.Equal("AHMED SAMIR ALI HASSAN MAHMOUD", r.CounterpartyName);
+        }
+
+        [Fact]
+        public void Et_money_receipt_from_other_company_wallet()
+        {
+            var r = WalletSmsParser.Parse("et money",
+                "تم إستلام مبلغ 11.00 ج.م من رقم 01000000001 المسجل باسمAhmed S Ali   بنجاح. رصيد محفظتك الحالى 185.69 ج.م. استخدم etisalat money هتكسب و العب هتكسب هدايا تانية كتير http://spr.ly/Spin_The_Wheel  وكمان تقدر تستمتع بخصم  %30على وجبة كومبو من Buffalo Burger ب 160 جنيه بدل225 لما تدفع ب http://spr.ly/BuffaloBurger2 etisalat money",
+                CompanyWallets);
+            Assert.Equal(WalletProvider.EtisalatCash, r.Provider);
+            Assert.Equal(WalletSmsKind.Incoming, r.Kind);
+            Assert.Equal(11m, r.Amount);
+            Assert.Equal("01000000001", r.CounterpartyPhone);
+            Assert.Equal("Ahmed S Ali", r.CounterpartyName);
+            Assert.Equal(185.69m, r.BalanceAfter);
+        }
+
+        [Fact]
+        public void Et_money_english_receipt()
+        {
+            var r = WalletSmsParser.Parse("et money",
+                "You have received 11.00 EGP from number 01000000001 registered to Ahmed S Ali successfully. Your current wallet balance is 185.69 EGP. For etisalat money balance inquiry call *777*4#",
+                CompanyWallets);
+            Assert.Equal(WalletSmsKind.Incoming, r.Kind);
+            Assert.Equal(11m, r.Amount);
+            Assert.Equal("01000000001", r.CounterpartyPhone);
+            Assert.Equal("Ahmed S Ali", r.CounterpartyName);
+            Assert.Equal(185.69m, r.BalanceAfter);
+        }
+
+        [Fact]
+        public void Vf_english_receipt()
+        {
+            var r = WalletSmsParser.Parse("VF-Cash",
+                "You have received 11  L.E from 01100000002 registered to Ahmed S Ali on your wallet 01000000001. Your current Vodafone Cash balance is 36.10 L.E. Transaction date: 26-10-11 14:50 Transaction ID: 024600000001",
+                CompanyWallets);
+            Assert.Equal(WalletSmsKind.Incoming, r.Kind);
+            Assert.Equal(11m, r.Amount);
+            Assert.Equal("01100000002", r.CounterpartyPhone);
+            Assert.Equal("Ahmed S Ali", r.CounterpartyName);
+            Assert.Equal("024600000001", r.TxnRef);
+            Assert.Equal(36.10m, r.BalanceAfter);
+        }
+
+        [Fact]
+        public void English_transferred_to_your_wallet_is_incoming()
+        {
+            var r = WalletSmsParser.Parse("VF-Cash",
+                "EGP 25.50 has been transferred to your wallet from 01233334444. Your balance is EGP 80.00");
+            Assert.Equal(WalletSmsKind.Incoming, r.Kind);
+            Assert.Equal(25.50m, r.Amount);
+            Assert.Equal("01233334444", r.CounterpartyPhone);
+        }
+
+        [Fact]
+        public void English_outgoing_and_recharge_are_not_receipts()
+        {
+            Assert.Equal(WalletSmsKind.Outgoing, WalletSmsParser.Parse("VF-Cash",
+                "11  L.E were successfully transferred to 01100000002 the transfer fee is 1 LE, your current Vodafone Cash balance is 24.10 L.E. Transaction date: 26-10-11 14:58 Transaction ID: 024600000003",
+                CompanyWallets).Kind);
+            Assert.Equal(WalletSmsKind.Outgoing, WalletSmsParser.Parse("et money",
+                "11.00 EGP successfully transferred to number 01000000001 Transfer fees is  1.00 EGP.  Your current wallet balance is 174.69 EGP. For etisalat money balance inquiry call *777*4# with etisalat money enjoy service fixed fee Cashout with EGP 5 & transfer with EGP 1",
+                CompanyWallets).Kind);
+            Assert.Equal(WalletSmsKind.Outgoing, WalletSmsParser.Parse("et money",
+                "You recharged 15.00 EGP for number 01112223333 from etisalat money wallet, Your wallet balance is 161.69 EGP. For etisalat money balance inquiry call *777*4# with etisalat money enjoy service fixed fee Cashout with EGP 5 & transfer with EGP 1",
+                CompanyWallets).Kind);
+        }
+
+        [Fact]
+        public void Wallet_owner_name_never_blocks_a_match()
+        {
+            var request = new CollectionRequest { SenderPhone = "01100000002", SenderName = "هيثم" };
+            var vf = new WalletSms { Provider = WalletProvider.VodafoneCash, CounterpartyName = "مصطفى سالم" };
+            Assert.Equal(CollectionService.SenderFit.Unknown, CollectionService.CompareSender(vf, request));
+            var insta = new WalletSms { Provider = WalletProvider.InstaPay, CounterpartyName = "مصطفى سالم" };
+            Assert.Equal(CollectionService.SenderFit.Conflict, CollectionService.CompareSender(insta, request));
+        }
+
         [Fact]
         public void E_and_money_sender_is_etisalat()
         {
             Assert.Equal(WalletProvider.EtisalatCash, WalletSmsParser.ProviderFromSender("e& money"));
+            Assert.Equal(WalletProvider.EtisalatCash, WalletSmsParser.ProviderFromSender("et money"));
             Assert.Equal(WalletProvider.VodafoneCash, WalletSmsParser.ProviderFromSender("Vodafone"));
             Assert.Null(WalletSmsParser.ProviderFromSender("CIB"));
         }
