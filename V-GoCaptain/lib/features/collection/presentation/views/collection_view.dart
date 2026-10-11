@@ -51,7 +51,9 @@ class _CollectionViewState extends State<CollectionView> {
   void _prefill(MyCollection data) {
     if (_prefilled) return;
     _prefilled = true;
-    _sender.text = data.lastSenderPhone ?? '';
+    // The sender number is what the receipt SMS is matched on, so the captain
+    // types it himself every time: a pre-filled number he didn't transfer from
+    // left the transfer unmatched.
     _account.text = data.lastSenderAccount ?? '';
     _name.text = data.lastSenderName ?? '';
     _walletId = data.wallets.isNotEmpty ? data.wallets.first.id : null;
@@ -93,7 +95,7 @@ class _CollectionViewState extends State<CollectionView> {
         return;
       }
     } else if (!validPhone) {
-      errorToast(context, 'راجع الرقم', 'اكتب رقم المحفظة اللي حوّلت منها (11 رقم)');
+      errorToast(context, 'اكتب رقمك', 'اكتب رقم المحفظة اللي هتحوّل منها (11 رقم)');
       return;
     }
     if (amount < 1) {
@@ -101,6 +103,8 @@ class _CollectionViewState extends State<CollectionView> {
       return;
     }
     FocusScope.of(context).unfocus();
+    if (!wallet.isInstaPay && !await _confirmSender(sender, amount)) return;
+    if (!mounted) return;
     await context.read<CollectionCubit>().submit(
       walletId: wallet.id,
       senderPhone: sender.isEmpty ? null : sender,
@@ -108,6 +112,53 @@ class _CollectionViewState extends State<CollectionView> {
       senderName: name.isEmpty ? null : name,
       amount: amount,
     );
+  }
+
+  Future<bool> _confirmSender(String sender, double amount) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: AppColors.darkGrey,
+        title: Text('تأكيد رقم التحويل', style: AppStyle.title),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('حوّلت ${_money(amount)} من الرقم:', style: AppStyle.body),
+            SizedBox(height: 8.h),
+            Directionality(
+              textDirection: TextDirection.ltr,
+              child: Text(
+                sender,
+                style: AppStyle.heading.copyWith(
+                  color: AppColors.primary,
+                  letterSpacing: 1.5,
+                ),
+              ),
+            ),
+            SizedBox(height: 8.h),
+            Text(
+              'لو الرقم مش هو اللي حوّلت منه بالظبط، التحويل مش هيتأكد تلقائي.',
+              style: AppStyle.hint,
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: Text('تعديل', style: AppStyle.body),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: Text(
+              'أيوه، أكّد',
+              style: AppStyle.body.copyWith(color: AppColors.primary),
+            ),
+          ),
+        ],
+      ),
+    );
+    return ok == true;
   }
 
   @override
@@ -187,7 +238,7 @@ class _CollectionViewState extends State<CollectionView> {
                       text: 'مفيش أرقام تحويل متاحة دلوقتي، كلّم الدعم.',
                     ),
                   SizedBox(height: 18.h),
-                  _StepTitle(number: 2, text: 'اكتب بيانات التحويل اللي عملته'),
+                  _StepTitle(number: 2, text: 'اكتب الرقم أو الحساب اللي هتحوّل منه'),
                   SizedBox(height: 10.h),
                   if (_selected(data)?.isInstaPay == true) ...[
                     _field(
@@ -212,7 +263,7 @@ class _CollectionViewState extends State<CollectionView> {
                   ] else
                     _field(
                       _sender,
-                      'رقم المحفظة اللي حوّلت منها',
+                      'رقم المحفظة اللي هتحوّل منها (إجباري)',
                       Icons.phone_android,
                     ),
                   SizedBox(height: 10.h),
@@ -221,7 +272,7 @@ class _CollectionViewState extends State<CollectionView> {
                   Text(
                     _selected(data)?.isInstaPay == true
                         ? 'حوّل المبلغ ده بالظبط (${_money(transferAmount)})، والعنوان والاسم زي اللي في انستاباي، علشان التأكيد يتم تلقائي.'
-                        : 'حوّل المبلغ ده بالظبط (${_money(transferAmount)}) من نفس الرقم، علشان التأكيد يتم تلقائي.',
+                        : 'حوّل المبلغ ده بالظبط (${_money(transferAmount)}) من نفس الرقم اللي كتبته، علشان التأكيد يتم تلقائي.',
                     style: AppStyle.hint,
                   ),
                   SizedBox(height: 16.h),
