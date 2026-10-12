@@ -41,6 +41,7 @@ import '../widgets/live_eta_widget.dart';
 import '../widgets/start_trip_section.dart';
 import '../widgets/trip_duration_widget.dart';
 import '../../../../core/helpers/location_helper.dart';
+import 'where_to_view.dart';
 
 // TEMP(debug): when true, the client map auto-runs a simulated live-tracking
 // trip (Accepted → InProgress with a moving captain) so the camera-follow /
@@ -1247,7 +1248,14 @@ class _ClientMapViewState extends State<ClientMapView> {
                         IconButton(
                           onPressed: () async {
                             if (controller == null) return;
-                            await changePickup(context, controller!);
+                            final pin = await changePickup(
+                              context,
+                              controller!,
+                            );
+                            if (pin && context.mounted) {
+                              await _startPinMode(context, true);
+                              return;
+                            }
                             if (context.mounted) {
                               final updated = context.read<MapBloc>().state;
                               if (updated.fromLocation == null ||
@@ -1326,9 +1334,12 @@ class _ClientMapViewState extends State<ClientMapView> {
                           ),
                         ),
                         IconButton(
-                          onPressed: () {
+                          onPressed: () async {
                             if (controller == null) return;
-                            goWhere(context, controller);
+                            final pin = await goWhere(context, controller);
+                            if (pin && context.mounted) {
+                              await _startPinMode(context, false);
+                            }
                           },
                           icon: const Icon(
                             HugeIcons.strokeRoundedSearch01,
@@ -2116,7 +2127,8 @@ class _ClientMapViewState extends State<ClientMapView> {
   }
 }
 
-Future<void> goWhere(
+/// Returns true when the rider asked to pin the destination on the map instead.
+Future<bool> goWhere(
   BuildContext context,
   GoogleMapController? controller, {
   GlobalKey? bottomSheetKey,
@@ -2127,8 +2139,9 @@ Future<void> goWhere(
     arguments: false,
   );
 
+  if (result is PickOnMapResult) return true;
   if ((result == null || result is! TripLocationModel)) {
-    return;
+    return false;
   }
 
   final mapBloc = context.read<MapBloc>();
@@ -2159,11 +2172,11 @@ Future<void> goWhere(
   if (to == null && context.mounted) {
     // لم يتم تحديث to (ربما timeout) — نوقف أو نعرض رسالة
     errorToast(context, 'خطأ', 'لم يتم تحديث الوجهة، حاول ثانية.');
-    return;
+    return false;
   }
   if (from == null && context.mounted) {
     errorToast(context, 'خطأ', 'لم يتم تحديد نقطة الانطلاق بعد.');
-    return;
+    return false;
   }
 
   // 6) امسح المسار القديم (اختياري لكن مفيد) ثم اطلب حساب المسار
@@ -2188,7 +2201,7 @@ Future<void> goWhere(
 
   if (points.isEmpty && context.mounted) {
     errorToast(context, 'خطأ', 'لم نحصل على نقاط كافية للعرض.');
-    return;
+    return false;
   }
 
   // 9) حساب LatLngBounds
@@ -2250,9 +2263,11 @@ Future<void> goWhere(
       log('fallback animateCamera failed: $e2');
     }
   }
+  return false;
 }
 
-Future<void> changePickup(
+/// Returns true when the rider asked to pin the pickup on the map instead.
+Future<bool> changePickup(
   BuildContext context,
   GoogleMapController controller,
 ) async {
@@ -2261,6 +2276,7 @@ Future<void> changePickup(
     Routes.whereToViewRoute,
     arguments: true,
   );
+  if (result is PickOnMapResult) return true;
 
   if (result != null && result is TripLocationModel && context.mounted) {
     // أرسل النتيجة للـ Bloc لكن دي المرة isFrom = true
@@ -2285,4 +2301,5 @@ Future<void> changePickup(
       );
     }
   }
+  return false;
 }

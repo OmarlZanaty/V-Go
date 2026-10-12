@@ -26,6 +26,7 @@ class UpdateUserButton extends StatelessWidget {
     this.image,
     this.gender,
     this.scooterType,
+    this.sendPhone = true,
   });
   final TextEditingController name;
   final TextEditingController phone;
@@ -37,6 +38,7 @@ class UpdateUserButton extends StatelessWidget {
   final String? gender;
   final int? scooterType;
   final String userId;
+  final bool sendPhone;
   @override
   Widget build(BuildContext context) {
     return BlocConsumer<UserCubit, UserState>(
@@ -65,7 +67,7 @@ class UpdateUserButton extends StatelessWidget {
                       userId,
                       UpdateUserRequestModel(
                         name: name.text,
-                        phoneNumber: phone.text,
+                        phoneNumber: sendPhone ? phone.text : null,
                         profilePicture: imageFile,
                         nationalId: nationalId?.text,
                         license: license?.text,

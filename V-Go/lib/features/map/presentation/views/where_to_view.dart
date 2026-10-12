@@ -18,6 +18,12 @@ import '../logic/map_bloc/map_bloc.dart';
 import '../logic/map_bloc/map_event.dart';
 import '../logic/map_bloc/map_state.dart';
 
+/// Returned instead of a place when the rider chooses to drop a pin on the map
+/// (e.g. the typed name isn't found by the place search).
+class PickOnMapResult {
+  const PickOnMapResult();
+}
+
 class WhereToView extends StatefulWidget {
   const WhereToView({super.key, this.isFrom = false});
   final bool isFrom;
@@ -66,10 +72,52 @@ class _WhereToViewState extends State<WhereToView> {
     }
   }
 
+  // Typed places the search can't find can still be set: pin them on the map.
+  Widget _pickOnMapTile(BuildContext context) {
+    return ListTile(
+      contentPadding: const EdgeInsets.symmetric(horizontal: 12),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadiusGeometry.all(Radius.circular(50)),
+      ),
+      horizontalTitleGap: 10,
+      leading: const Icon(Icons.push_pin, color: AppColors.primary, size: 22),
+      title: Text(
+        'حدد المكان على الخريطة',
+        style: AppStyle.styleMedium14.copyWith(color: AppColors.primary),
+      ),
+      subtitle: Text(
+        'لو المكان مش ظاهر في النتايج، حرّك الخريطة واختاره بنفسك',
+        style: AppStyle.styleRegular12.copyWith(color: Colors.grey[500]),
+      ),
+      onTap: () {
+        FocusManager.instance.primaryFocus?.unfocus();
+        Navigator.of(context).pop(const PickOnMapResult());
+      },
+    );
+  }
+
+  // Keyboard "search": take the top result, or fall back to the map pin.
+  void _onSubmitted(BuildContext context) {
+    final suggestions = context.read<MapBloc>().state.placeSuggestions;
+    if (suggestions.isNotEmpty) {
+      HiveService.addSearch(suggestions.first);
+      _onSuggestionSelected(context, suggestions.first);
+    } else if (whereToController.text.trim().isNotEmpty) {
+      Navigator.of(context).pop(const PickOnMapResult());
+    }
+  }
+
   Widget _buildPlaceSuggestions() {
     return BlocBuilder<MapBloc, MapState>(
       builder: (context, state) {
-        if (state.placeSuggestions.isEmpty) return _buildHistory();
+        if (state.placeSuggestions.isEmpty) {
+          return Column(
+            children: [
+              _pickOnMapTile(context),
+              Expanded(child: _buildHistory()),
+            ],
+          );
+        }
         return ListView.separated(
           separatorBuilder: (context, index) => const Divider(
             height: 4,
@@ -77,8 +125,11 @@ class _WhereToViewState extends State<WhereToView> {
             endIndent: 14,
             indent: 14,
           ),
-          itemCount: state.placeSuggestions.length,
+          itemCount: state.placeSuggestions.length + 1,
           itemBuilder: (context, index) {
+            if (index == state.placeSuggestions.length) {
+              return _pickOnMapTile(context);
+            }
             final suggestion = state.placeSuggestions[index];
             return ListTile(
               contentPadding: const EdgeInsets.symmetric(horizontal: 12),
@@ -163,6 +214,8 @@ class _WhereToViewState extends State<WhereToView> {
                 );
               },
               controller: whereToController,
+              textInputAction: TextInputAction.search,
+              onSubmitted: (_) => _onSubmitted(context),
               cursorColor: AppColors.primary,
               style: AppStyle.styleMedium14.copyWith(color: AppColors.white),
               decoration: InputDecoration(

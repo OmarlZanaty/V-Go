@@ -15,6 +15,7 @@ class CustomTextField extends StatefulWidget {
     this.labelBehavior = false,
     this.onChange,
     this.validator,
+    this.readOnly = false,
   });
 
   final String labelText;
@@ -25,6 +26,7 @@ class CustomTextField extends StatefulWidget {
   final bool? labelBehavior;
   final void Function(String)? onChange;
   final String? Function(String?)? validator;
+  final bool readOnly;
 
   @override
   State<CustomTextField> createState() => _CustomTextFieldState();
@@ -56,6 +58,7 @@ class _CustomTextFieldState extends State<CustomTextField> {
       enableSuggestions: !widget.obscureText,
 
       controller: widget.controller,
+      readOnly: widget.readOnly,
       keyboardType: widget.keyboardType ??
           (widget.obscureText ? TextInputType.visiblePassword : null),
       style: AppStyle.styleMedium16.copyWith(

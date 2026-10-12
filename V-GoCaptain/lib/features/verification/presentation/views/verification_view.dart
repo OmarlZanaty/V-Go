@@ -173,6 +173,13 @@ class _VerificationViewState extends State<VerificationView> {
               child: Text('تعذّر تحميل حالة التوثيق', style: AppStyle.hint),
             );
           }
+          Widget row(DriverDocumentType type) => _DocumentRow(
+            type: type,
+            document: verification.documentFor(type),
+            uploading: state.uploadingType == type,
+            progress: state.uploadProgress,
+            onUpload: () => _pickAndUpload(type),
+          );
           return RefreshIndicator(
             onRefresh: () => context.read<VerificationCubit>().load(),
             child: ListView(
@@ -180,15 +187,20 @@ class _VerificationViewState extends State<VerificationView> {
               children: [
                 _Header(verification: verification),
                 SizedBox(height: 16.h),
-                ...DriverDocumentType.values.map(
-                  (type) => _DocumentRow(
-                    type: type,
-                    document: verification.documentFor(type),
-                    uploading: state.uploadingType == type,
-                    progress: state.uploadProgress,
-                    onUpload: () => _pickAndUpload(type),
-                  ),
+                ...DriverDocumentType.values
+                    .where((type) => !type.isOptional)
+                    .map(row),
+                SizedBox(height: 10.h),
+                Text('مستندات إضافية (اختيارية)', style: AppStyle.title),
+                SizedBox(height: 4.h),
+                Text(
+                  'مش مطلوبة للتوثيق، بس رفعها بيزوّد ثقة العملاء فيك.',
+                  style: AppStyle.hint,
                 ),
+                SizedBox(height: 10.h),
+                ...DriverDocumentType.values
+                    .where((type) => type.isOptional)
+                    .map(row),
                 SizedBox(height: 20.h),
               ],
             ),
@@ -340,6 +352,9 @@ IconData _icon(DriverDocumentType type) {
     DriverDocumentType.nationalIdBack => Icons.badge,
     DriverDocumentType.driverLicense => Icons.card_membership_outlined,
     DriverDocumentType.vehicleLicense => Icons.directions_car_outlined,
+    DriverDocumentType.criminalRecord => Icons.gavel_outlined,
+    DriverDocumentType.medicalExam => Icons.medical_services_outlined,
+    DriverDocumentType.scooterMaintenance => Icons.build_circle_outlined,
   };
 }
 

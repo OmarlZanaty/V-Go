@@ -34,12 +34,28 @@ class _UpdateUserViewState extends State<UpdateUserView> {
   String? _selectedScooterType;
   final GlobalKey<FormState> _formKey = GlobalKey<FormState>();
 
+  // A rider's phone is their login: it's shown but changed only via support.
+  bool get _phoneLocked =>
+      widget.user.id == AppConstants.kUserId &&
+      widget.user.role == UserRole.client.capitalized;
+
+  // The server stores +20XXXXXXXXXX; the form (and its validator) uses 01XXXXXXXXX.
+  static String _localPhone(String? phone) {
+    final digits = (phone ?? '').replaceAll(RegExp(r'\D'), '');
+    if (digits.startsWith('20') && digits.length == 12) {
+      return '0${digits.substring(2)}';
+    }
+    return phone ?? '';
+  }
+
   @override
   void initState() {
     super.initState();
 
     _fullNameController = TextEditingController(text: widget.user.name);
-    _phoneController = TextEditingController(text: widget.user.phoneNumber);
+    _phoneController = TextEditingController(
+      text: _localPhone(widget.user.phoneNumber),
+    );
     if (widget.user.role == UserRole.driver.capitalized) {
       _nationalIdController = TextEditingController(
         text: widget.user.nationalId,
@@ -103,7 +119,8 @@ class _UpdateUserViewState extends State<UpdateUserView> {
                       labelText: 'رقم الهاتف',
                       controller: _phoneController,
                       keyboardType: TextInputType.phone,
-                      validator: FormValidator.phone,
+                      readOnly: _phoneLocked,
+                      validator: _phoneLocked ? null : FormValidator.phone,
                     ),
                     if (widget.user.role == UserRole.driver.capitalized) ...[
                       verticalSpace(16),
@@ -180,6 +197,7 @@ class _UpdateUserViewState extends State<UpdateUserView> {
       formKey: _formKey,
       name: _fullNameController,
       phone: _phoneController,
+      sendPhone: !_phoneLocked,
       image: _selectedImage,
       nationalId: _nationalIdController,
       license: _licenseController,

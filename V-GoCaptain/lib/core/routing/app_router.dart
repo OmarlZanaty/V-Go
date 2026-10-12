@@ -19,7 +19,7 @@ import '../../features/profile/data/repo/profile_repo.dart';
 import '../../features/profile/presentation/cubit/ratings_cubit.dart';
 import '../../features/profile/presentation/cubit/scooter_cubit.dart';
 import '../../features/profile/presentation/cubit/support_cubit.dart';
-import '../../features/profile/presentation/views/pdf_viewer_view.dart';
+import '../../features/profile/presentation/views/legal_document_view.dart';
 import '../../features/profile/presentation/views/ratings_view.dart';
 import '../../features/profile/presentation/views/scooter_view.dart';
 import '../../features/profile/presentation/views/settings_view.dart';
@@ -141,10 +141,10 @@ class AppRouter {
 
       case Routes.pdfViewRoute:
         return _page(
-          PdfViewerView(
-            assetPath:
-                args?['assetPath'] as String? ?? 'assets/files/policy.pdf',
-            title: args?['title'] as String? ?? 'سياسة الخصوصية',
+          LegalDocumentView(
+            document: LegalDocumentView.fromAsset(
+              args?['assetPath'] as String?,
+            ),
           ),
         );
 

@@ -26,7 +26,7 @@ import '../../features/auth/presentation/views/reset_password_view.dart';
 import '../../features/bottom_nav_bar/client_bottom_nav_bar.dart';
 import '../../features/bottom_nav_bar/driver_bottom_nav_bar.dart';
 import '../../features/client/presentation/views/client_dashboard_view.dart';
-import '../../features/client/presentation/views/pdf_view.dart';
+import '../../features/client/presentation/views/legal_document_view.dart';
 import '../../features/dispatcher/presentation/views/all_dispatcher_chats_view.dart';
 import '../../features/dispatcher/presentation/views/chat_view.dart';
 import '../../features/dispatcher/presentation/views/dispatcher_dashboard_view.dart';
@@ -363,9 +363,8 @@ class AppRouter {
       case Routes.pdfViewRoute:
         final args = settings.arguments as Map<String, String>?;
         return MaterialPageRoute(
-          builder: (_) => PdfView(
-            assetPath: args?['assetPath'] ?? 'assets/files/policy.pdf',
-            title: args?['title'] ?? 'سياسة الخصوصية',
+          builder: (_) => LegalDocumentView(
+            document: LegalDocumentView.fromAsset(args?['assetPath']),
           ),
         );
 

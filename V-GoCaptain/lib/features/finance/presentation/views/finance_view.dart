@@ -97,8 +97,6 @@ class _FinanceViewState extends State<FinanceView> {
                   SizedBox(height: 12.h),
                   _LimitCard(summary: summary),
                 ],
-                SizedBox(height: 12.h),
-                _CommissionCard(percent: summary.companyCommissionPercent),
                 SizedBox(height: 16.h),
                 _RangeSelector(value: state.range),
                 SizedBox(height: 12.h),
@@ -262,32 +260,6 @@ class _LimitCard extends StatelessWidget {
               minHeight: 10.h,
               backgroundColor: AppColors.lightWhite,
               valueColor: AlwaysStoppedAnimation<Color>(color),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _CommissionCard extends StatelessWidget {
-  const _CommissionCard({required this.percent});
-
-  final double percent;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: EdgeInsets.all(16.w),
-      decoration: _cardDecoration(),
-      child: Row(
-        children: [
-          Icon(Icons.percent, color: AppColors.primary, size: 22.r),
-          SizedBox(width: 10.w),
-          Expanded(
-            child: Text(
-              'عمولة الشركة ${percent.toStringAsFixed(percent.truncateToDouble() == percent ? 0 : 1)}% من كل رحلة',
-              style: AppStyle.body,
             ),
           ),
         ],

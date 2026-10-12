@@ -5,6 +5,7 @@ import 'package:signalr_netcore/signalr_client.dart';
 
 import '../../features/trips/data/model/trip_request_model.dart';
 import '../config/app_config.dart';
+import '../helpers/account_blocked.dart';
 import '../utils/app_constants.dart';
 
 /// RequestTrip was refused because the rider still owes an earlier trip they
@@ -187,6 +188,15 @@ class TripService {
     _hubConnection.on('TripPaymentRefused', (args) {
       tripPaymentRefused?.call(args);
       log('TripPaymentRefused received in Client: $args', name: 'TripService');
+    });
+
+    // Admin blocked this account while signed in.
+    _hubConnection.on('AccountBlocked', (args) {
+      final data = (args != null && args.isNotEmpty) ? args.first : null;
+      final message = data is Map
+          ? (data['message'] ?? data['Message'])?.toString()
+          : null;
+      AccountBlocked.signOut(message);
     });
 
     //! TripPaymentUpdated Listeners

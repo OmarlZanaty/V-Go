@@ -19,6 +19,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../../../core/di/di.dart';
 import '../../data/model/home_banner_model.dart';
 import '../../data/repo/home_banner_repo.dart';
+import 'package:video_player/video_player.dart';
 
 class ClientDashboardView extends StatelessWidget {
   const ClientDashboardView({super.key});
@@ -299,25 +300,28 @@ class _CaroselViewState extends State<CaroselView> {
     _pageController = PageController(initialPage: _currentIndex);
     _apply(_repo.cached());
     _load();
-    _timer = Timer.periodic(const Duration(seconds: 4), (timer) {
-      if (_pageController.hasClients) {
-        final int n = _slides.length;
-        if (n > 1) {
-          final int period = 2 * (n - 1);
-          final int tick = (timer.tick - 1) % period;
-          final int nextPage = tick <= (n - 1) ? tick : 2 * (n - 1) - tick;
-          _pageController.animateToPage(
-            nextPage,
-            duration: const Duration(milliseconds: 500),
-            curve: Curves.easeInOut,
-          );
-          if (!mounted) return;
-          setState(() {
-            _currentIndex = nextPage;
-          });
-        }
-      }
+    // A video slide holds the carousel until it ends (it calls _next itself).
+    _timer = Timer.periodic(const Duration(seconds: 4), (_) {
+      if (_currentSlideIsVideo) return;
+      _next();
     });
+  }
+
+  bool get _currentSlideIsVideo =>
+      _currentIndex < _slides.length &&
+      _slides[_currentIndex].banner?.isVideo == true;
+
+  void _next() {
+    if (!mounted || !_pageController.hasClients) return;
+    final n = _slides.length;
+    if (n < 2) return;
+    final nextPage = (_currentIndex + 1) % n;
+    _pageController.animateToPage(
+      nextPage,
+      duration: const Duration(milliseconds: 500),
+      curve: Curves.easeInOut,
+    );
+    setState(() => _currentIndex = nextPage);
   }
 
   Future<void> _load() async {
@@ -359,9 +363,16 @@ class _CaroselViewState extends State<CaroselView> {
     super.dispose();
   }
 
-  Widget _image(_Slide slide) {
+  Widget _image(_Slide slide, {required bool active}) {
     if (slide.asset != null) {
       return Image.asset(slide.asset!, fit: BoxFit.fill);
+    }
+    if (slide.banner!.isVideo) {
+      return _VideoSlide(
+        url: slide.banner!.imageUrl,
+        active: active,
+        onEnded: _next,
+      );
     }
     return CachedNetworkImage(
       imageUrl: slide.banner!.imageUrl,
@@ -393,7 +404,7 @@ class _CaroselViewState extends State<CaroselView> {
                 onTap: linked ? () => _onTap(slide) : null,
                 child: ClipRRect(
                   borderRadius: BorderRadius.circular(25),
-                  child: _image(slide),
+                  child: _image(slide, active: index == _currentIndex),
                 ),
               );
             },
@@ -429,6 +440,95 @@ class _CaroselViewState extends State<CaroselView> {
           }),
         ),
       ],
+    );
+  }
+}
+
+/// A reel-style ad: muted, plays while its slide is showing, and moves the
+/// carousel on when it ends. Falls back to a dark box if it can't load.
+class _VideoSlide extends StatefulWidget {
+  const _VideoSlide({
+    required this.url,
+    required this.active,
+    required this.onEnded,
+  });
+
+  final String url;
+  final bool active;
+  final VoidCallback onEnded;
+
+  @override
+  State<_VideoSlide> createState() => _VideoSlideState();
+}
+
+class _VideoSlideState extends State<_VideoSlide> {
+  late final VideoPlayerController _controller;
+  bool _ready = false;
+  bool _ended = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = VideoPlayerController.networkUrl(Uri.parse(widget.url))
+      ..setVolume(0)
+      ..addListener(_onTick);
+    _controller.initialize().then((_) {
+      if (!mounted) return;
+      setState(() => _ready = true);
+      _sync();
+    }).catchError((_) {
+      // Unplayable: don't hold the carousel on a blank slide.
+      if (mounted && widget.active) widget.onEnded();
+    });
+  }
+
+  void _onTick() {
+    final v = _controller.value;
+    if (!v.isInitialized || v.duration == Duration.zero) return;
+    final done = v.position >= v.duration && !v.isPlaying;
+    if (done && !_ended) {
+      _ended = true;
+      if (widget.active) widget.onEnded();
+    }
+  }
+
+  void _sync() {
+    if (!_ready) return;
+    if (widget.active) {
+      _ended = false;
+      _controller
+        ..seekTo(Duration.zero)
+        ..play();
+    } else {
+      _controller.pause();
+    }
+  }
+
+  @override
+  void didUpdateWidget(covariant _VideoSlide oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.active != widget.active) _sync();
+  }
+
+  @override
+  void dispose() {
+    _controller
+      ..removeListener(_onTick)
+      ..dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (!_ready) return Container(color: AppColors.darkGrey);
+    return FittedBox(
+      fit: BoxFit.cover,
+      clipBehavior: Clip.hardEdge,
+      child: SizedBox(
+        width: _controller.value.size.width,
+        height: _controller.value.size.height,
+        child: VideoPlayer(_controller),
+      ),
     );
   }
 }

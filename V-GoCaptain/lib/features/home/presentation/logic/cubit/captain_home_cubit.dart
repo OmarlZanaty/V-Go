@@ -440,6 +440,15 @@ class CaptainHomeCubit extends Cubit<CaptainHomeState>
       // captain marker wouldn't appear on the client until the captain moved.
       // isAvailable:false makes the backend forward this to the trip's client.
       unawaited(_pushActiveTripLocation());
+    } on HubCallRejected catch (e) {
+      // Cancelled by the client or taken by another captain: drop the offer.
+      emit(
+        state.copyWith(
+          isBusy: false,
+          clearOffer: true,
+          error: 'الرحلة لم تعد متاحة — ${e.message ?? 'تم إلغاؤها'}',
+        ),
+      );
     } catch (_) {
       emit(state.copyWith(isBusy: false, error: 'تعذّر قبول الرحلة'));
     }
@@ -485,6 +494,13 @@ class CaptainHomeCubit extends Cubit<CaptainHomeState>
         case TripStage.completed:
           emit(state.copyWith(isBusy: false));
       }
+    } on HubCallRejected catch (e) {
+      emit(
+        state.copyWith(
+          isBusy: false,
+          error: e.message ?? 'تعذّر تحديث حالة الرحلة',
+        ),
+      );
     } catch (_) {
       emit(state.copyWith(isBusy: false, error: 'تعذّر تحديث حالة الرحلة'));
     }

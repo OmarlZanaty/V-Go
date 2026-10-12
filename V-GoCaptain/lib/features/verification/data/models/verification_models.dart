@@ -34,6 +34,10 @@ enum DriverDocumentType {
   nationalIdBack,
   driverLicense,
   vehicleLicense,
+  // Optional: not needed to get verified.
+  criminalRecord,
+  medicalExam,
+  scooterMaintenance,
 }
 
 extension DriverDocumentTypeX on DriverDocumentType {
@@ -43,6 +47,9 @@ extension DriverDocumentTypeX on DriverDocumentType {
     DriverDocumentType.nationalIdBack => 'NationalIdBack',
     DriverDocumentType.driverLicense => 'DriverLicense',
     DriverDocumentType.vehicleLicense => 'VehicleLicense',
+    DriverDocumentType.criminalRecord => 'CriminalRecord',
+    DriverDocumentType.medicalExam => 'MedicalExam',
+    DriverDocumentType.scooterMaintenance => 'ScooterMaintenance',
   };
 
   String get label => switch (this) {
@@ -51,7 +58,15 @@ extension DriverDocumentTypeX on DriverDocumentType {
     DriverDocumentType.nationalIdBack => 'البطاقة — ظهر',
     DriverDocumentType.driverLicense => 'رخصة القيادة',
     DriverDocumentType.vehicleLicense => 'رخصة العربية',
+    DriverDocumentType.criminalRecord => 'الفيش الجنائي',
+    DriverDocumentType.medicalExam => 'الكشف الطبي',
+    DriverDocumentType.scooterMaintenance => 'شهادة صيانة الاسكوتر',
   };
+
+  bool get isOptional =>
+      this == DriverDocumentType.criminalRecord ||
+      this == DriverDocumentType.medicalExam ||
+      this == DriverDocumentType.scooterMaintenance;
 
   bool get requiresExpiry =>
       this == DriverDocumentType.driverLicense ||

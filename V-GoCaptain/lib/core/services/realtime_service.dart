@@ -5,6 +5,7 @@ import 'package:signalr_netcore/signalr_client.dart';
 
 import '../api/dio_factory.dart';
 import '../config/app_config.dart';
+import '../helpers/account_blocked.dart';
 import '../utils/app_constants.dart';
 
 class DriverOnlineBlock {
@@ -21,6 +22,14 @@ class DriverOnlineBlock {
       message: (map['message'] ?? map['Message'])?.toString(),
     );
   }
+}
+
+/// The server refused a trip action (e.g. the trip was cancelled meanwhile).
+class HubCallRejected implements Exception {
+  const HubCallRejected(this.message);
+  final String? message;
+  @override
+  String toString() => message ?? 'HubCallRejected';
 }
 
 /// Manages the two SignalR connections the Captain app needs:
@@ -98,12 +107,17 @@ class RealtimeService {
         if (id != null) onTripTaken?.call(id);
       });
       // Client cancelled — clear the captain's offer/active trip.
-      tripHub.on('TripCancelledForTripDriver', (args) {
+      // ForTripDriver: the accepted captain. ByClient: every captain that got
+      // the offer before anyone accepted it.
+      void cancelledHandler(List<Object?>? args) {
         final data = (args != null && args.isNotEmpty) ? args.first : null;
         final id = (data is Map ? (data['tripId'] ?? data['TripId']) : data)
             ?.toString();
         if (id != null) onTripCancelled?.call(id);
-      });
+      }
+
+      tripHub.on('TripCancelledForTripDriver', cancelledHandler);
+      tripHub.on('TripCancelledByClient', cancelledHandler);
       tripHub.on('TripPaymentUpdated', (args) {
         onPaymentUpdated?.call();
       });
@@ -134,6 +148,15 @@ class RealtimeService {
         }
       }
 
+      void accountBlockedHandler(List<Object?>? args) {
+        final data = (args != null && args.isNotEmpty) ? args.first : null;
+        final message = data is Map
+            ? (data['message'] ?? data['Message'])?.toString()
+            : null;
+        AccountBlocked.signOut(message);
+      }
+
+      tripHub.on('AccountBlocked', accountBlockedHandler);
       tripHub.on('DriverOnlineBlocked', onlineBlockedHandler);
       driverHub.on('DriverOnlineBlocked', onlineBlockedHandler);
       tripHub.on('DriverFinanceUpdated', financeUpdatedHandler);
@@ -195,13 +218,28 @@ class RealtimeService {
   /// idle timeouts); without this guard a tap during a brief reconnect throws
   /// "connection is not in the Connected state" and the captain sees an error
   /// even though nothing is really wrong.
-  Future<Object?> _invokeTrip(String method, {List<Object>? args}) async {
+  Future<Object?> _invokeTrip(
+    String method, {
+    List<Object>? args,
+    bool checkResult = false,
+  }) async {
     final hub = _tripHub;
     if (hub == null) {
       throw StateError('Trip hub is not initialised');
     }
     await _ensureConnected(hub);
-    return hub.invoke(method, args: args);
+    final result = await hub.invoke(method, args: args);
+    // Hub methods answer with a Response object instead of throwing, so a
+    // refusal (e.g. the client already cancelled) must be checked here.
+    if (checkResult && result is Map) {
+      final ok = result['isSuccess'] ?? result['IsSuccess'];
+      if (ok == false) {
+        throw HubCallRejected(
+          (result['message'] ?? result['Message'])?.toString(),
+        );
+      }
+    }
+    return result;
   }
 
   /// Waits briefly for an in-flight auto-reconnect to finish; if the hub is
@@ -240,6 +278,7 @@ class RealtimeService {
     await _invokeTrip(
       'ApproveAndAssignDriverToTrip',
       args: [tripId, AppConstants.kUserId, lat.toString(), lng.toString()],
+      checkResult: true,
     );
   }
 
@@ -248,15 +287,27 @@ class RealtimeService {
   }
 
   Future<void> arrived(String tripId) async {
-    await _invokeTrip('Arrived', args: [tripId, AppConstants.kUserId]);
+    await _invokeTrip(
+      'Arrived',
+      args: [tripId, AppConstants.kUserId],
+      checkResult: true,
+    );
   }
 
   Future<void> startTrip(String tripId) async {
-    await _invokeTrip('StartTrip', args: [tripId, AppConstants.kUserId]);
+    await _invokeTrip(
+      'StartTrip',
+      args: [tripId, AppConstants.kUserId],
+      checkResult: true,
+    );
   }
 
   Future<void> endTrip(String tripId) async {
-    await _invokeTrip('EndTrip', args: [tripId, AppConstants.kUserId]);
+    await _invokeTrip(
+      'EndTrip',
+      args: [tripId, AppConstants.kUserId],
+      checkResult: true,
+    );
   }
 
   /// Driver confirms they received the cash for this trip → backend marks it

@@ -6,6 +6,7 @@ import 'package:pretty_dio_logger/pretty_dio_logger.dart';
 
 import '../cache/cache_helper.dart';
 import '../errors/exception.dart';
+import '../helpers/account_blocked.dart';
 import '../helpers/navigation_handler.dart';
 import '../utils/app_constants.dart';
 import 'end_points.dart';
@@ -72,6 +73,11 @@ class DioFactory {
         return handler.next(options);
       },
       onError: (DioException error, handler) async {
+        if (AccountBlocked.isBlockedResponse(error.response)) {
+          final data = error.response!.data as Map;
+          await AccountBlocked.signOut(data['message']?.toString());
+          return handler.next(error);
+        }
         if (error.response?.statusCode == 401 &&
             _retryCount < 1 &&
             (await _tokenService.getRefreshToken()).isNotEmpty) {
