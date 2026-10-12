@@ -31,6 +31,7 @@ namespace Masafet_Elseka.Application.Interfaces.ICollectionService
 
         Task<Response<List<AdminWalletDTO>>> GetWalletsAsync();
         Task<Response<AdminWalletDTO>> SaveWalletAsync(int? walletId, WalletUpsertDTO dto, string actorUserId);
+        Task<Response<AdminWalletDTO>> SetWalletBalanceAsync(int walletId, WalletBalanceDTO dto, string actorUserId);
 
         Task<Response<List<CollectorDeviceDTO>>> GetDevicesAsync();
         Task<Response<CollectorDeviceDTO>> CreateDeviceAsync(CreateDeviceDTO dto, string actorUserId);

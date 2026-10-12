@@ -281,6 +281,8 @@ class _StatusViewState extends State<StatusView> {
 
   Future<void> _askSms() async {
     final result = await Permission.sms.request();
+    // Which SIM a message came in on (two wallets of one kind on one phone).
+    await Permission.phone.request();
     await Permission.notification.request();
     // A side-loaded app on Android 13+ gets "restricted setting" instead of a dialog.
     setState(() => _smsBlocked = !result.isGranted);

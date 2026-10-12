@@ -338,6 +338,12 @@ namespace Masafet_Elseka.Infrastructure.Migrations
                     b.Property<Guid?>("DeviceId")
                         .HasColumnType("uniqueidentifier");
 
+                    b.Property<decimal?>("ExpectedBalance")
+                        .HasColumnType("decimal(18,2)");
+
+                    b.Property<int>("GapStreak")
+                        .HasColumnType("int");
+
                     b.Property<string>("HolderName")
                         .IsRequired()
                         .HasMaxLength(100)
@@ -346,8 +352,18 @@ namespace Masafet_Elseka.Infrastructure.Migrations
                     b.Property<bool>("IsActive")
                         .HasColumnType("bit");
 
+                    b.Property<DateTime?>("LastChainAt")
+                        .HasColumnType("datetime2");
+
                     b.Property<DateTime?>("LastSmsAt")
                         .HasColumnType("datetime2");
+
+                    b.Property<DateTime?>("PausedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("PausedReason")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
 
                     b.Property<string>("PhoneNumber")
                         .IsRequired()
@@ -355,6 +371,9 @@ namespace Masafet_Elseka.Infrastructure.Migrations
                         .HasColumnType("nvarchar(100)");
 
                     b.Property<int>("Provider")
+                        .HasColumnType("int");
+
+                    b.Property<int?>("SimSlot")
                         .HasColumnType("int");
 
                     b.Property<int>("SortOrder")
@@ -1063,6 +1082,9 @@ namespace Masafet_Elseka.Infrastructure.Migrations
                         .HasMaxLength(2000)
                         .HasColumnType("nvarchar(2000)");
 
+                    b.Property<int>("ChainStatus")
+                        .HasColumnType("int");
+
                     b.Property<string>("ClientId")
                         .IsRequired()
                         .HasMaxLength(100)
@@ -1118,6 +1140,9 @@ namespace Masafet_Elseka.Infrastructure.Migrations
                         .IsRequired()
                         .HasMaxLength(60)
                         .HasColumnType("nvarchar(60)");
+
+                    b.Property<int?>("SimSlot")
+                        .HasColumnType("int");
 
                     b.Property<int>("Source")
                         .HasColumnType("int");

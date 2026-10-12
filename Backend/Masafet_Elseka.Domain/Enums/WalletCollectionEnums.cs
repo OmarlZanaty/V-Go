@@ -35,6 +35,19 @@ namespace Masafet_Elseka.Domain.Enums
         NotApplicable = 5  // not an incoming transfer
     }
 
+    // Does a receipt's "balance after" follow from the wallet's previous message?
+    // A forged SMS can copy the wording but not the wallet's running balance.
+    public enum WalletSmsChainStatus
+    {
+        NotApplicable = 0, // InstaPay, or a message that carries no balance and moves nothing
+        Ok = 1,            // previous balance ± amount = this balance
+        Gap = 2,           // a receipt whose balance doesn't follow: missed or forged
+        First = 3,         // no anchor yet (first message on the wallet, or after a reset)
+        NoBalance = 4,     // a receipt without a balance: can't be checked
+        Resync = 5,        // outgoing / unreadable money message: its balance becomes the new anchor
+        Stale = 6          // arrived after a newer message and doesn't fit the one before it
+    }
+
     // A captain's "I transferred X from number Y" claim.
     public enum CollectionRequestStatus
     {

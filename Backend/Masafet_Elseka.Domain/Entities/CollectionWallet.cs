@@ -1,5 +1,6 @@
 using Masafet_Elseka.Domain.Enums;
 using System.ComponentModel.DataAnnotations;
+using System.ComponentModel.DataAnnotations.Schema;
 
 namespace Masafet_Elseka.Domain.Entities
 {
@@ -22,6 +23,20 @@ namespace Masafet_Elseka.Domain.Entities
         // The collector phone holding this SIM (null = not assigned yet).
         public Guid? DeviceId { get; set; }
         public DateTime? LastSmsAt { get; set; }
+        // Which SIM of a dual-SIM collector phone holds this wallet (1 / 2); null =
+        // the only wallet of its kind on that phone.
+        public int? SimSlot { get; set; }
+
+        // Balance chain (anti-forgery): the balance the next receipt must start from,
+        // how many receipts in a row didn't follow it, and the pause after three.
+        [Column(TypeName = "decimal(18,2)")]
+        public decimal? ExpectedBalance { get; set; }
+        public int GapStreak { get; set; }
+        // Time of the newest message on the chain (older arrivals don't move it).
+        public DateTime? LastChainAt { get; set; }
+        [MaxLength(200)]
+        public string? PausedReason { get; set; }
+        public DateTime? PausedAt { get; set; }
         public DateTime CreatedAt { get; set; }
 
         public virtual CollectorDevice? Device { get; set; }

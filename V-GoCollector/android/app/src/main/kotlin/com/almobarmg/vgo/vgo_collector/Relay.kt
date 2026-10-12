@@ -122,6 +122,8 @@ object Relay {
             if (http.code != 200) {
                 p.lastHeartbeatOk = false
                 p.lastError = describe(http)
+                // 401 is "unpaired", not "server gone": never move servers for it.
+                if (http.code != 401 && http.code != 429) serverUnreachable(context, appVersion)
                 return
             }
             val data = JSONObject(http.body).getJSONObject("data")
@@ -133,13 +135,35 @@ object Relay {
             p.heartbeatSeconds = data.optInt("heartbeatSeconds", p.heartbeatSeconds)
             p.deviceName = data.optString("deviceName", p.deviceName)
             p.walletsJson = (data.optJSONArray("wallets") ?: JSONArray()).toString()
+            p.nextServerUrl = data.optString("nextServerBaseUrl").takeIf { it.isNotBlank() && it != "null" }
+            p.serverFailures = 0
             p.lastHeartbeatOk = true
         } catch (e: Exception) {
             p.lastHeartbeatAt = System.currentTimeMillis()
             p.lastHeartbeatOk = false
             p.lastError = "مفيش اتصال بالسيرفر (${e.javaClass.simpleName})"
             Log.w(TAG, "heartbeat failed", e)
+            serverUnreachable(context, appVersion)
         }
+    }
+
+    /**
+     * The server is moving (ported from VIP Relay): while it still answered it told us
+     * its next address. After three heartbeats in a row that can't reach the current
+     * one, switch for good, but only if the new address really is a V-Go collection
+     * server. Nobody has to re-pair the phone after a migration.
+     */
+    private fun serverUnreachable(context: Context, appVersion: String) {
+        val p = Prefs(context)
+        val next = p.nextServerUrl?.trimEnd('/') ?: return
+        if (next.equals(p.baseUrl, ignoreCase = true)) return
+        p.serverFailures = p.serverFailures + 1
+        if (p.serverFailures < 3 || ping(next) != null) return
+        val old = p.baseUrl
+        p.baseUrl = next
+        p.serverFailures = 0
+        p.lastError = "عنوان السيرفر اتغير تلقائياً من $old لـ $next"
+        Log.i(TAG, "server moved: $old -> $next")
     }
 
     // ---------------------------------------------------------------- inbox sweep
@@ -160,7 +184,7 @@ object Relay {
 
     private data class Sms(
         val clientId: String, val sender: String, val body: String, val date: Long,
-        val source: String = "sms", val pkg: String? = null,
+        val source: String = "sms", val pkg: String? = null, val simSlot: Int? = null,
     )
 
     // ---------------------------------------------------------------- notifications
@@ -216,9 +240,16 @@ object Relay {
         if (!hasSmsPermission(context)) {
             smsError = "صلاحية قراءة الرسايل مقفولة"
         } else try {
+            // sub_id (which SIM) tells two wallets of the same kind on one phone apart;
+            // not every phone's inbox has the column.
+            val subIdColumn = runCatching {
+                context.contentResolver.query(Uri.parse("content://sms/inbox"), arrayOf("_id", "sub_id"), "1=0", null, null)
+                    ?.use { true } ?: false
+            }.getOrDefault(false)
+            val columns = if (subIdColumn) arrayOf("_id", "address", "body", "date", "sub_id") else arrayOf("_id", "address", "body", "date")
             context.contentResolver.query(
                 Uri.parse("content://sms/inbox"),
-                arrayOf("_id", "address", "body", "date"),
+                columns,
                 "date >= ?", arrayOf(since.toString()), "date ASC"
             )?.use { c ->
                 while (c.moveToNext()) {
@@ -226,12 +257,13 @@ object Relay {
                     val address = c.getString(1)
                     val body = c.getString(2) ?: ""
                     val date = c.getLong(3)
+                    val simSlot = if (subIdColumn) SimSlots.fromSubscriptionId(context, c.getInt(4)) else null
                     val clientId = "sms-$id-$date"
                     if (clientId in acked) continue
                     // Wallet senders, plus bank SMS about InstaPay (never personal numbers).
                     val personal = address != null && Regex("^\\+?\\d{6,}$").matches(address.replace(" ", ""))
                     if (!isWalletSender(address, hints) && (personal || !mentionsInstaPay(body, keywords))) continue
-                    fresh += Sms(clientId, address ?: "", body, date)
+                    fresh += Sms(clientId, address ?: "", body, date, simSlot = simSlot)
                 }
             }
         } catch (e: SecurityException) {
@@ -246,7 +278,8 @@ object Relay {
             chunk.forEach {
                 messages.put(JSONObject().put("clientId", it.clientId).put("sender", it.sender)
                     .put("body", it.body).put("receivedAtMs", it.date)
-                    .put("source", it.source).put("package", it.pkg ?: JSONObject.NULL))
+                    .put("source", it.source).put("package", it.pkg ?: JSONObject.NULL)
+                    .put("simSlot", it.simSlot ?: JSONObject.NULL))
             }
             try {
                 val http = request(p.baseUrl, "sms", "POST", JSONObject().put("messages", messages), key, timeoutMs)

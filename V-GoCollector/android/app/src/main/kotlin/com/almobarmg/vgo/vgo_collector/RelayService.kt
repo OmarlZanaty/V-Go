@@ -41,6 +41,7 @@ class RelayService : Service() {
             return START_NOT_STICKY
         }
         startInForeground("بيشتغل…")
+        Watchdog.ensurePeriodic(this)
         if (executor == null) {
             executor = Executors.newSingleThreadScheduledExecutor().also { ex ->
                 ex.scheduleWithFixedDelay({ tick() }, 0, SWEEP_SECONDS, TimeUnit.SECONDS)
@@ -86,7 +87,15 @@ class RelayService : Service() {
     private fun startInForeground(text: String) {
         ensureChannel(this)
         val type = if (Build.VERSION.SDK_INT >= 34) ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE else 0
-        ServiceCompat.startForeground(this, NOTIFICATION_ID, notification(text), type)
+        try {
+            ServiceCompat.startForeground(this, NOTIFICATION_ID, notification(text), type)
+        } catch (e: Exception) {
+            // Android refused a background foreground start (12+): stop instead of
+            // crashing; the watchdog tries again.
+            Prefs(this).lastError = "أندرويد منع تشغيل الخدمة: ${e.javaClass.simpleName}"
+            Watchdog.restartSoon(this, 60_000L)
+            stopSelf()
+        }
     }
 
     private fun updateNotification(text: String) {
@@ -97,6 +106,25 @@ class RelayService : Service() {
         executor?.shutdownNow()
         executor = null
         super.onDestroy()
+    }
+
+    /** Cleared from recents (some phones do it on their own): come back shortly. */
+    override fun onTaskRemoved(rootIntent: Intent?) {
+        val p = Prefs(this)
+        if (p.paired && p.enabled) Watchdog.restartSoon(this)
+        super.onTaskRemoved(rootIntent)
+    }
+
+    /**
+     * Android 15 gives a time-limited foreground service type 6 hours a day and kills
+     * the app if it is still running when that runs out. This service is specialUse
+     * (no limit); this is the safety net: stop cleanly, come back shortly.
+     */
+    override fun onTimeout(startId: Int, fgsType: Int) {
+        Prefs(this).lastError = "أندرويد وقّف الخدمة بعد المدة المسموحة — بتشتغل تاني لوحدها"
+        Watchdog.restartSoon(this, 30_000L)
+        stopForeground(STOP_FOREGROUND_REMOVE)
+        stopSelf()
     }
 
     companion object {

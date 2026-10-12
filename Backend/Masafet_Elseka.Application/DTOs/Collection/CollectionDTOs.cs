@@ -116,6 +116,9 @@ namespace Masafet_Elseka.Application.DTOs.Collection
         // How far back the phone re-scans its inbox for anything it might have missed.
         public int LookbackHours { get; set; }
         public int HeartbeatSeconds { get; set; }
+        // The server is moving: the phone switches to this address by itself once the
+        // current one stops answering and this one does.
+        public string? NextServerBaseUrl { get; set; }
     }
 
     public class CollectorSmsDTO
@@ -126,6 +129,7 @@ namespace Masafet_Elseka.Application.DTOs.Collection
         public long ReceivedAtMs { get; set; } // unix epoch milliseconds from the phone
         public string? Source { get; set; }    // "sms" (default) | "notification"
         public string? Package { get; set; }   // notifications: the posting app
+        public int? SimSlot { get; set; }      // dual-SIM phones: 1 / 2, when known
     }
 
     public class CollectorSmsBatchDTO
@@ -173,6 +177,9 @@ namespace Masafet_Elseka.Application.DTOs.Collection
         public string? SourcePackage { get; set; }
         public string? TxnRef { get; set; }
         public decimal? BalanceAfter { get; set; }
+        // Ok | Gap | First | NoBalance | Resync | Stale | NotApplicable
+        public string ChainStatus { get; set; } = "NotApplicable";
+        public int? SimSlot { get; set; }
         public string MatchStatus { get; set; } = string.Empty;
         public long? CollectionRequestId { get; set; }
         public string? DriverId { get; set; }
@@ -204,6 +211,15 @@ namespace Masafet_Elseka.Application.DTOs.Collection
         public bool IsActive { get; set; } = true;
         public int SortOrder { get; set; }
         public Guid? DeviceId { get; set; }
+        // Dual-SIM collector phone: which SIM holds this wallet (1 / 2), else null.
+        public int? SimSlot { get; set; }
+    }
+
+    // Resume a wallet paused by the balance chain (or anchor a new one): the real
+    // balance the wallet shows right now.
+    public class WalletBalanceDTO
+    {
+        public decimal ExpectedBalance { get; set; }
     }
 
     public class AdminWalletDTO : CollectionWalletDTO
@@ -213,6 +229,12 @@ namespace Masafet_Elseka.Application.DTOs.Collection
         public Guid? DeviceId { get; set; }
         public string? DeviceName { get; set; }
         public DateTime? LastSmsAt { get; set; }
+        public int? SimSlot { get; set; }
+        // Balance chain.
+        public decimal? ExpectedBalance { get; set; }
+        public int GapStreak { get; set; }
+        public string? PausedReason { get; set; }
+        public DateTime? PausedAt { get; set; }
     }
 
     public class CollectorDeviceDTO
@@ -265,6 +287,7 @@ namespace Masafet_Elseka.Application.DTOs.Collection
         public decimal TotalDueAboveTolerance { get; set; }
         public int OnlineDevices { get; set; }
         public int ActiveWallets { get; set; }
+        public int PausedWallets { get; set; }
         public List<CollectionCycleDTO> RecentCycles { get; set; } = new();
     }
 }

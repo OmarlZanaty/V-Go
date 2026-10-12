@@ -9,6 +9,7 @@ using Masafet_Elseka.Domain.Entities;
 using Masafet_Elseka.Domain.Enums;
 using Masafet_Elseka.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
 using Serilog;
 using System.Security.Cryptography;
 using System.Text;
@@ -31,12 +32,19 @@ namespace Masafet_Elseka.Infrastructure.Services.CollectionService
     // Matching runs under one SQL app lock, so an SMS and a request arriving at the same
     // moment can never both match something else or be credited twice; the ledger's
     // unique WalletSmsId index is the last line of defence.
+    //
+    // Every wallet receipt is also checked against the wallet's running balance
+    // (BalanceChain): one whose balance doesn't follow is never credited by itself, and
+    // three in a row pause the wallet until an admin resumes it.
     public class CollectionService : ICollectionService
     {
         // A request and its SMS must be this close in time.
         public static readonly TimeSpan MatchWindow = TimeSpan.FromHours(6);
         // An expired request can still be confirmed by an SMS this late.
         public static readonly TimeSpan LateWindow = TimeSpan.FromHours(48);
+        // A receipt and a request whose senders disagree are paired for review only
+        // when they are this close in time (a mistyped sender number).
+        public static readonly TimeSpan SuspectWindow = TimeSpan.FromMinutes(30);
         // The collector phone counts as online if it reported in this recently.
         public static readonly TimeSpan DeviceOnlineWindow = TimeSpan.FromMinutes(10);
         // Without a heartbeat for this long at the deadline, nobody is locked: we can't
@@ -50,12 +58,15 @@ namespace Masafet_Elseka.Infrastructure.Services.CollectionService
         private readonly Context _context;
         private readonly IDriverFinanceService _finance;
         private readonly INotificationService _notifications;
+        private readonly IConfiguration _config;
 
-        public CollectionService(Context context, IDriverFinanceService finance, INotificationService notifications)
+        public CollectionService(Context context, IDriverFinanceService finance, INotificationService notifications,
+            IConfiguration config)
         {
             _context = context;
             _finance = finance;
             _notifications = notifications;
+            _config = config;
         }
 
         private static DateTime Now => DateTime.Now.ToEgyptTime();
@@ -186,6 +197,15 @@ namespace Masafet_Elseka.Infrastructure.Services.CollectionService
         private async Task ConfirmAsync(CollectionRequest request, WalletSms sms, List<Credit> credits,
             WalletSmsMatchStatus smsStatus = WalletSmsMatchStatus.Matched, string? actorUserId = null, string? note = null)
         {
+            // Automatic confirmations only for a receipt whose balance follows the chain;
+            // anything else is paired with the request for one-tap admin approval.
+            if (actorUserId == null && await ChainBlockAsync(sms) is { } block)
+            {
+                HoldForChain(sms, request, block);
+                await _context.SaveChangesAsync();
+                return;
+            }
+
             var now = Now;
             var late = request.Status == CollectionRequestStatus.Expired;
             request.Status = CollectionRequestStatus.Confirmed;
@@ -202,6 +222,28 @@ namespace Masafet_Elseka.Infrastructure.Services.CollectionService
             await _context.SaveChangesAsync();
 
             await PostAsync(request.DriverId, sms, actorUserId, credits);
+        }
+
+        private async Task<string?> ChainBlockAsync(WalletSms sms)
+        {
+            if (sms.Provider == WalletProvider.InstaPay) return null;
+            if (sms.WalletId == null)
+                return "الرسالة مش مربوطة بمحفظة (اربط المحفظة بموبايل التحصيل والشريحة) فمش هنقدر نراجع الرصيد";
+            var paused = await _context.CollectionWallets.AsNoTracking()
+                .AnyAsync(w => w.Id == sms.WalletId && w.PausedReason != null);
+            return BalanceChain.Blocks(sms.Provider, sms.ChainStatus, paused);
+        }
+
+        private static void HoldForChain(WalletSms sms, CollectionRequest request, string reason)
+        {
+            sms.MatchStatus = WalletSmsMatchStatus.NeedsReview;
+            sms.CollectionRequestId = request.Id;
+            sms.Note = reason;
+            if (request.Status is CollectionRequestStatus.Pending or CollectionRequestStatus.Expired)
+            {
+                request.Status = CollectionRequestStatus.NeedsReview;
+                request.Note = "التحويل وصل، والإدارة بتراجعه قبل التأكيد";
+            }
         }
 
         private static string? SenderLabel(WalletSms s) => s.CounterpartyPhone ?? s.CounterpartyAccount ?? s.CounterpartyName;
@@ -278,12 +320,58 @@ namespace Masafet_Elseka.Infrastructure.Services.CollectionService
                 && (x.CounterpartyPhone == null || sms.CounterpartyPhone == null || x.CounterpartyPhone == sms.CounterpartyPhone));
         }
 
+        // A receipt and a request for the same amount on the same wallet, minutes apart,
+        // that didn't match on sender: almost always a mistyped sender number. Pair them
+        // for admin review (one tap to approve) instead of leaving both orphaned. Never
+        // credits by itself, and only when the pairing is unambiguous on both sides.
+        private async Task PairSuspectAsync(WalletSms sms)
+        {
+            if (sms.Kind != WalletSmsKind.Incoming || sms.MatchStatus != WalletSmsMatchStatus.Unclaimed
+                || sms.Amount == null || sms.WalletId == null)
+                return;
+            var amount = sms.Amount.Value;
+            var from = sms.ReceivedAt - SuspectWindow;
+            var to = sms.ReceivedAt + SuspectWindow;
+            var requests = (await _context.CollectionRequests
+                    .Where(r => r.Status == CollectionRequestStatus.Pending && r.WalletId == sms.WalletId
+                                && r.CreatedAt >= from && r.CreatedAt <= to)
+                    .ToListAsync())
+                .Where(r => SameAmount(r.Amount, amount)).ToList();
+            if (requests.Count != 1) return;
+            var request = requests[0];
+
+            var rivals = (await _context.WalletSms
+                    .Where(s => s.Id != sms.Id && s.Kind == WalletSmsKind.Incoming
+                                && s.MatchStatus == WalletSmsMatchStatus.Unclaimed && s.WalletId == sms.WalletId
+                                && s.ReceivedAt >= request.CreatedAt - SuspectWindow
+                                && s.ReceivedAt <= request.CreatedAt + SuspectWindow)
+                    .Select(s => s.Amount).ToListAsync())
+                .Count(a => a != null && SameAmount(a.Value, request.Amount));
+            if (rivals > 0) return;
+
+            var receiptSender = SenderLabel(sms) ?? "مرسل غير معروف";
+            sms.MatchStatus = WalletSmsMatchStatus.NeedsReview;
+            sms.CollectionRequestId = request.Id;
+            sms.Note = $"نفس المبلغ ونفس المحفظة، بس التحويل جه من {receiptSender} والكابتن كاتب {SenderLabel(request)}";
+            request.Status = CollectionRequestStatus.NeedsReview;
+            request.Note = $"التحويل وصل من {receiptSender} مش من {SenderLabel(request)} — الإدارة هتراجع";
+        }
+
+        private async Task MatchSmsAsync(long smsId, List<Credit> credits)
+        {
+            await MatchSmsBySenderAsync(smsId, credits);
+            var sms = await _context.WalletSms.FirstOrDefaultAsync(s => s.Id == smsId);
+            if (sms == null) return;
+            await PairSuspectAsync(sms);
+            await _context.SaveChangesAsync();
+        }
+
         // A new receipt looks for the request it settles.
         //  1. It carries the sender phone (mobile wallets): match requests from that number.
         //  2. Otherwise (InstaPay: address / name, or nothing): same amount, in time, on
         //     the same wallet, and the sender must not contradict what the captain wrote.
         //     One captain fits -> confirmed; several -> review.
-        private async Task MatchSmsAsync(long smsId, List<Credit> credits)
+        private async Task MatchSmsBySenderAsync(long smsId, List<Credit> credits)
         {
             var sms = await _context.WalletSms.FirstOrDefaultAsync(s => s.Id == smsId);
             if (sms == null || sms.Kind != WalletSmsKind.Incoming || sms.MatchStatus != WalletSmsMatchStatus.Unclaimed
@@ -407,8 +495,21 @@ namespace Masafet_Elseka.Infrastructure.Services.CollectionService
             foreach (var smsId in candidates)
             {
                 await MatchSmsAsync(smsId, credits);
+                if (request.Status != CollectionRequestStatus.Pending) return;
+            }
+
+            // No receipt fits the sender: maybe the number was mistyped.
+            var nearFrom = request.CreatedAt - SuspectWindow;
+            var nearTo = request.CreatedAt + SuspectWindow;
+            var near = await waiting
+                .Where(s => s.WalletId == request.WalletId && s.ReceivedAt >= nearFrom && s.ReceivedAt <= nearTo)
+                .OrderBy(s => s.ReceivedAt).Take(10).ToListAsync();
+            foreach (var sms in near.Where(s => s.Amount != null && SameAmount(s.Amount.Value, request.Amount)))
+            {
+                await PairSuspectAsync(sms);
                 if (request.Status != CollectionRequestStatus.Pending) break;
             }
+            await _context.SaveChangesAsync();
         }
 
         #endregion
@@ -436,8 +537,10 @@ namespace Masafet_Elseka.Infrastructure.Services.CollectionService
         private async Task<List<CollectionWalletDTO>> CaptainWalletsAsync()
         {
             var onlineSince = Now - DeviceOnlineWindow;
+            // A wallet paused by the balance chain isn't offered: its receipts can't be
+            // confirmed automatically until an admin checks it.
             var wallets = await _context.CollectionWallets.AsNoTracking()
-                .Where(w => w.IsActive)
+                .Where(w => w.IsActive && w.PausedReason == null)
                 .OrderBy(w => w.SortOrder).ThenBy(w => w.Id)
                 .Select(w => new CollectionWalletDTO
                 {
@@ -513,6 +616,8 @@ namespace Masafet_Elseka.Infrastructure.Services.CollectionService
             var wallet = await _context.CollectionWallets.AsNoTracking().FirstOrDefaultAsync(w => w.Id == dto.WalletId && w.IsActive);
             if (wallet == null)
                 return Response<CollectionRequestDTO>.Failure("اختار المحفظة اللي حوّلت عليها", 400);
+            if (wallet.PausedReason != null)
+                return Response<CollectionRequestDTO>.Failure("المحفظة دي متوقفة مؤقتاً، حوّل على محفظة تانية أو كلّم الدعم", 400);
 
             var instaPay = wallet.Provider == WalletProvider.InstaPay;
             var sender = WalletSmsParser.NormalizePhone(dto.SenderPhone);
@@ -569,6 +674,20 @@ namespace Masafet_Elseka.Infrastructure.Services.CollectionService
             if (openCount >= 3)
                 return Response<CollectionRequestDTO>.Failure("عندك طلبات لسه بتتراجع، استنى تأكيدها أو كلّم الدعم", 400);
 
+            // Another captain already waiting for a transfer from the same sender with the
+            // same amount on the same wallet: the receipt couldn't tell them apart and both
+            // would go to review. Refuse up front instead (ported from VIP).
+            var busySince = now - MatchWindow;
+            var amountFloor = Math.Floor(amount);
+            var rival = await _context.CollectionRequests.AsNoTracking().AnyAsync(r =>
+                r.DriverId != driverId && r.WalletId == wallet.Id && r.Status == CollectionRequestStatus.Pending
+                && r.CreatedAt >= busySince
+                && r.Amount >= amountFloor && r.Amount < amountFloor + 1
+                && ((sender != null && r.SenderPhone == sender) || (account != null && r.SenderAccount == account)));
+            if (rival)
+                return Response<CollectionRequestDTO>.Failure(
+                    "فيه كابتن تاني مستني تحويل من نفس الرقم وبنفس المبلغ على المحفظة دي. حوّل مبلغ مختلف (ولو بجنيه) أو كلّم الدعم", 409);
+
             var request = new CollectionRequest
             {
                 DriverId = driverId,
@@ -599,7 +718,7 @@ namespace Masafet_Elseka.Infrastructure.Services.CollectionService
             var message = saved.Status switch
             {
                 nameof(CollectionRequestStatus.Confirmed) => "تم تأكيد التحويل ✅",
-                nameof(CollectionRequestStatus.NeedsReview) => "المبلغ اللي وصل مختلف عن المكتوب، الإدارة هتراجع",
+                nameof(CollectionRequestStatus.NeedsReview) => saved.Note ?? "التحويل محتاج مراجعة من الإدارة",
                 _ => "تم تسجيل الطلب، هيتأكد أول ما رسالة الاستلام توصل"
             };
             return Response<CollectionRequestDTO>.Success(saved, message, 201);
@@ -684,6 +803,7 @@ namespace Masafet_Elseka.Infrastructure.Services.CollectionService
                 .ToListAsync(),
             LookbackHours = LookbackHours,
             HeartbeatSeconds = HeartbeatSeconds,
+            NextServerBaseUrl = _config["Collection:NextServerBaseUrl"] is { Length: > 0 } next ? next.TrimEnd('/') : null,
         };
 
         public async Task<CollectorConfigDTO> HeartbeatAsync(CollectorDevice device, CollectorHeartbeatDTO dto)
@@ -762,7 +882,7 @@ namespace Masafet_Elseka.Infrastructure.Services.CollectionService
                     results.Add(new CollectorSmsResultDTO { ClientId = clientId, Status = "duplicate" });
                     continue;
                 }
-                var onDevice = wallets.Where(w => w.DeviceId == deviceId && (parsed.Provider == null || w.Provider == parsed.Provider)).ToList();
+                var simSlot = m.SimSlot is 1 or 2 ? m.SimSlot : null;
                 var sms = new WalletSms
                 {
                     DeviceId = deviceId,
@@ -775,7 +895,8 @@ namespace Masafet_Elseka.Infrastructure.Services.CollectionService
                         ? WalletSmsSource.Notification : WalletSmsSource.Sms,
                     SourcePackage = Clip(m.Package, 100),
                     Provider = parsed.Provider,
-                    WalletId = onDevice.Count == 1 ? onDevice[0].Id : null,
+                    WalletId = ChooseWallet(wallets, deviceId, parsed.Provider, simSlot),
+                    SimSlot = simSlot,
                     Kind = parsed.Kind,
                     Amount = parsed.Amount,
                     CounterpartyPhone = parsed.CounterpartyPhone,
@@ -792,15 +913,19 @@ namespace Masafet_Elseka.Infrastructure.Services.CollectionService
                     Note = parsed.Kind == WalletSmsKind.Unparsed ? "شكلها رسالة تحويل بس المبلغ أو الرقم مش واضح" : null,
                 };
 
+                var stored = StoreOutcome.Duplicate;
                 try
                 {
-                    _context.WalletSms.Add(sms);
-                    await _context.SaveChangesAsync();
+                    await InMatchLockAsync(async _ => stored = await StoreAsync(sms));
                 }
                 catch (DbUpdateException)
                 {
                     // Same transfer reference already stored (another phone / reinstall).
                     _context.ChangeTracker.Clear();
+                    stored = StoreOutcome.Duplicate;
+                }
+                if (stored == StoreOutcome.Duplicate)
+                {
                     results.Add(new CollectorSmsResultDTO { ClientId = clientId, Status = "duplicate" });
                     continue;
                 }
@@ -808,6 +933,11 @@ namespace Masafet_Elseka.Infrastructure.Services.CollectionService
                 if (sms.WalletId != null)
                     await _context.CollectionWallets.Where(w => w.Id == sms.WalletId)
                         .ExecuteUpdateAsync(s => s.SetProperty(w => w.LastSmsAt, receivedAt));
+                if (stored == StoreOutcome.StoredAndPaused)
+                    await NotifyAdminsAsync("محفظة التحصيل اتوقفت ⚠",
+                        $"3 رسايل استلام ورا بعض على محفظة {ProviderLabel(sms.Provider)} رصيدها مش ماشي مع اللي قبلها: يا رسايل ضاعت يا رسايل مزوّرة. راجع رسايلها وشغّلها تاني بالرصيد الحقيقي من صفحة التحصيل.",
+                        "admin_collection_wallet_paused");
+                if (sms.Kind == WalletSmsKind.Unparsed) await AlertUnparsedAsync(sms);
 
                 if (sms.Kind == WalletSmsKind.Incoming)
                 {
@@ -833,6 +963,97 @@ namespace Masafet_Elseka.Infrastructure.Services.CollectionService
                 });
             }
             return results;
+        }
+
+        // Which company wallet a message belongs to, among the ones on this phone. A phone
+        // with two wallets of the same kind tells them apart by the SIM the message came
+        // in on (ported from VIP); without that it can't, and the message stays unlinked.
+        public static int? ChooseWallet(IEnumerable<CollectionWallet> wallets, Guid deviceId, WalletProvider? provider, int? simSlot)
+        {
+            var rows = wallets.Where(w => w.DeviceId == deviceId && (provider == null || w.Provider == provider))
+                .OrderBy(w => w.Id).ToList();
+            if (rows.Count == 0) return null;
+            if (rows.Count == 1)
+            {
+                var only = rows[0];
+                return simSlot != null && only.SimSlot != null && only.SimSlot != simSlot ? null : only.Id;
+            }
+            if (simSlot != null) return rows.FirstOrDefault(w => w.SimSlot == simSlot)?.Id;
+            var unslotted = rows.Where(w => w.SimSlot == null).ToList();
+            return unslotted.Count == 1 ? unslotted[0].Id : null;
+        }
+
+        private enum StoreOutcome { Duplicate, Stored, StoredAndPaused }
+
+        // Saves a new message and advances its wallet's balance chain. Runs under the
+        // matching lock so two uploads can't both read the same expected balance.
+        private async Task<StoreOutcome> StoreAsync(WalletSms sms)
+        {
+            // The same message can come back under another client id (the inbox rewrote
+            // its id or date, a reinstall). A balance-bearing message is unique on its own
+            // terms: same wallet, kind, amount, sender and resulting balance within a day
+            // is the same SMS. Fed to the chain twice it would read as a gap.
+            if (sms.WalletId != null && sms.BalanceAfter != null && sms.Amount != null)
+            {
+                var from = sms.ReceivedAt.AddDays(-1);
+                var to = sms.ReceivedAt.AddDays(1);
+                if (await _context.WalletSms.AnyAsync(x => x.WalletId == sms.WalletId && x.Kind == sms.Kind
+                        && x.Amount == sms.Amount && x.BalanceAfter == sms.BalanceAfter
+                        && x.CounterpartyPhone == sms.CounterpartyPhone
+                        && x.ReceivedAt >= from && x.ReceivedAt <= to))
+                    return StoreOutcome.Duplicate;
+            }
+
+            var paused = false;
+            var wallet = sms.WalletId == null ? null
+                : await _context.CollectionWallets.FirstOrDefaultAsync(w => w.Id == sms.WalletId);
+            if (wallet != null && wallet.Provider != WalletProvider.InstaPay && sms.Provider != WalletProvider.InstaPay)
+            {
+                if (sms.BalanceAfter != null && wallet.LastChainAt != null && sms.ReceivedAt < wallet.LastChainAt)
+                {
+                    // Out of order: checked against the message just before it in time,
+                    // and the chain stays put.
+                    var previous = await _context.WalletSms.AsNoTracking()
+                        .Where(x => x.WalletId == wallet.Id && x.BalanceAfter != null && x.ReceivedAt < sms.ReceivedAt)
+                        .OrderByDescending(x => x.ReceivedAt).ThenByDescending(x => x.Id)
+                        .Select(x => x.BalanceAfter).FirstOrDefaultAsync();
+                    sms.ChainStatus = BalanceChain.After(previous, sms.Kind, sms.Amount, sms.BalanceAfter);
+                }
+                else
+                {
+                    var step = BalanceChain.Next(wallet.ExpectedBalance, sms.Kind, sms.Amount, sms.BalanceAfter);
+                    sms.ChainStatus = step.Status;
+                    wallet.ExpectedBalance = step.Expected;
+                    wallet.GapStreak = BalanceChain.NextGapStreak(wallet.GapStreak, step.Status);
+                    if (sms.BalanceAfter != null) wallet.LastChainAt = sms.ReceivedAt;
+                    if (wallet.GapStreak >= BalanceChain.PauseAfterGaps && wallet.PausedReason == null)
+                    {
+                        wallet.PausedReason = "3 رسايل استلام ورا بعض رصيدها مش ماشي مع اللي قبلها";
+                        wallet.PausedAt = Now;
+                        paused = true;
+                        Log.Warning("Collection wallet {WalletId} paused after {Gaps} balance gaps", wallet.Id, wallet.GapStreak);
+                    }
+                }
+            }
+
+            _context.WalletSms.Add(sms);
+            await _context.SaveChangesAsync();
+            return paused ? StoreOutcome.StoredAndPaused : StoreOutcome.Stored;
+        }
+
+        // A message that reads like a transfer but couldn't be parsed: the wallet may
+        // have changed its SMS wording, and then every confirmation is about to fail.
+        // At most one alert every 30 minutes.
+        private static DateTime _lastUnparsedAlert = DateTime.MinValue;
+
+        private async Task AlertUnparsedAsync(WalletSms sms)
+        {
+            var now = Now;
+            if (now - _lastUnparsedAlert < TimeSpan.FromMinutes(30)) return;
+            _lastUnparsedAlert = now;
+            await NotifyAdminsAsync("رسالة تحويل مش مفهومة ⚠",
+                $"وصلت رسالة من {sms.Sender} شكلها تحويل بس مش عارفين نقرا المبلغ أو الرقم. لو الرسايل دي كترت يبقى شكل رسايل المحفظة اتغير والتأكيد التلقائي هيقف. راجعها في صفحة التحصيل.",
+                "admin_collection_unparsed");
         }
 
         #endregion
@@ -882,6 +1103,7 @@ namespace Masafet_Elseka.Infrastructure.Services.CollectionService
                 TotalDueAboveTolerance = owing.Values.Sum(),
                 OnlineDevices = await _context.CollectorDevices.CountAsync(d => d.IsActive && d.LastSeenAt >= onlineSince),
                 ActiveWallets = await _context.CollectionWallets.CountAsync(w => w.IsActive),
+                PausedWallets = await _context.CollectionWallets.CountAsync(w => w.IsActive && w.PausedReason != null),
                 RecentCycles = cycles,
             }, "", 200);
         }
@@ -957,6 +1179,8 @@ namespace Masafet_Elseka.Infrastructure.Services.CollectionService
                 SourcePackage = s.SourcePackage,
                 TxnRef = s.TxnRef,
                 BalanceAfter = s.BalanceAfter,
+                ChainStatus = s.ChainStatus.ToString(),
+                SimSlot = s.SimSlot,
                 MatchStatus = s.MatchStatus.ToString(),
                 CollectionRequestId = s.CollectionRequestId,
                 DriverId = s.DriverId,
@@ -1139,6 +1363,11 @@ namespace Masafet_Elseka.Infrastructure.Services.CollectionService
                     DeviceId = w.DeviceId,
                     DeviceName = w.Device != null ? w.Device.Name : null,
                     LastSmsAt = w.LastSmsAt,
+                    SimSlot = w.SimSlot,
+                    ExpectedBalance = w.ExpectedBalance,
+                    GapStreak = w.GapStreak,
+                    PausedReason = w.PausedReason,
+                    PausedAt = w.PausedAt,
                 }).ToListAsync();
             foreach (var w in rows) w.ProviderLabel = ProviderLabel(Enum.Parse<WalletProvider>(w.Provider));
             return rows;
@@ -1167,6 +1396,12 @@ namespace Masafet_Elseka.Infrastructure.Services.CollectionService
                 return Response<AdminWalletDTO>.Failure("موبايل التحصيل مش موجود", 400);
             if (await _context.CollectionWallets.AnyAsync(w => w.Provider == provider && w.PhoneNumber == phone && w.Id != walletId))
                 return Response<AdminWalletDTO>.Failure("المحفظة دي متسجلة بالفعل", 400);
+            if (dto.SimSlot is not (null or 1 or 2))
+                return Response<AdminWalletDTO>.Failure("الشريحة لازم تكون 1 أو 2", 400);
+            if (dto.DeviceId != null && dto.SimSlot != null
+                && await _context.CollectionWallets.AnyAsync(w => w.DeviceId == dto.DeviceId && w.Provider == provider
+                                                              && w.SimSlot == dto.SimSlot && w.Id != walletId))
+                return Response<AdminWalletDTO>.Failure("فيه محفظة تانية من نفس النوع على نفس الشريحة في الموبايل ده", 400);
 
             CollectionWallet? wallet;
             if (walletId == null)
@@ -1186,11 +1421,39 @@ namespace Masafet_Elseka.Infrastructure.Services.CollectionService
             wallet.IsActive = dto.IsActive;
             wallet.SortOrder = dto.SortOrder;
             wallet.DeviceId = dto.DeviceId;
+            wallet.SimSlot = dto.DeviceId == null ? null : dto.SimSlot;
             await _context.SaveChangesAsync();
 
             await _finance.WriteAuditAsync(actorUserId, walletId == null ? "CollectionWalletAdded" : "CollectionWalletUpdated", null,
                 $"{provider} {phone} ({holder}) active={dto.IsActive}");
             return Response<AdminWalletDTO>.Success((await WalletDtosAsync(wallet.Id)).First(), "تم حفظ المحفظة", walletId == null ? 201 : 200);
+        }
+
+        // Un-pauses a wallet the balance chain stopped (or anchors a new one before go-live)
+        // at the balance it really shows now. The next receipt is checked against it.
+        public async Task<Response<AdminWalletDTO>> SetWalletBalanceAsync(int walletId, WalletBalanceDTO dto, string actorUserId)
+        {
+            if (dto.ExpectedBalance < 0 || dto.ExpectedBalance > 10_000_000)
+                return Response<AdminWalletDTO>.Failure("اكتب رصيد المحفظة الحالي", 400);
+            var balance = Money(dto.ExpectedBalance);
+            await InMatchLockAsync(async _ =>
+            {
+                var wallet = await _context.CollectionWallets.FirstOrDefaultAsync(w => w.Id == walletId);
+                if (wallet == null) return;
+                var wasPaused = wallet.PausedReason;
+                wallet.ExpectedBalance = balance;
+                wallet.GapStreak = 0;
+                wallet.PausedReason = null;
+                wallet.PausedAt = null;
+                wallet.LastChainAt = Now;
+                await _context.SaveChangesAsync();
+                await _finance.WriteAuditAsync(actorUserId, "CollectionWalletBalanceSet", null,
+                    $"wallet={walletId} balance={balance:0.##}" + (wasPaused != null ? " (resumed)" : ""));
+            });
+            var rows = await WalletDtosAsync(walletId);
+            return rows.Count == 0
+                ? Response<AdminWalletDTO>.Failure("المحفظة مش موجودة", 404)
+                : Response<AdminWalletDTO>.Success(rows[0], "تم ضبط رصيد المحفظة", 200);
         }
 
         private async Task<List<CollectorDeviceDTO>> DeviceDtosAsync(Guid? id = null)
@@ -1353,6 +1616,13 @@ namespace Masafet_Elseka.Infrastructure.Services.CollectionService
                 }
 
                 var owing = await DriversOwingAsync(tolerance);
+                // A captain whose transfer already arrived and is only waiting for an
+                // admin (balance check, amount mismatch...) paid on time: not locked.
+                var arrived = await _context.CollectionRequests
+                    .Where(r => r.Status == CollectionRequestStatus.NeedsReview
+                                && _context.WalletSms.Any(s => s.CollectionRequestId == r.Id && s.Kind == WalletSmsKind.Incoming))
+                    .Select(r => r.DriverId).Distinct().ToListAsync();
+                foreach (var driverId in arrived) owing.Remove(driverId);
                 var ids = owing.Keys.ToList();
                 var locked = 0;
                 foreach (var chunk in ids.Chunk(500))

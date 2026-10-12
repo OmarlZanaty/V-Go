@@ -56,6 +56,16 @@ class Prefs(context: Context) {
         get() = sp.getInt("heartbeatSeconds", 60)
         set(v) = sp.edit().putInt("heartbeatSeconds", v.coerceIn(20, 3600)).apply()
 
+    /** The address the server announced it is moving to (see Relay.serverUnreachable). */
+    var nextServerUrl: String?
+        get() = sp.getString("nextServerUrl", null)
+        set(v) = sp.edit().putString("nextServerUrl", v).apply()
+
+    /** Heartbeats in a row that couldn't reach the current server. */
+    var serverFailures: Int
+        get() = sp.getInt("serverFailures", 0)
+        set(v) = sp.edit().putInt("serverFailures", v).apply()
+
     var walletsJson: String
         get() = sp.getString("wallets", "[]") ?: "[]"
         set(v) = sp.edit().putString("wallets", v).apply()

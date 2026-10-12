@@ -40,6 +40,9 @@ namespace Masafet_Elseka.Domain.Entities
         public string? TxnRef { get; set; }
         [Column(TypeName = "decimal(18,2)")]
         public decimal? BalanceAfter { get; set; }
+        public WalletSmsChainStatus ChainStatus { get; set; }
+        // The SIM it arrived on (dual-SIM collector phones), when the phone knows.
+        public int? SimSlot { get; set; }
 
         public WalletSmsMatchStatus MatchStatus { get; set; }
         public long? CollectionRequestId { get; set; }
