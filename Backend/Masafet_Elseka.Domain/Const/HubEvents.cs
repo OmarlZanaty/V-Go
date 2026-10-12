@@ -34,6 +34,8 @@ namespace Masafet_Elseka.Domain.Const
         public const string DriverFinanceUpdated = "DriverFinanceUpdated";
         // Captain can no longer be online (cash limit, verification, suspension).
         public const string DriverOnlineBlocked = "DriverOnlineBlocked";
+        // Admin blocked the account: the app signs out right away.
+        public const string AccountBlocked = "AccountBlocked";
 
     }
 }

@@ -757,6 +757,27 @@ namespace Masafet_Elseka.Infrastructure.Services.DriverFinanceService
             where r.Name == "Driver"
             select u;
 
+        // Completed trips' full fares (what riders paid, before the captain's share).
+        private async Task<RevenueDTO> RevenueSinceAsync(DateTime? from)
+        {
+            var trips = _context.Trips.Where(t => t.Status == TripStatus.Completed);
+            if (from != null)
+                trips = trips.Where(t => (t.EndTime ?? t.CreatedAt) >= from);
+            var groups = await trips
+                .GroupBy(t => t.PaymentMethod)
+                .Select(g => new { Method = g.Key, Count = g.Count(), Sum = g.Sum(t => t.Price) })
+                .ToListAsync();
+            var online = groups.Where(g => g.Method == "Visa").Sum(g => g.Sum);
+            var total = groups.Sum(g => g.Sum);
+            return new RevenueDTO
+            {
+                Trips = groups.Sum(g => g.Count),
+                Total = total,
+                Online = online,
+                Cash = total - online,
+            };
+        }
+
         public async Task<Response<FinanceOverviewDTO>> GetOverviewAsync()
         {
             var rule = await GetRuleAsync();
@@ -782,6 +803,9 @@ namespace Masafet_Elseka.Infrastructure.Services.DriverFinanceService
             var warnDebt = rule.CashLimit * rule.WarningPercent / 100m;
             return Response<FinanceOverviewDTO>.Success(new FinanceOverviewDTO
             {
+                RevenueToday = await RevenueSinceAsync(now.Date),
+                RevenueThisMonth = await RevenueSinceAsync(monthStart),
+                RevenueAllTime = await RevenueSinceAsync(null),
                 TotalOwedToCompany = balances.Where(b => b < 0).Sum(b => -b),
                 TotalOwedToDrivers = balances.Where(b => b > 0).Sum(),
                 LockedDrivers = rule.CashLimit > 0 ? balances.Count(b => -b >= rule.CashLimit) : 0,

@@ -16,6 +16,11 @@ namespace Masafet_Elseka.Infrastructure.Services.HomeBanner
     {
         public const int MaxBanners = 10;
         private const long MaxImageBytes = 5 * 1024 * 1024;
+        public const long MaxVideoBytes = 25 * 1024 * 1024;
+
+        // A banner's media is a video when it was saved as MP4.
+        private static string MediaTypeOf(string url) =>
+            url.EndsWith(".mp4", StringComparison.OrdinalIgnoreCase) ? "video" : "image";
 
         private readonly Context _context;
         private readonly IPublicMediaStorage _media;
@@ -37,6 +42,7 @@ namespace Masafet_Elseka.Infrastructure.Services.HomeBanner
         {
             Id = b.Id,
             ImageUrl = b.ImageUrl,
+            MediaType = MediaTypeOf(b.ImageUrl),
             Position = b.Position,
             Title = b.Title,
             LinkUrl = b.LinkUrl,
@@ -57,6 +63,7 @@ namespace Masafet_Elseka.Infrastructure.Services.HomeBanner
                 .OrderBy(b => b.Position).ThenBy(b => b.Id)
                 .Select(b => new ActiveBannerDTO { Id = b.Id, ImageUrl = b.ImageUrl, LinkUrl = b.LinkUrl })
                 .ToListAsync();
+            banners.ForEach(b => b.MediaType = MediaTypeOf(b.ImageUrl));
             return Response<List<ActiveBannerDTO>>.Success(banners, "", 200);
         }
 
@@ -106,22 +113,25 @@ namespace Masafet_Elseka.Infrastructure.Services.HomeBanner
             return null;
         }
 
-        // Sniffs the real format; returns (extension) or an Arabic error.
+        // Sniffs the real format (image or MP4 video); returns (extension) or an Arabic error.
         private static async Task<(string? Ext, string? Error)> CheckImageAsync(IFormFile? image)
         {
-            if (image == null || image.Length == 0) return (null, "اختار صورة الإعلان");
-            if (image.Length > MaxImageBytes) return (null, "حجم الصورة كبير، الحد الأقصى 5 ميجا");
+            if (image == null || image.Length == 0) return (null, "اختار صورة أو فيديو الإعلان");
             var head = new byte[12];
             await using (var s = image.OpenReadStream())
             {
                 var read = await s.ReadAsync(head.AsMemory(0, head.Length));
                 if (read < head.Length) Array.Resize(ref head, read);
             }
+            // MP4/MOV: an "ftyp" box right at the start.
+            if (head.Length >= 8 && head[4] == 'f' && head[5] == 't' && head[6] == 'y' && head[7] == 'p')
+                return image.Length > MaxVideoBytes ? (null, "حجم الفيديو كبير، الحد الأقصى 25 ميجا") : (".mp4", null);
+            if (image.Length > MaxImageBytes) return (null, "حجم الصورة كبير، الحد الأقصى 5 ميجا");
             if (head.Length >= 3 && head[0] == 0xFF && head[1] == 0xD8 && head[2] == 0xFF) return (".jpg", null);
             if (head.Length >= 8 && head[0] == 0x89 && head[1] == 0x50 && head[2] == 0x4E && head[3] == 0x47) return (".png", null);
             if (head.Length >= 12 && head[0] == 'R' && head[1] == 'I' && head[2] == 'F' && head[3] == 'F'
                 && head[8] == 'W' && head[9] == 'E' && head[10] == 'B' && head[11] == 'P') return (".webp", null);
-            return (null, "الصورة لازم تكون JPG أو PNG أو WEBP");
+            return (null, "الملف لازم يكون صورة (JPG أو PNG أو WEBP) أو فيديو MP4");
         }
 
         private async Task<string> SaveImageAsync(IFormFile image, string ext)

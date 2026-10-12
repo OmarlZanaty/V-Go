@@ -6,6 +6,7 @@ using Masafet_Elseka.Application.DTOs.RateDTOs;
 using Masafet_Elseka.Application.DTOs.Rating;
 using Masafet_Elseka.Application.DTOs.Trip;
 using Masafet_Elseka.Application.DTOs.User;
+using Masafet_Elseka.Application.Helpers;
 using Masafet_Elseka.Application.ExternalInterfaces.ICloudinaryService;
 using Masafet_Elseka.Application.Interfaces.IDriverService;
 using Masafet_Elseka.Application.Interfaces.IPrivateFileStorage;
@@ -14,9 +15,12 @@ using Masafet_Elseka.Application.Interfaces.ITripService;
 using Masafet_Elseka.Application.Interfaces.User;
 using Masafet_Elseka.Application.Response;
 using Masafet_Elseka.Domain.Entities;
+using Masafet_Elseka.Domain.Const;
 using Masafet_Elseka.Infrastructure.Data;
+using Masafet_Elseka.Infrastructure.Hubs;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Identity;
+using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Serilog;
@@ -41,11 +45,13 @@ namespace Masafet_Elseka.Infrastructure.Services.UserService
         private readonly IRatingService _ratingService;
         private readonly IPublicMediaStorage _publicMedia;
         private readonly IConfiguration _configuration;
+        private readonly IHubContext<TripHub> _tripHub;
 
         public UserService(UserManager<ApplicationUser> userManager, RoleManager<IdentityRole> roleManager, ICloudinaryService cloudinaryService
             , Context context, ITripService tripService, IHttpContextAccessor httpContextAccessor, IDriverService driverService, IRatingService ratingService
-            , IPublicMediaStorage publicMedia, IConfiguration configuration)
+            , IPublicMediaStorage publicMedia, IConfiguration configuration, IHubContext<TripHub> tripHub)
         {
+            _tripHub = tripHub;
             _userManager = userManager;
             _roleManager = roleManager;
             _cloudinaryService = cloudinaryService;
@@ -56,6 +62,16 @@ namespace Masafet_Elseka.Infrastructure.Services.UserService
             _ratingService = ratingService;
             _publicMedia = publicMedia;
             _configuration = configuration;
+        }
+
+        // Same format phone sign-in stores: +20XXXXXXXXXX.
+        private static string NormalizePhone(string phone)
+        {
+            var p = phone.Trim().Replace(" ", "").Replace("-", "");
+            if (p.StartsWith("+")) return p;
+            if (p.StartsWith("00")) return "+" + p.Substring(2);
+            if (p.StartsWith("0")) p = p.Substring(1);
+            return "+20" + p;
         }
 
         // Profile photos go to Cloudinary when the host has it configured,
@@ -319,6 +335,18 @@ namespace Masafet_Elseka.Infrastructure.Services.UserService
                     if (update.Succeeded)
                     {
                         result.SucceededIds.Add(id);
+                        BlockedUserCache.Evict(id);
+                        // Signed-in apps sign out now instead of at the next login.
+                        var payload = new { UserId = id, Message = "حسابك موقوف، تواصل مع الدعم" };
+                        try
+                        {
+                            await _tripHub.Clients.Group(HubGroups.User(id))
+                                .SendAsync(HubEvents.AccountBlocked, payload);
+                        }
+                        catch (Exception ex)
+                        {
+                            Log.Warning(ex, "AccountBlocked push failed for {UserId}", id);
+                        }
                     }
                     else
                     {
@@ -367,6 +395,7 @@ namespace Masafet_Elseka.Infrastructure.Services.UserService
                     if (update.Succeeded)
                     {
                         result.SucceededIds.Add(id);
+                        BlockedUserCache.Evict(id);
                     }
                     else
                     {
@@ -463,7 +492,8 @@ namespace Masafet_Elseka.Infrastructure.Services.UserService
                 }
 
                 user.FullName = model.Name ?? user.FullName;
-                user.PhoneNumber = model.PhoneNumber ?? user.PhoneNumber;
+                if (!string.IsNullOrWhiteSpace(model.PhoneNumber))
+                    user.PhoneNumber = NormalizePhone(model.PhoneNumber);
                 user.Gender = model.Gender ?? user.Gender;
                 user.NationalId = model.NationalId ?? user.NationalId;
                 user.License = model.License ?? user.License;

@@ -190,6 +190,10 @@ namespace Masafet_Elseka.Infrastructure.Hubs
                 {
                     return Response<TripResponseDTO>.Failure("المستخدم غير موجود", 404);
                 }
+                if (userResult.Data?.IsBlocked == true)
+                {
+                    return Response<TripResponseDTO>.Failure("حسابك موقوف، تواصل مع الدعم", 403);
+                }
 
                 bool hasActiveTrip = await _unitOfWork.Trips.AnyAsync(t =>
                     t.UserTrips.Any(ut => ut.UserId == request.UserId &&

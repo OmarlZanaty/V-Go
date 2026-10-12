@@ -49,14 +49,14 @@ namespace Masafet_Elseka.Presentation.Controllers
         // multipart/form-data: image (required), title?, linkUrl?, isActive, startsAt?, endsAt?
         [Authorize(Roles = Managers)]
         [HttpPost("admin")]
-        [RequestSizeLimit(6 * 1024 * 1024)]
+        [RequestSizeLimit(26 * 1024 * 1024)]
         public async Task<IActionResult> Create([FromForm] SaveBannerDTO dto, IFormFile? image)
             => Reply(await _banners.CreateAsync(dto, image, UserId));
 
         // multipart/form-data: same fields; image only when replacing it.
         [Authorize(Roles = Managers)]
         [HttpPut("admin/{id:int}")]
-        [RequestSizeLimit(6 * 1024 * 1024)]
+        [RequestSizeLimit(26 * 1024 * 1024)]
         public async Task<IActionResult> Update(int id, [FromForm] SaveBannerDTO dto, IFormFile? image)
             => Reply(await _banners.UpdateAsync(id, dto, image, UserId));
 

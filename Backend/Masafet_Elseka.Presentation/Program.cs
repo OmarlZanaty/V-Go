@@ -488,6 +488,7 @@ app.UseWebSockets();
 app.UseCors("Default");
 app.UseRateLimiter();
 app.UseAuthentication();
+app.UseMiddleware<Masafet_Elseka.Presentation.Middlewares.BlockedUserMiddleware>();
 app.UseAuthorization();
 
 #endregion

@@ -5,6 +5,8 @@ namespace Masafet_Elseka.Application.DTOs.HomeBanner
     {
         public int Id { get; set; }
         public string ImageUrl { get; set; } = string.Empty;
+        // "image" or "video" (an MP4 that plays muted in the carousel).
+        public string MediaType { get; set; } = "image";
         public string? LinkUrl { get; set; }
     }
 
@@ -12,6 +14,7 @@ namespace Masafet_Elseka.Application.DTOs.HomeBanner
     {
         public int Id { get; set; }
         public string ImageUrl { get; set; } = string.Empty;
+        public string MediaType { get; set; } = "image";
         public int Position { get; set; }
         public string? Title { get; set; }
         public string? LinkUrl { get; set; }

@@ -36,7 +36,12 @@ namespace Masafet_Elseka.Domain.Enums
         NationalIdFront = 2,
         NationalIdBack = 3,
         DriverLicense = 4,
-        VehicleLicense = 5
+        VehicleLicense = 5,
+        // Optional extras (not needed to get verified): the admin reviews them
+        // when uploaded.
+        CriminalRecord = 6,
+        MedicalExam = 7,
+        ScooterMaintenance = 8
     }
 
     public enum DriverDocumentStatus

@@ -31,8 +31,6 @@ namespace Masafet_Elseka.Infrastructure.Services.TripService
         private readonly IRatingService _ratingService;
         private readonly IDriverService _driverService;
         private readonly IHubContext<TripHub> _tripHubContext;
-        private readonly decimal _baseFare = 5; // Meter opening fees
-        private readonly decimal _minFare = 10; // minimum trip fees
 
         public TripService(IUnitOfWork unitOfWork, Context context, ICacheService cacheService, IRatingService ratingService, IDriverService driverService, IHubContext<TripHub> tripHubContext)
         {
@@ -61,11 +59,12 @@ namespace Masafet_Elseka.Infrastructure.Services.TripService
                 }
 
                 //var distance = GeoHelper.CalculateDistance(request.StartLat, request.StartLng, request.EndLat, request.EndLng);
-                var totalPrice = (Math.Ceiling((decimal)request.Distance * currentKMPrice.PricePerKm)) + _baseFare;
+                // Distance × price per km, rounded up — no opening fee and no minimum fare.
+                var totalPrice = Math.Ceiling((decimal)request.Distance * currentKMPrice.PricePerKm);
 
                 var trip = new Trip
                 {
-                    Price = totalPrice < _minFare ? _minFare : totalPrice,
+                    Price = totalPrice,
                     StartLat = request.StartLat,
                     StartLng = request.StartLng,
                     EndLat = request.EndLat,

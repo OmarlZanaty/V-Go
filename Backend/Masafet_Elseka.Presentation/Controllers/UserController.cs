@@ -16,6 +16,10 @@ namespace Masafet_Elseka.Presentation.Controllers
     {
 
         private readonly IUserService _userService;
+
+        private bool IsStaff => User.IsInRole("Admin") || User.IsInRole("Dispatcher");
+        private bool CanEdit(string userId) =>
+            IsStaff || User.FindFirstValue(ClaimTypes.NameIdentifier) == userId;
         public UserController(IUserService userService)
         {
             _userService = userService;
@@ -139,6 +143,11 @@ namespace Masafet_Elseka.Presentation.Controllers
         [HttpPut("updateUserForAdmin/{userId}")]
         public async Task<IActionResult> UpdateUserForAdminAsync(string userId,[FromForm] UpdateAllDTO model)
         {
+            if (!CanEdit(userId))
+                return StatusCode(403, "غير مسموح بتعديل بيانات مستخدم آخر");
+            // The phone is the login: only staff may change it (riders go through OTP).
+            if (!IsStaff)
+                model.PhoneNumber = null;
             var result = await _userService.UpdateUserForAdminAsync(userId, model);
             if (result.IsSuccess)
             {
@@ -150,6 +159,8 @@ namespace Masafet_Elseka.Presentation.Controllers
         [HttpPut("update/{userId}")]
         public async Task<IActionResult> UpdateAsync(string userId, [FromForm] UserUpdateDTO model)
         {
+            if (!CanEdit(userId))
+                return StatusCode(403, "غير مسموح بتعديل بيانات مستخدم آخر");
             var result = await _userService.UpdateAsync(userId, model);
             if (result.IsSuccess)
             {

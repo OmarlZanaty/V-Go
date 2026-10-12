@@ -461,6 +461,9 @@ namespace Masafet_Elseka.Infrastructure.Services.DriverVerificationService
             DriverDocumentType.NationalIdBack => "البطاقة (ظهر)",
             DriverDocumentType.DriverLicense => "رخصة القيادة",
             DriverDocumentType.VehicleLicense => "رخصة العربية",
+            DriverDocumentType.CriminalRecord => "الفيش الجنائي",
+            DriverDocumentType.MedicalExam => "الكشف الطبي",
+            DriverDocumentType.ScooterMaintenance => "شهادة صيانة الاسكوتر",
             _ => type.ToString(),
         };
 

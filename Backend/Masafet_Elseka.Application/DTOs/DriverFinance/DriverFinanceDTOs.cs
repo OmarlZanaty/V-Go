@@ -167,6 +167,18 @@ namespace Masafet_Elseka.Application.DTOs.DriverFinance
         public decimal SettledThisMonth { get; set; }
         public decimal PaidOutThisMonth { get; set; }
         public decimal CommissionThisMonth { get; set; }
+        // Full fares of completed trips (before the captain's share), cash vs online.
+        public RevenueDTO RevenueToday { get; set; } = new();
+        public RevenueDTO RevenueThisMonth { get; set; } = new();
+        public RevenueDTO RevenueAllTime { get; set; } = new();
+    }
+
+    public class RevenueDTO
+    {
+        public int Trips { get; set; }
+        public decimal Total { get; set; }
+        public decimal Cash { get; set; }
+        public decimal Online { get; set; }
     }
 
     public class SettlementRowDTO
