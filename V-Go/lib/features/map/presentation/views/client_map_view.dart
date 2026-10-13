@@ -9,7 +9,6 @@ import 'package:hugeicons/hugeicons.dart';
 
 import '../../../../core/helpers/extensions.dart';
 import '../../../../core/helpers/geo_utils.dart';
-import '../../../../core/helpers/trip_fare_helper.dart';
 import '../../../../core/helpers/set_map_style.dart';
 import '../../../../core/helpers/spacing.dart';
 import '../../../../core/routing/routes.dart';
@@ -105,6 +104,53 @@ class _ClientMapViewState extends State<ClientMapView> {
         ),
       ),
     );
+  }
+
+  /// Re-quotes the fare after the pickup moved to the rider's GPS. Returns
+  /// true when the price is unchanged or the rider accepts the new one.
+  Future<bool> _confirmRequote(
+    LocationModel from,
+    LocationModel to,
+    double shownPrice,
+  ) async {
+    final tripCubit = context.read<TripCubit>();
+    final newPrice = await tripCubit.getFareQuote(from: from, to: to);
+    if (!mounted) return false;
+    if (newPrice == null) {
+      errorToast(context, 'خطأ', 'تعذر تحديد السعر، حاول مرة أخرى');
+      return false;
+    }
+    if (newPrice.ceil() == shownPrice.ceil()) return true;
+
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => Directionality(
+        textDirection: TextDirection.rtl,
+        child: AlertDialog(
+          title: Text('تم تحديث السعر', style: AppStyle.styleMedium18),
+          content: Text(
+            'سعر الرحلة من موقعك الحالي ${newPrice.ceil()} ج.م',
+            style: AppStyle.styleRegular14,
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: Text('إلغاء', style: AppStyle.styleMedium14),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: Text(
+                'تأكيد',
+                style: AppStyle.styleMedium14.copyWith(
+                  color: AppColors.primaryOrange,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+    return ok ?? false;
   }
 
   BitmapDescriptor? _customMarkerIcon;
@@ -1380,6 +1426,18 @@ class _ClientMapViewState extends State<ClientMapView> {
     return BlocBuilder<MapBloc, MapState>(
       builder: (context, state) {
         if (state.distanceKm == null) return const SizedBox.shrink();
+        // The price always comes from the server; quote the route on screen.
+        final quoteFrom = state.fromLocation ?? state.currentLocation;
+        final quoteTo = state.toLocation;
+        if (quoteFrom != null && quoteTo != null) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (!mounted) return;
+            context.read<TripCubit>().getFareQuote(
+              from: quoteFrom,
+              to: quoteTo,
+            );
+          });
+        }
         return Container(
           width: double.infinity,
           padding: const EdgeInsets.all(10),
@@ -1463,22 +1521,14 @@ class _ClientMapViewState extends State<ClientMapView> {
               verticalSpace(10),
               BlocConsumer<TripCubit, TripState>(
                 listener: (context, tripState) {
-                  if (tripState.status.isGetKiloPriceSuccess) {
-                    final calculatedFare = calculateTripFare(
-                      distanceKm: state.distanceKm!,
-                      pricePerKilometer: tripState.tripPrice,
-                    );
+                  if (tripState.status.isFareQuoteSuccess) {
                     context.read<RealTimeTripCubit>().setTripPrice(
-                      calculatedFare,
+                      tripState.tripPrice,
                     );
                   }
                 },
                 builder: (context, tripState) {
-                  if (tripState.status.isGetKiloPriceSuccess) {
-                    final calculatedFare = calculateTripFare(
-                      distanceKm: state.distanceKm!,
-                      pricePerKilometer: tripState.tripPrice,
-                    );
+                  if (tripState.status.isFareQuoteSuccess) {
                     return Column(
                       children: [
                         Container(
@@ -1500,7 +1550,7 @@ class _ClientMapViewState extends State<ClientMapView> {
                               ),
                               horizontalSpace(4),
                               Text(
-                                '${calculatedFare.ceil()} ج.م',
+                                '${tripState.tripPrice.ceil()} ج.م',
                                 style: AppStyle.styleMedium16.copyWith(
                                   color: AppColors.white,
                                 ),
@@ -1571,7 +1621,7 @@ class _ClientMapViewState extends State<ClientMapView> {
                                           onPressed: () async {
                                             if (tripState
                                                 .status
-                                                .isGetKiloPriceSuccess) {
+                                                .isFareQuoteSuccess) {
                                               var from =
                                                   state.fromLocation ??
                                                   state.currentLocation;
@@ -1608,6 +1658,17 @@ class _ClientMapViewState extends State<ClientMapView> {
                                                   from = gps;
                                                   fromAddress =
                                                       state.currentAddress;
+                                                  // New pickup → new server
+                                                  // fare; the rider confirms it.
+                                                  final ok =
+                                                      await _confirmRequote(
+                                                        from,
+                                                        to,
+                                                        tripState.tripPrice,
+                                                      );
+                                                  if (!ok || !context.mounted) {
+                                                    return;
+                                                  }
                                                 }
                                               }
 
@@ -1662,10 +1723,31 @@ class _ClientMapViewState extends State<ClientMapView> {
                         ),
                       ],
                     );
-                  } else if (tripState.status.isGetKiloPriceFailure) {
-                    return Text(
-                      'حدث خطا في تحديد السعر',
-                      style: AppStyle.styleMedium14.copyWith(color: Colors.red),
+                  } else if (tripState.status.isFareQuoteFailure) {
+                    return Column(
+                      children: [
+                        Text(
+                          'حدث خطا في تحديد السعر',
+                          style: AppStyle.styleMedium14.copyWith(
+                            color: Colors.red,
+                          ),
+                        ),
+                        if (quoteFrom != null && quoteTo != null)
+                          TextButton(
+                            onPressed: () =>
+                                context.read<TripCubit>().getFareQuote(
+                                  from: quoteFrom,
+                                  to: quoteTo,
+                                  force: true,
+                                ),
+                            child: Text(
+                              'إعادة المحاولة',
+                              style: AppStyle.styleMedium14.copyWith(
+                                color: AppColors.primary,
+                              ),
+                            ),
+                          ),
+                      ],
                     );
                   }
                   return Text(

@@ -4,6 +4,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../../../../core/errors/exception.dart';
 import '../../../../../core/utils/app_constants.dart';
 import '../../../../../core/utils/model/current_trip_model.dart';
+import '../../../../../core/utils/model/location_model.dart';
 import '../../../data/model/trip_model.dart';
 import '../../../data/repo/trip_repo.dart';
 
@@ -130,26 +131,46 @@ class TripCubit extends Cubit<TripState> {
     }
   }
 
-  Future<void> getTripKiloPrice() async {
-    emit(state.copyWith(status: TripStatus.getTripKiloPriceLoading));
+  /// Asks the server for the fare of [from] → [to]. Repeated calls for the
+  /// same route (~10 m) are ignored, so this is safe to call on every rebuild.
+  Future<double?> getFareQuote({
+    required LocationModel from,
+    required LocationModel to,
+    bool force = false,
+  }) async {
+    final key = _quoteKey(from, to);
+    if (!force &&
+        key == state.quoteKey &&
+        (state.status.isFareQuoteLoading || state.status.isFareQuoteSuccess)) {
+      return state.status.isFareQuoteSuccess ? state.tripPrice : null;
+    }
+    emit(state.copyWith(status: TripStatus.fareQuoteLoading, quoteKey: key));
     try {
-      final price = await _tripRepo.getTripPricePerKilometer();
+      final quote = await _tripRepo.getFareQuote(from: from, to: to);
+      // A newer route was requested meanwhile; its result wins.
+      if (isClosed || state.quoteKey != key) return null;
       emit(
         state.copyWith(
-          status: TripStatus.getTripKiloPriceSuccess,
-          tripPrice: price,
+          status: TripStatus.fareQuoteSuccess,
+          tripPrice: quote.price,
         ),
       );
+      return quote.price;
     } catch (e) {
-      if (isClosed) return;
+      if (isClosed || state.quoteKey != key) return null;
       emit(
         state.copyWith(
-          status: TripStatus.getTripKiloPriceFailure,
+          status: TripStatus.fareQuoteFailure,
           errorMessage: ServerFailure.fromError(e).errMessage,
         ),
       );
+      return null;
     }
   }
+
+  static String _quoteKey(LocationModel from, LocationModel to) =>
+      '${from.latitude.toStringAsFixed(4)},${from.longitude.toStringAsFixed(4)};'
+      '${to.latitude.toStringAsFixed(4)},${to.longitude.toStringAsFixed(4)}';
 
   Future<void> changeDriverCommission({required double percentage}) async {
     emit(state.copyWith(status: TripStatus.changeDriverCommissionLoading));

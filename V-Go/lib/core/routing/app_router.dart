@@ -318,7 +318,7 @@ class AppRouter {
                     MapBloc(mapRepo: getIt())..add(LoadInitialLocation()),
               ),
               BlocProvider(
-                create: (context) => TripCubit(getIt())..getTripKiloPrice(),
+                create: (context) => TripCubit(getIt()),
               ),
               BlocProvider(
                 create: (context) => RealTimeTripCubit(getIt())..connect(),

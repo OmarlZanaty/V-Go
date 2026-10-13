@@ -50,10 +50,10 @@ abstract class EndPoint {
   static const String getCurrentTrips = 'Trip/currentTrips';
   static String getTripsByUserId(String userId) => 'Trip/tripByUserId/$userId';
   static String getTripById(String tripId) => 'Trip/GetTripById/$tripId';
+  static const String tripQuote = 'Trip/quote';
 
   // Pricing Endpoints
   static const String pricingRule = 'PricingRule';
-  static const String getPricePerKillo = 'PricingRule/getPricePerKillo';
   static const String driverCommission = 'PricingRule/setDriverCommission';
 
   // Statistics Endpoints

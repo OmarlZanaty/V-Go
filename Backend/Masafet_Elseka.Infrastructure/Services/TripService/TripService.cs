@@ -31,8 +31,9 @@ namespace Masafet_Elseka.Infrastructure.Services.TripService
         private readonly IRatingService _ratingService;
         private readonly IDriverService _driverService;
         private readonly IHubContext<TripHub> _tripHubContext;
+        private readonly IFareService _fareService;
 
-        public TripService(IUnitOfWork unitOfWork, Context context, ICacheService cacheService, IRatingService ratingService, IDriverService driverService, IHubContext<TripHub> tripHubContext)
+        public TripService(IUnitOfWork unitOfWork, Context context, ICacheService cacheService, IRatingService ratingService, IDriverService driverService, IHubContext<TripHub> tripHubContext, IFareService fareService)
         {
             _unitOfWork = unitOfWork;
             _context = context;
@@ -40,36 +41,35 @@ namespace Masafet_Elseka.Infrastructure.Services.TripService
             _ratingService = ratingService;
             _driverService = driverService;
             _tripHubContext = tripHubContext;
+            _fareService = fareService;
         }
 
         public async Task<Response<TripResponseDTO>> AddTrip(TripRequest request)
         {
+            if (request == null)
+            {
+                return Response<TripResponseDTO>.Failure("الرحلة غير صالحة", 400);
+            }
+
+            // The server measures the route itself; the distance the app sends is
+            // ignored. Done before the transaction — it may wait on the router.
+            var quote = await _fareService.QuoteAsync(request.StartLat, request.StartLng, request.EndLat, request.EndLng);
+            if (quote == null)
+            {
+                return Response<TripResponseDTO>.Failure("لم يتم تحديد سعر الكيلو", 400);
+            }
+
             using var transaction = await _context.Database.BeginTransactionAsync();
             try
             {
-                if (request == null)
-                {
-                    return Response<TripResponseDTO>.Failure("الرحلة غير صالحة", 400);
-                }
-
-                var currentKMPrice = await _context.PricingRules.FirstOrDefaultAsync();
-                if (currentKMPrice == null)
-                {
-                    return Response<TripResponseDTO>.Failure("لم يتم تحديد سعر الكيلو", 400);
-                }
-
-                //var distance = GeoHelper.CalculateDistance(request.StartLat, request.StartLng, request.EndLat, request.EndLng);
-                // Distance × price per km, rounded up — no opening fee and no minimum fare.
-                var totalPrice = Math.Ceiling((decimal)request.Distance * currentKMPrice.PricePerKm);
-
                 var trip = new Trip
                 {
-                    Price = totalPrice,
+                    Price = quote.Price,
                     StartLat = request.StartLat,
                     StartLng = request.StartLng,
                     EndLat = request.EndLat,
                     EndLng = request.EndLng,
-                    DistanceInKm = request.Distance,
+                    DistanceInKm = quote.DistanceKm,
                     StartAddress = request.StartAddress,
                     EndAddress= request.EndAddress,
                     CreatedAt = DateTime.Now.ToEgyptTime(),

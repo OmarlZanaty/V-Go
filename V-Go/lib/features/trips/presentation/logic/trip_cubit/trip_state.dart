@@ -5,9 +5,9 @@ enum TripStatus {
   changeKiloPriceSuccess,
   changeKiloPriceFailure,
   changeKiloPriceLoading,
-  getTripKiloPriceSuccess,
-  getTripKiloPriceFailure,
-  getTripKiloPriceLoading,
+  fareQuoteSuccess,
+  fareQuoteFailure,
+  fareQuoteLoading,
   getAllTripsSuccess,
   getAllTripsFailure,
   getAllTripsLoading,
@@ -24,9 +24,9 @@ extension TripStatusExtension on TripStatus {
       this == TripStatus.changeKiloPriceFailure;
   bool get isChangeKiloPriceLoading =>
       this == TripStatus.changeKiloPriceLoading;
-  bool get isGetKiloPriceSuccess => this == TripStatus.getTripKiloPriceSuccess;
-  bool get isGetKiloPriceFailure => this == TripStatus.getTripKiloPriceFailure;
-  bool get isGetKiloPriceLoading => this == TripStatus.getTripKiloPriceLoading;
+  bool get isFareQuoteSuccess => this == TripStatus.fareQuoteSuccess;
+  bool get isFareQuoteFailure => this == TripStatus.fareQuoteFailure;
+  bool get isFareQuoteLoading => this == TripStatus.fareQuoteLoading;
   bool get isGetAllTripsSuccess => this == TripStatus.getAllTripsSuccess;
   bool get isGetAllTripsFailure => this == TripStatus.getAllTripsFailure;
   bool get isGetAllTripsLoading => this == TripStatus.getAllTripsLoading;
@@ -46,7 +46,10 @@ class TripState extends Equatable {
   final List<CurrentTripModel> currentTrips;
   final bool hasNextPage;
   final List<TripModel> filteredTrips;
+
+  /// Server-quoted fare for the route in [quoteKey].
   final double tripPrice;
+  final String quoteKey;
 
   const TripState({
     this.status = TripStatus.initial,
@@ -57,6 +60,7 @@ class TripState extends Equatable {
     this.currentTrips = const [],
     this.hasNextPage = true,
     this.tripPrice = 0.0,
+    this.quoteKey = '',
   });
 
   TripState copyWith({
@@ -68,6 +72,7 @@ class TripState extends Equatable {
     List<CurrentTripModel>? currentTrips,
     bool? hasNextPage,
     double? tripPrice,
+    String? quoteKey,
     TripModel? trip,
   }) {
     return TripState(
@@ -78,6 +83,7 @@ class TripState extends Equatable {
       currentTrips: currentTrips ?? this.currentTrips,
       filteredTrips: filteredTrips ?? this.filteredTrips,
       tripPrice: tripPrice ?? this.tripPrice,
+      quoteKey: quoteKey ?? this.quoteKey,
       hasNextPage: hasNextPage ?? this.hasNextPage,
     );
   }
@@ -92,5 +98,6 @@ class TripState extends Equatable {
     successMessage,
     hasNextPage,
     tripPrice,
+    quoteKey,
   ];
 }

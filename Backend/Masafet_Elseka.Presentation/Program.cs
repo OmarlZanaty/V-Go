@@ -1,4 +1,4 @@
-#region Usings
+﻿#region Usings
 using FirebaseAdmin;
 using FluentValidation;
 using Google.Apis.Auth.OAuth2;
@@ -227,6 +227,7 @@ builder.Services.AddScoped<ICloudinaryService, CloudinaryService>();
 builder.Services.AddScoped<IUserService, UserService>();
 builder.Services.AddScoped<IPricingRuleService, PricingRuleService>();
 builder.Services.AddScoped<ITripService, TripService>();
+builder.Services.AddScoped<IFareService, FareService>();
 builder.Services.AddScoped<IUserTripService, UserTripService>();
 builder.Services.AddScoped<IUserCleanupService, UserCleanupService>();
 builder.Services.AddScoped<IStatisticsService, StatisticsService>();

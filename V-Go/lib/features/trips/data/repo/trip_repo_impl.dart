@@ -1,7 +1,9 @@
 import '../../../../core/api/api_service.dart';
 import '../../../../core/api/end_points.dart';
 import '../../../../core/utils/model/current_trip_model.dart';
+import '../../../../core/utils/model/location_model.dart';
 import '../model/all_trips_response.dart';
+import '../model/fare_quote_model.dart';
 import '../model/trip_model.dart';
 import 'trip_repo.dart';
 
@@ -39,9 +41,20 @@ class TripRepoImpl implements TripRepo {
   }
 
   @override
-  Future<double> getTripPricePerKilometer() async {
-    final response = await _apiServices.get(EndPoint.getPricePerKillo);
-    return response['data']['PricePerKillo']?.toDouble() ?? 0.0;
+  Future<FareQuoteModel> getFareQuote({
+    required LocationModel from,
+    required LocationModel to,
+  }) async {
+    final response = await _apiServices.get(
+      EndPoint.tripQuote,
+      queryParameters: {
+        'startLat': from.latitude,
+        'startLng': from.longitude,
+        'endLat': to.latitude,
+        'endLng': to.longitude,
+      },
+    );
+    return FareQuoteModel.fromJson(response);
   }
 
   @override

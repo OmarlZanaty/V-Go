@@ -18,8 +18,10 @@ namespace Masafet_Elseka.Presentation.Controllers
         private readonly ITripService _tripService;
         private readonly IAccountantService _accountantService;
         private readonly IStatisticsService _statisticsService;
-        public TripController(ITripService tripService, IAccountantService accountantService, IStatisticsService statisticsService)
+        private readonly IFareService _fareService;
+        public TripController(ITripService tripService, IAccountantService accountantService, IStatisticsService statisticsService, IFareService fareService)
         {
+            _fareService = fareService;
             _tripService = tripService;
             _accountantService = accountantService;
             _statisticsService = statisticsService;
@@ -137,6 +139,18 @@ namespace Masafet_Elseka.Presentation.Controllers
                 return StatusCode(response.StatusCode, response.Data);
             }
             return StatusCode(response.StatusCode, response.Message);
+        }
+
+        // The fare the server will charge for this pickup → destination. The app
+        // shows this instead of computing a price itself.
+        [HttpGet("quote")]
+        public async Task<IActionResult> Quote([FromQuery] double startLat, [FromQuery] double startLng,
+            [FromQuery] double endLat, [FromQuery] double endLng, CancellationToken ct = default)
+        {
+            var quote = await _fareService.QuoteAsync(startLat, startLng, endLat, endLng, ct);
+            if (quote == null)
+                return StatusCode(400, new { message = "لم يتم تحديد سعر الكيلو" });
+            return Ok(new { distanceKm = quote.DistanceKm, price = quote.Price, source = quote.Source });
         }
 
         [HttpPost("addtrip")]
