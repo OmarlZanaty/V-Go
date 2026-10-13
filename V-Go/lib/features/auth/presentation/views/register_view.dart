@@ -27,7 +27,8 @@ class _RegisterViewState extends State<RegisterView> {
   late final TextEditingController _fullNameController;
   late final TextEditingController _phoneController;
   late final GlobalKey<FormState> _formKey;
-  String _selectedGender = 'male';
+  // Optional for riders (App Review 5.1.1(v)): nothing chosen by default.
+  String? _selectedGender;
   File? _selectedImage;
 
   void _onImageSelected(File? image) {
@@ -139,7 +140,7 @@ class _RegisterViewState extends State<RegisterView> {
                         ),
                         verticalSpace(18),
                         Text(
-                          'الجنس :',
+                          'الجنس (اختياري) :',
                           style: AppStyle.styleRegular14.copyWith(
                             color: AppColors.white,
                           ),
@@ -149,6 +150,7 @@ class _RegisterViewState extends State<RegisterView> {
                           from: 400,
                           delay: const Duration(milliseconds: 480),
                           child: GenderRadioWidget(
+                            allowUnspecified: true,
                             groupValue: _selectedGender,
                             onGenderChanged: (value) {
                               setState(() {

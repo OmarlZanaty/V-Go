@@ -37,7 +37,7 @@ class RegisterButtonBlocConsumer extends StatelessWidget {
   final TextEditingController phoneController;
   final GlobalKey<FormState> formKey;
   final File? imageProfile;
-  final String gender;
+  final String? gender;
 
   @override
   Widget build(BuildContext context) {
@@ -91,7 +91,7 @@ class RegisterButtonBlocConsumer extends StatelessWidget {
       fullName: fullNameController.text,
       phone: phoneController.text,
       role: UserRole.client.capitalized,
-      gender: gender,
+      gender: gender == null || gender == 'none' ? null : gender,
       imageProfile: imageFile,
       deviceType: deviceType(),
       fcmToken: CacheHelper.getString(AppConstants.fcmToken),

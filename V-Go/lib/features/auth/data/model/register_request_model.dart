@@ -4,7 +4,8 @@ class RegisterRequestModel {
   final String fullName;
   final String email;
   final String phone;
-  final String gender;
+  // Optional (App Review 5.1.1(v)): null when the rider didn't choose.
+  final String? gender;
   final String role;
   final String password;
   final String confirmPassword;
@@ -38,7 +39,7 @@ class RegisterRequestModel {
       'FullName': fullName,
       'Email': email,
       'Phone': phone,
-      'Gender': gender,
+      if (gender != null) 'Gender': gender,
       'Role': role,
       'Password': password,
       'ConfirmPassword': confirmPassword,

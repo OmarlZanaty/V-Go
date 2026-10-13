@@ -29,7 +29,8 @@ class _PhoneSignupViewState extends State<PhoneSignupView> {
   final _confirmController = TextEditingController();
   final _nameController = TextEditingController();
   final _emailController = TextEditingController();
-  String _gender = 'Male';
+  // Optional (App Review 5.1.1(v)): nothing chosen by default; 'none' = prefers not to say.
+  String? _gender;
 
   @override
   void dispose() {
@@ -91,7 +92,7 @@ class _PhoneSignupViewState extends State<PhoneSignupView> {
                   keyboardType: TextInputType.emailAddress,
                 ),
                 verticalSpace(16),
-                Text('الجنس', style: AppStyle.styleMedium14),
+                Text('الجنس (اختياري)', style: AppStyle.styleMedium14),
                 Row(
                   children: [
                     Expanded(
@@ -109,6 +110,16 @@ class _PhoneSignupViewState extends State<PhoneSignupView> {
                         value: 'Female',
                         groupValue: _gender,
                         title: const Text('أنثى'),
+                        activeColor: AppColors.primary,
+                        contentPadding: EdgeInsets.zero,
+                        onChanged: (v) => setState(() => _gender = v!),
+                      ),
+                    ),
+                    Expanded(
+                      child: RadioListTile<String>(
+                        value: 'none',
+                        groupValue: _gender,
+                        title: const Text('مش عايز أحدد'),
                         activeColor: AppColors.primary,
                         contentPadding: EdgeInsets.zero,
                         onChanged: (v) => setState(() => _gender = v!),
@@ -153,7 +164,7 @@ class _PhoneSignupViewState extends State<PhoneSignupView> {
           password: password,
           fullName: name,
           email: email.isEmpty ? null : email,
-          gender: _gender,
+          gender: _gender == 'none' ? null : _gender,
         );
   }
 }

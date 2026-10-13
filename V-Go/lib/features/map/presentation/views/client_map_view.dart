@@ -1,11 +1,13 @@
 import 'dart:async';
 import 'dart:developer';
+import 'dart:io' show Platform;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:hugeicons/hugeicons.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../../../core/helpers/extensions.dart';
 import '../../../../core/helpers/geo_utils.dart';
@@ -885,6 +887,17 @@ class _ClientMapViewState extends State<ClientMapView> {
                             ),
                           ),
 
+                          // App Review guideline 4: on iPhone the rider can always
+                          // open the trip (or where they are) in Apple Maps.
+                          if (_pinMode == null && Platform.isIOS)
+                            Positioned(
+                              top: MediaQuery.paddingOf(context).top +
+                                  kToolbarHeight +
+                                  8,
+                              left: 12,
+                              child: _appleMapsButton(state),
+                            ),
+
                           // Centre pin overlay while picking a point on the map.
                           if (_pinMode != null)
                             IgnorePointer(
@@ -911,6 +924,56 @@ class _ClientMapViewState extends State<ClientMapView> {
               },
             ),
     );
+  }
+
+  /// Opens the native Apple Maps app: directions from the pickup to the
+  /// destination when both are set, otherwise the rider's own location.
+  Widget _appleMapsButton(MapState state) {
+    return Material(
+      color: AppColors.darkGrey,
+      borderRadius: BorderRadius.circular(24),
+      elevation: 3,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(24),
+        onTap: () => _openInAppleMaps(state),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.map_outlined, color: AppColors.primary, size: 18),
+              horizontalSpace(6),
+              Text(
+                'خرائط Apple',
+                style: AppStyle.styleMedium12.copyWith(color: AppColors.white),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _openInAppleMaps(MapState state) async {
+    String point(LocationModel l) => '${l.latitude},${l.longitude}';
+    final from = state.fromLocation ?? state.currentLocation;
+    final to = state.toLocation;
+    final Uri uri;
+    if (from != null && to != null) {
+      uri = Uri.https('maps.apple.com', '/', {
+        'saddr': point(from),
+        'daddr': point(to),
+        'dirflg': 'd',
+      });
+    } else if (from != null) {
+      uri = Uri.https('maps.apple.com', '/', {'ll': point(from), 'q': 'موقعي'});
+    } else {
+      uri = Uri.https('maps.apple.com', '/');
+    }
+    final opened = await launchUrl(uri, mode: LaunchMode.externalApplication);
+    if (!opened && mounted) {
+      errorToast(context, 'تنبيه', 'مش قادرين نفتح خرائط Apple.');
+    }
   }
 
   Widget _buildPermissionDeniedState() {

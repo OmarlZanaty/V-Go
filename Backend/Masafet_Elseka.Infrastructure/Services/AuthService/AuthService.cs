@@ -999,7 +999,10 @@ namespace Masafet_Elseka.Infrastructure.Services.AuthService
                     UserName = model.Email,
                     Email = model.Email,
                     PhoneNumber = model.Phone,
-                    Gender = model.Gender,
+                    // Gender is optional for riders (App Review 5.1.1(v)); the column
+                    // isn't nullable, so an unanswered one gets the same default the
+                    // phone and Google sign-ups already use.
+                    Gender = string.IsNullOrWhiteSpace(model.Gender) ? "Male" : model.Gender,
                     ProfilePicture = photoPath.Url,
                     License=model.DriverLicense,
                     NationalId = model.NationalId,

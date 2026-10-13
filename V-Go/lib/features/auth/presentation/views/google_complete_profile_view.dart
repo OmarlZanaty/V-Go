@@ -38,7 +38,8 @@ class _GoogleCompleteProfileViewState extends State<GoogleCompleteProfileView> {
   late final TextEditingController _nameController =
       TextEditingController(text: widget.name);
   final _phoneController = TextEditingController();
-  String _gender = 'Male';
+  // Optional (App Review 5.1.1(v)): nothing chosen by default; 'none' = prefers not to say.
+  String? _gender;
 
   @override
   void dispose() {
@@ -101,7 +102,7 @@ class _GoogleCompleteProfileViewState extends State<GoogleCompleteProfileView> {
                   keyboardType: TextInputType.phone,
                 ),
                 verticalSpace(16),
-                Text('الجنس', style: AppStyle.styleMedium14),
+                Text('الجنس (اختياري)', style: AppStyle.styleMedium14),
                 Row(
                   children: [
                     Expanded(
@@ -119,6 +120,16 @@ class _GoogleCompleteProfileViewState extends State<GoogleCompleteProfileView> {
                         value: 'Female',
                         groupValue: _gender,
                         title: const Text('أنثى'),
+                        activeColor: AppColors.primary,
+                        contentPadding: EdgeInsets.zero,
+                        onChanged: (v) => setState(() => _gender = v!),
+                      ),
+                    ),
+                    Expanded(
+                      child: RadioListTile<String>(
+                        value: 'none',
+                        groupValue: _gender,
+                        title: const Text('مش عايز أحدد'),
                         activeColor: AppColors.primary,
                         contentPadding: EdgeInsets.zero,
                         onChanged: (v) => setState(() => _gender = v!),
@@ -147,7 +158,7 @@ class _GoogleCompleteProfileViewState extends State<GoogleCompleteProfileView> {
                                 idToken: widget.idToken,
                                 fullName: name,
                                 phone: phone,
-                                gender: _gender,
+                                gender: _gender == 'none' ? null : _gender,
                                 profilePicture:
                                     widget.photo.isEmpty ? null : widget.photo,
                               );
