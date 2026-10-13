@@ -49,7 +49,7 @@ class CurrentTripModel {
       CurrentTripModel(
         tripId: json['tripId'],
         tripStatus: json['status'],
-        price: json['price'],
+        price: ((json['price'] ?? json['Price'] ?? 0) as num).toDouble(),
         from: TripLocationModel.fromJson(json['from']),
         to: TripLocationModel.fromJson(json['to']),
         clientId: json['userId'],

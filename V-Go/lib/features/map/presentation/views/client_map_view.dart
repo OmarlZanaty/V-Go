@@ -1840,9 +1840,11 @@ class _ClientMapViewState extends State<ClientMapView> {
   /// Big, clear fare display shown when the trip ends, so the client sees
   /// exactly how much to pay.
   Widget _tripPriceBanner(RealTimeTripState tripState) {
-    final price = tripState.tripPrice > 0
-        ? tripState.tripPrice
-        : (widget.currentTrip?.price ?? 0);
+    // The server's stored fare is what the captain collects — never show a
+    // local re-estimate here (distanceKm keeps being recomputed after booking).
+    final serverPrice =
+        (tripState.currentTrip ?? widget.currentTrip)?.price ?? 0;
+    final price = serverPrice > 0 ? serverPrice : tripState.tripPrice;
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 16),
