@@ -21,6 +21,7 @@ class CurrentTripModel {
   final DateTime createdAt;
   final bool isPaid;
   final String paymentMethod;
+  final bool isFreeRide;
 
   CurrentTripModel({
     required this.tripId,
@@ -43,10 +44,13 @@ class CurrentTripModel {
     this.driverRate = 0.0,
     this.isPaid = false,
     this.paymentMethod = 'Cash',
+    this.isFreeRide = false,
   });
 
-  factory CurrentTripModel.fromJson(Map<String, dynamic> json) =>
-      CurrentTripModel(
+  factory CurrentTripModel.fromJson(Map<String, dynamic> json) {
+    final isFreeRide =
+        (json['isFreeRide'] ?? json['IsFreeRide'] ?? false) == true;
+    return CurrentTripModel(
         tripId: json['tripId'],
         tripStatus: json['status'],
         price: ((json['price'] ?? json['Price'] ?? 0) as num).toDouble(),
@@ -67,9 +71,11 @@ class CurrentTripModel {
         scooterType: json['scooterType'],
         scooterLicense: json['scooterLicense'],
         createdAt: DateTime.parse(json['createdAt']),
-        isPaid: json['isPaid'],
+        isPaid: (json['isPaid'] ?? json['IsPaid'] ?? false) == true,
         paymentMethod:
             (json['paymentMethod'] ?? json['PaymentMethod'] ?? 'Cash')
                 .toString(),
+        isFreeRide: isFreeRide,
       );
+  }
 }

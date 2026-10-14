@@ -31,5 +31,9 @@ namespace Masafet_Elseka.Domain.Entities
         [System.ComponentModel.DataAnnotations.Schema.Column(TypeName = "decimal(18,2)")]
         public decimal CollectionTolerance { get; set; } = 50;
 
+        public bool FreeRidesEnabled { get; set; } = true;
+        public int FreeRidesPerRider { get; set; } = 2;
+        public int FreeRidesRiderLimit { get; set; } = 100;
+
     }
 }

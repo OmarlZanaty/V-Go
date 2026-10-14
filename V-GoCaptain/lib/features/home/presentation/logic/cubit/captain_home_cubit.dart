@@ -72,7 +72,7 @@ class CaptainHomeCubit extends Cubit<CaptainHomeState>
   /// Recovers from a missed TripPaymentUpdated event (backgrounded socket).
   Future<void> recheckActivePayment({bool showFeedback = false}) async {
     final trip = state.activeTrip;
-    if (trip == null || state.activeTripPaid) return;
+    if (trip == null || state.activeTripPaid || trip.isFreeRide) return;
     if (showFeedback) emit(state.copyWith(isBusy: true, clearError: true));
     try {
       // Trigger a server-side reconcile with Paymob first, so a card payment whose
@@ -256,6 +256,7 @@ class CaptainHomeCubit extends Cubit<CaptainHomeState>
       rating: 0,
     ),
     paymentMethod: t.paymentMethod,
+    isFreeRide: t.isFreeRide,
   );
 
   Future<void> goOffline() async {
@@ -489,7 +490,13 @@ class CaptainHomeCubit extends Cubit<CaptainHomeState>
           await _realtime.endTrip(trip.tripId);
           // Keep the trip active at the completed stage so the captain must
           // settle payment before moving on (cash = confirm, online = auto).
-          emit(state.copyWith(stage: TripStage.completed, isBusy: false));
+          emit(
+            state.copyWith(
+              stage: TripStage.completed,
+              isBusy: false,
+              activeTripPaid: trip.isFreeRide || state.activeTripPaid,
+            ),
+          );
           onTripCompleted?.call();
         case TripStage.completed:
           emit(state.copyWith(isBusy: false));

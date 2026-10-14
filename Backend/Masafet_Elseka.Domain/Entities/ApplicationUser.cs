@@ -39,6 +39,7 @@ namespace Masafet_Elseka.Domain.Entities
         // Set when the daily collection deadline passed with the captain still owing
         // more than the tolerance; cleared once his debt is back within it.
         public DateTime? CollectionLockedAt { get; set; }
+        public int FreeRidesGranted { get; set; }
 
         public virtual Scooter? Scooter { get; set; }
         public virtual ICollection<Message> Messages { get; set; }

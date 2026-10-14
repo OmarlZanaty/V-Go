@@ -17,6 +17,7 @@ namespace Masafet_Elseka.Application.DTOs.Trip
         public string Status { get; set; }
         public bool IsPaid { get; set; }
         public string PaymentMethod { get; set; } = "Cash";
+        public bool IsFreeRide { get; set; }
 
         public string UserId { get; set; }
         public string UserName { get; set; } // Full Name 

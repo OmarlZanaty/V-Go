@@ -6,6 +6,9 @@ namespace Masafet_Elseka.Application.DTOs.Trip
     {
         public double DistanceKm { get; set; }
         public decimal Price { get; set; }
+        public decimal RiderPrice { get; set; }
+        public bool IsFreeRide { get; set; }
+        public int FreeRidesLeft { get; set; }
         // "osrm" = road distance; "estimate" = straight line × 1.3 when no router answered.
         public string Source { get; set; } = "osrm";
     }

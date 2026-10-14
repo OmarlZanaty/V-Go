@@ -10,7 +10,8 @@ namespace Masafet_Elseka.Domain.Enums
         Settlement = 4,         // captain paid his debt to the company through Paymob (+)
         Payout = 5,             // company transferred the captain's balance to him (-)
         Adjustment = 6,         // manual bonus / penalty by an admin, always with a reason (+/-)
-        WalletCollection = 7    // captain transferred his dues to a company wallet, confirmed by the receipt SMS (+)
+        WalletCollection = 7,   // captain transferred his dues to a company wallet, confirmed by the receipt SMS (+)
+        TripFreeRideEarning = 8 // free promo trip: company owes the captain his share (+)
     }
 
     // What a Payment row is for. Trip payments keep the default so existing rows are unaffected.
@@ -41,7 +42,10 @@ namespace Masafet_Elseka.Domain.Enums
         // when uploaded.
         CriminalRecord = 6,
         MedicalExam = 7,
-        ScooterMaintenance = 8
+        ScooterMaintenance = 8,
+        // Back side of the licences (the original values are the front side).
+        DriverLicenseBack = 9,
+        VehicleLicenseBack = 10
     }
 
     public enum DriverDocumentStatus

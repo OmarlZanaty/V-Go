@@ -20,6 +20,7 @@ namespace Masafet_Elseka.Application.DTOs.Trip
         public string? EndAddress { get; set; }
         public TripStatus Status { get; set; }
         public string PaymentMethod { get; set; } = "Cash";
+        public bool IsFreeRide { get; set; }
         public DateTime CreatedAt { get; set; }
 
         // CLeint Data

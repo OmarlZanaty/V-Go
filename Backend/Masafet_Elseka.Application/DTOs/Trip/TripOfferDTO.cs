@@ -16,6 +16,7 @@ namespace Masafet_Elseka.Application.DTOs.Trip
         public DateTime CreatedAt { get; set; }
         public ClientTripDataDTO Client { get; set; }
         public string PaymentMethod { get; set; } = "Cash";
+        public bool IsFreeRide { get; set; }
     }
 
     

@@ -17,6 +17,7 @@ class TripModel {
   final String? driverPhone;
   final DateTime createdAt;
   final String paymentMethod;
+  final bool isFreeRide;
 
   TripModel({
     required this.tripId,
@@ -37,6 +38,7 @@ class TripModel {
     this.userRate = 0.0,
     this.driverRate = 0.0,
     this.paymentMethod = 'Cash',
+    this.isFreeRide = false,
   });
 
   factory TripModel.fromJson(Map<String, dynamic> json) {
@@ -60,6 +62,7 @@ class TripModel {
       driverRate: json['driverRating'] ?? 0.0,
       paymentMethod:
           (json['paymentMethod'] ?? json['PaymentMethod'] ?? 'Cash').toString(),
+      isFreeRide: (json['isFreeRide'] ?? json['IsFreeRide'] ?? false) == true,
     );
   }
 }

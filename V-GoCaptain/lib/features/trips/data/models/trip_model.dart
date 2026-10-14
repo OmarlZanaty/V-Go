@@ -12,6 +12,7 @@ class TripModel {
   final String? clientImage;
   final DateTime? createdAt;
   final String paymentMethod;
+  final bool isFreeRide;
 
   TripModel({
     required this.tripId,
@@ -26,6 +27,7 @@ class TripModel {
     this.clientImage,
     this.createdAt,
     this.paymentMethod = 'Cash',
+    this.isFreeRide = false,
   });
 
   bool get isCompleted => status == 'Completed';
@@ -54,7 +56,13 @@ class TripModel {
       clientImage: j['userProfileImage']?.toString(),
       createdAt: DateTime.tryParse(j['createdAt']?.toString() ?? ''),
       paymentMethod: j['paymentMethod']?.toString() ?? 'Cash',
+      isFreeRide: _bool(j['isFreeRide'] ?? j['IsFreeRide']),
     );
+  }
+
+  static bool _bool(dynamic v) {
+    if (v is bool) return v;
+    return v?.toString().toLowerCase() == 'true';
   }
 }
 

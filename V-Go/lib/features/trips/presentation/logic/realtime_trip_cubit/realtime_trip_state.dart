@@ -57,6 +57,8 @@ class RealTimeTripState extends Equatable {
   final CurrentTripModel? currentTrip;
   final List<CurrentTripModel> currentTripList;
   final double tripPrice;
+  final bool isFreeRide;
+  final int freeRidesLeft;
   final PaymentStatusModel? paymentStatusModel;
   // Live captain location during an active trip.
   final double? driverLat;
@@ -73,6 +75,8 @@ class RealTimeTripState extends Equatable {
     this.tripStatus = 'Pending',
     this.currentTrip,
     this.tripPrice = 0.0,
+    this.isFreeRide = false,
+    this.freeRidesLeft = 0,
     this.paymentStatusModel,
     this.driverLat,
     this.driverLng,
@@ -90,6 +94,8 @@ class RealTimeTripState extends Equatable {
     List<CurrentTripModel>? currentTripList,
     bool? resetCurrentTrip,
     double? tripPrice,
+    bool? isFreeRide,
+    int? freeRidesLeft,
     PaymentStatusModel? paymentStatusModel,
     double? driverLat,
     double? driverLng,
@@ -109,6 +115,8 @@ class RealTimeTripState extends Equatable {
           : currentTrip ?? this.currentTrip,
       currentTripList: currentTripList ?? this.currentTripList,
       tripPrice: tripPrice ?? this.tripPrice,
+      isFreeRide: isFreeRide ?? this.isFreeRide,
+      freeRidesLeft: freeRidesLeft ?? this.freeRidesLeft,
       paymentStatusModel: paymentStatusModel ?? this.paymentStatusModel,
       driverLat: driverLat ?? this.driverLat,
       driverLng: driverLng ?? this.driverLng,
@@ -127,6 +135,8 @@ class RealTimeTripState extends Equatable {
     tripStatus,
     currentTrip,
     tripPrice,
+    isFreeRide,
+    freeRidesLeft,
     paymentStatusModel,
     driverLat,
     driverLng,

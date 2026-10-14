@@ -264,9 +264,25 @@ class MapService {
   static const String _osrmUrl =
       'https://router.project-osrm.org/route/v1/driving/';
   static const String _photonUrl = 'https://photon.komoot.io/api/';
+  static const String _nominatimUrl =
+      'https://nominatim.openstreetmap.org/search';
+  static const String _egyptBbox = '25,22,34.1,31.7';
+  static const String _suezPhotonBbox = '32.25,29.85,32.65,30.10';
+  static const String _suezViewbox = '32.25,30.10,32.65,29.85';
   // Prefix for suggestions that already carry their coordinates (Photon), so
   // getPlaceLocation needs no extra lookup.
   static const String _latLngPlacePrefix = 'latlng:';
+  // Coordinates taken from OpenStreetMap (checked 2026-10-14).
+  static const List<_KnownSuezPlace> _knownSuezPlaces = [
+    _KnownSuezPlace('ميدان الأربعين، السويس', 29.9733, 32.5486),
+    _KnownSuezPlace('سوق الأربعين، السويس', 29.9718, 32.5521),
+    _KnownSuezPlace('ستاد السويس، طريق الكورنيش', 29.9576, 32.5424),
+    _KnownSuezPlace('جامعة السويس', 29.9952, 32.4982),
+    _KnownSuezPlace('مساكن الصباح، السويس', 29.9859, 32.5223),
+    _KnownSuezPlace('السلام 1، السويس', 30.0064, 32.4901),
+    _KnownSuezPlace('السلام 2، السويس', 29.9942, 32.4853),
+    _KnownSuezPlace('مستشفى التأمين الصحي الشامل، السويس', 29.9693, 32.5176),
+  ];
 
   /// Road route from the free public OSRM server.
   Future<RouteResultModel> getOsrmRoute(
@@ -306,9 +322,48 @@ class MapService {
     );
   }
 
-  /// Place search via Photon (OpenStreetMap), limited to Egypt.
+  /// Place search via OpenStreetMap providers. Prefer Suez-local results, then
+  /// fall back to the old Egypt-wide Photon query.
   Future<List<PlaceSuggestionModel>> getPhotonSuggestions(
     String query, {
+    double? originLat,
+    double? originLng,
+  }) async {
+    final trimmed = query.trim();
+    if (trimmed.isEmpty) return const [];
+
+    final first = await _getSuezSuggestions(
+      trimmed,
+      originLat: originLat,
+      originLng: originLng,
+      includeNominatim: true,
+    );
+    if (first.isNotEmpty) return first;
+
+    final normalized = _normalizeArabic(trimmed);
+    if (normalized != trimmed) {
+      final retry = await _getSuezSuggestions(
+        normalized,
+        originLat: originLat,
+        originLng: originLng,
+        includeNominatim: false,
+      );
+      if (retry.isNotEmpty) return retry;
+    }
+
+    return _getPhotonSuggestions(
+      trimmed,
+      bbox: _egyptBbox,
+      limit: 10,
+      originLat: originLat,
+      originLng: originLng,
+    );
+  }
+
+  Future<List<PlaceSuggestionModel>> _getPhotonSuggestions(
+    String query, {
+    required String bbox,
+    required int limit,
     double? originLat,
     double? originLng,
   }) async {
@@ -317,8 +372,8 @@ class MapService {
           _photonUrl,
           queryParameters: {
             'q': query,
-            'limit': 10,
-            'bbox': '25,22,34.1,31.7',
+            'limit': limit,
+            'bbox': bbox,
             if (originLat != null && originLng != null) ...{
               'lat': originLat,
               'lon': originLng,
@@ -339,6 +394,144 @@ class MapService {
         description: parts.join('، '),
       );
     }).toList();
+  }
+
+  Future<List<PlaceSuggestionModel>> _getSuezSuggestions(
+    String query, {
+    double? originLat,
+    double? originLng,
+    required bool includeNominatim,
+  }) async {
+    final local = _localSuezSuggestions(query);
+    final futures = <Future<List<PlaceSuggestionModel>>>[
+      _getPhotonSuggestions(
+        query,
+        bbox: _suezPhotonBbox,
+        limit: 8,
+        originLat: originLat,
+        originLng: originLng,
+      ).catchError((_) => <PlaceSuggestionModel>[]),
+      if (includeNominatim)
+        _getNominatimSuggestions(query)
+            .catchError((_) => <PlaceSuggestionModel>[]),
+    ];
+    final remote = (await Future.wait(futures)).expand((e) => e).toList();
+    return _mergeSuggestions(
+      [...local, ...remote],
+      originLat: originLat,
+      originLng: originLng,
+      localCount: local.length,
+    );
+  }
+
+  Future<List<PlaceSuggestionModel>> _getNominatimSuggestions(
+    String query,
+  ) async {
+    final response = await dio
+        .get(
+          _nominatimUrl,
+          queryParameters: {
+            'q': query,
+            'format': 'jsonv2',
+            'countrycodes': 'eg',
+            'accept-language': 'ar',
+            'limit': 8,
+            'viewbox': _suezViewbox,
+            'bounded': 1,
+          },
+          options: Options(
+            headers: {
+              'User-Agent': 'VGo-Rider/1.0 (vgo.almobarmg.com)',
+            },
+          ),
+        )
+        .timeout(const Duration(seconds: 8));
+    final results = (response.data as List?) ?? const [];
+    return results.map((r) {
+      final item = r as Map;
+      final lat = double.tryParse((item['lat'] ?? '').toString());
+      final lon = double.tryParse((item['lon'] ?? '').toString());
+      final name = (item['display_name'] ?? item['name'] ?? '').toString();
+      if (lat == null || lon == null || name.trim().isEmpty) return null;
+      return PlaceSuggestionModel(
+        placeId: '$_latLngPlacePrefix$lat,$lon',
+        description: name.trim(),
+      );
+    }).whereType<PlaceSuggestionModel>().toList();
+  }
+
+  List<PlaceSuggestionModel> _localSuezSuggestions(String query) {
+    final normalizedQuery = _normalizeArabic(query);
+    return _knownSuezPlaces
+        .where((place) => _normalizeArabic(place.name).contains(normalizedQuery))
+        .map(
+          (place) => PlaceSuggestionModel(
+            placeId:
+                '$_latLngPlacePrefix${place.latitude},${place.longitude}',
+            description: place.name,
+          ),
+        )
+        .toList();
+  }
+
+  List<PlaceSuggestionModel> _mergeSuggestions(
+    List<PlaceSuggestionModel> suggestions, {
+    double? originLat,
+    double? originLng,
+    int localCount = 0,
+  }) {
+    final unique = <PlaceSuggestionModel>[];
+    for (final suggestion in suggestions) {
+      final loc = _latLngFromPlaceId(suggestion.placeId);
+      final name = _dedupeName(suggestion.description);
+      final duplicate = unique.any((existing) {
+        final existingLoc = _latLngFromPlaceId(existing.placeId);
+        final sameName = _dedupeName(existing.description) == name;
+        if (!sameName) return false;
+        if (loc == null || existingLoc == null) return true;
+        return GeoUtils.haversine(existingLoc, loc) <= 100;
+      });
+      if (!duplicate) unique.add(suggestion);
+    }
+
+    if (originLat != null && originLng != null && unique.length > localCount) {
+      final origin = LatLng(originLat, originLng);
+      final local = unique.take(localCount).toList();
+      final remote = unique.skip(localCount).toList()
+        ..sort((a, b) {
+          final da = _distanceFrom(origin, a);
+          final db = _distanceFrom(origin, b);
+          return da.compareTo(db);
+        });
+      return [...local, ...remote];
+    }
+    return unique;
+  }
+
+  static String _normalizeArabic(String value) => value
+      .replaceAll(RegExp('[أإآ]'), 'ا')
+      .replaceAll('ة', 'ه')
+      .replaceAll('ى', 'ي')
+      .trim()
+      .toLowerCase();
+
+  static String _dedupeName(String value) =>
+      _normalizeArabic(value.split(RegExp('[،,]')).first);
+
+  static LatLng? _latLngFromPlaceId(String placeId) {
+    if (!placeId.startsWith(_latLngPlacePrefix)) return null;
+    final parts = placeId.substring(_latLngPlacePrefix.length).split(',');
+    if (parts.length != 2) return null;
+    final lat = double.tryParse(parts[0]);
+    final lng = double.tryParse(parts[1]);
+    if (lat == null || lng == null) return null;
+    return LatLng(lat, lng);
+  }
+
+  static double _distanceFrom(LatLng origin, PlaceSuggestionModel suggestion) {
+    final loc = _latLngFromPlaceId(suggestion.placeId);
+    if (loc == null) return double.infinity;
+    return GeoUtils.haversine(origin, loc);
   }
 
   List<LatLng> _decodePolyline(String encoded) {
@@ -432,4 +625,12 @@ class MapService {
     }
     return null;
   }
+}
+
+class _KnownSuezPlace {
+  const _KnownSuezPlace(this.name, this.latitude, this.longitude);
+
+  final String name;
+  final double latitude;
+  final double longitude;
 }

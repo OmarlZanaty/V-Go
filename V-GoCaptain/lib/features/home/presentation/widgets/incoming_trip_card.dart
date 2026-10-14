@@ -47,7 +47,10 @@ class IncomingTripCard extends StatelessWidget {
           SizedBox(height: 10.h),
           _row(Icons.location_on, offer.end.displayAddress, color: AppColors.primaryOrange),
           SizedBox(height: 14.h),
-          PaymentMethodBadge(method: offer.paymentMethod),
+          if (offer.isFreeRide)
+            const FreeRideBadge()
+          else
+            PaymentMethodBadge(method: offer.paymentMethod),
           SizedBox(height: 20.h),
           Row(
             children: [

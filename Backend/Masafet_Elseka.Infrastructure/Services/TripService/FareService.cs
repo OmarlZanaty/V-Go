@@ -39,7 +39,7 @@ namespace Masafet_Elseka.Infrastructure.Services.TripService
             var (distanceKm, source) = await GetDistanceKmAsync(startLat, startLng, endLat, endLng, ct);
             // Distance × price per km, rounded up — no opening fee and no minimum fare.
             var price = Math.Ceiling((decimal)distanceKm * pricePerKm.Value);
-            return new FareQuoteDTO { DistanceKm = Math.Round(distanceKm, 3), Price = price, Source = source };
+            return new FareQuoteDTO { DistanceKm = Math.Round(distanceKm, 3), Price = price, RiderPrice = price, Source = source };
         }
 
         // Cached per ~10 m so the quote the rider saw and the trip they book

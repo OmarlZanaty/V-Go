@@ -486,11 +486,6 @@ abstract final class LegalDocuments {
         value: 'شات "خدمة العملاء" داخل التطبيق',
       ),
       LegalContact(
-        icon: Icons.location_on_outlined,
-        label: 'المقر الرئيسي',
-        value: 'ش عمر بن الخطاب، السلام 1، فيصل، السويس، مصر',
-      ),
-      LegalContact(
         icon: Icons.schedule_rounded,
         label: 'ساعات العمل',
         value: 'من الأحد إلى الخميس، 9 صباحاً حتى 5 مساءً',

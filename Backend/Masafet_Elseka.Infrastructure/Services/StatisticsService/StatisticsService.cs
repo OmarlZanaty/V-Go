@@ -100,12 +100,14 @@ namespace Masafet_Elseka.Infrastructure.Services.StatisticsService
                 async Task<FinancialSummaryDto> GetSummary(DateTime from, DateTime to)
                 {
                     var pricingRule = await _context.PricingRules.FirstOrDefaultAsync();
-                    var commissionPercentage = pricingRule != null ? pricingRule.DriverCommissionPercentage : 100;
+                    var companyCommissionPercentage = pricingRule != null ? 100 - pricingRule.DriverCommissionPercentage : 0;
 
-                    var revenue = await revenueQuery
+                    var fares = await revenueQuery
                         .Where(t => t.CreatedAt >= from && t.CreatedAt < to)
-                        .SumAsync(t => (decimal)t.Price);
-                    revenue = revenue * (100 - commissionPercentage) / 100;
+                        .Select(t => t.Price)
+                        .ToListAsync();
+                    var revenue = fares.Sum(fare =>
+                        Math.Round(fare * companyCommissionPercentage / 100, 0, MidpointRounding.AwayFromZero));
 
                     var expenses = await expenseQuery
                         .Where(e => e.Date >= from && e.Date < to)
@@ -196,16 +198,19 @@ namespace Masafet_Elseka.Infrastructure.Services.StatisticsService
                     .ToListAsync();
                 statistics.Add("weeklyRides", weeklyTripCounts);
 
-                var commissionPercentage = pricingRule != null ? pricingRule.DriverCommissionPercentage : 0;
-                var revenueLast5Months = await _context.Trips
+                var companyCommissionPercentage = pricingRule != null ? 100 - pricingRule.DriverCommissionPercentage : 100;
+                var revenueLast5MonthsRows = await _context.Trips
                     .Where(t => t.Status == TripStatus.Completed && t.CreatedAt >= DateTime.Today.AddMonths(-5))
-                    .GroupBy(t => new { t.CreatedAt.Year, t.CreatedAt.Month })
+                    .Select(t => new { t.CreatedAt.Year, t.CreatedAt.Month, t.Price })
+                    .ToListAsync();
+                var revenueLast5Months = revenueLast5MonthsRows
+                    .GroupBy(t => new { t.Year, t.Month })
                     .Select(g => new
                     {
                         Month = new DateTime(g.Key.Year, g.Key.Month, 1).ToString("MMMM"),
-                        Revenue = (g.Sum(t => (decimal?)t.Price) * ((100 - commissionPercentage) / 100)) ?? 0,
+                        Revenue = g.Sum(t => Math.Round(t.Price * companyCommissionPercentage / 100, 0, MidpointRounding.AwayFromZero)),
                     })
-                    .ToListAsync();
+                    .ToList();
                 statistics.Add("monthlyRevenue", revenueLast5Months);
 
                 return statistics;

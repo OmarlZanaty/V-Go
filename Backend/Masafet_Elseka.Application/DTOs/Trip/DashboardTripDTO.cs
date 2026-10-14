@@ -20,6 +20,7 @@ namespace Masafet_Elseka.Application.DTOs.Trip
         public decimal? DriverRate { get; set; }
         public decimal? ClientRate { get; set; }
         public string PaymentMethod { get; set; } = "Cash";
+        public bool IsFreeRide { get; set; }
         // Coordinates for the live admin map.
         public double FromLat { get; set; }
         public double FromLng { get; set; }

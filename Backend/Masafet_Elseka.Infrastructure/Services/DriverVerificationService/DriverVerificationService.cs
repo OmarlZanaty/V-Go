@@ -457,10 +457,12 @@ namespace Masafet_Elseka.Infrastructure.Services.DriverVerificationService
         private static string DocumentName(DriverDocumentType type) => type switch
         {
             DriverDocumentType.Selfie => "الصورة الشخصية",
-            DriverDocumentType.NationalIdFront => "البطاقة (وش)",
-            DriverDocumentType.NationalIdBack => "البطاقة (ظهر)",
-            DriverDocumentType.DriverLicense => "رخصة القيادة",
-            DriverDocumentType.VehicleLicense => "رخصة العربية",
+            DriverDocumentType.NationalIdFront => "البطاقة (أمام)",
+            DriverDocumentType.NationalIdBack => "البطاقة (خلف)",
+            DriverDocumentType.DriverLicense => "رخصة القيادة (أمام)",
+            DriverDocumentType.DriverLicenseBack => "رخصة القيادة (خلف)",
+            DriverDocumentType.VehicleLicense => "رخصة الاسكوتر (أمام)",
+            DriverDocumentType.VehicleLicenseBack => "رخصة الاسكوتر (خلف)",
             DriverDocumentType.CriminalRecord => "الفيش الجنائي",
             DriverDocumentType.MedicalExam => "الكشف الطبي",
             DriverDocumentType.ScooterMaintenance => "شهادة صيانة الاسكوتر",

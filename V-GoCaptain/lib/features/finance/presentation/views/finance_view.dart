@@ -677,6 +677,7 @@ String _typeLabel(String type) {
   return switch (type) {
     'TripCashCommission' => 'عمولة رحلة كاش',
     'TripCardEarning' => 'صافي رحلة إلكتروني',
+    'TripFreeRideEarning' => 'رحلة مجانية على حساب الشركة',
     'TripCorrection' => 'تعديل رحلة',
     'Settlement' => 'سداد مستحقات',
     'Payout' => 'تحويل ليك',

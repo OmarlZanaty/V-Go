@@ -155,7 +155,9 @@ class TripItem extends StatelessWidget {
                   Expanded(
                     child: tripInfoColumn(
                       title: 'السعر',
-                      value: '${trip.price.ceil()} ج.م',
+                      value: trip.isFreeRide
+                          ? 'مجانية'
+                          : '${trip.price.ceil()} ج.م',
                     ),
                   ),
                 ],

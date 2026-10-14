@@ -33,7 +33,9 @@ enum DriverDocumentType {
   nationalIdFront,
   nationalIdBack,
   driverLicense,
+  driverLicenseBack,
   vehicleLicense,
+  vehicleLicenseBack,
   // Optional: not needed to get verified.
   criminalRecord,
   medicalExam,
@@ -46,7 +48,9 @@ extension DriverDocumentTypeX on DriverDocumentType {
     DriverDocumentType.nationalIdFront => 'NationalIdFront',
     DriverDocumentType.nationalIdBack => 'NationalIdBack',
     DriverDocumentType.driverLicense => 'DriverLicense',
+    DriverDocumentType.driverLicenseBack => 'DriverLicenseBack',
     DriverDocumentType.vehicleLicense => 'VehicleLicense',
+    DriverDocumentType.vehicleLicenseBack => 'VehicleLicenseBack',
     DriverDocumentType.criminalRecord => 'CriminalRecord',
     DriverDocumentType.medicalExam => 'MedicalExam',
     DriverDocumentType.scooterMaintenance => 'ScooterMaintenance',
@@ -54,13 +58,20 @@ extension DriverDocumentTypeX on DriverDocumentType {
 
   String get label => switch (this) {
     DriverDocumentType.selfie => 'الصورة الشخصية',
-    DriverDocumentType.nationalIdFront => 'البطاقة — وش',
-    DriverDocumentType.nationalIdBack => 'البطاقة — ظهر',
-    DriverDocumentType.driverLicense => 'رخصة القيادة',
-    DriverDocumentType.vehicleLicense => 'رخصة العربية',
+    DriverDocumentType.nationalIdFront => 'البطاقة — أمام',
+    DriverDocumentType.nationalIdBack => 'البطاقة — خلف',
+    DriverDocumentType.driverLicense => 'رخصة القيادة — أمام',
+    DriverDocumentType.driverLicenseBack => 'رخصة القيادة — خلف',
+    DriverDocumentType.vehicleLicense => 'رخصة الاسكوتر — أمام',
+    DriverDocumentType.vehicleLicenseBack => 'رخصة الاسكوتر — خلف',
     DriverDocumentType.criminalRecord => 'الفيش الجنائي',
     DriverDocumentType.medicalExam => 'الكشف الطبي',
     DriverDocumentType.scooterMaintenance => 'شهادة صيانة الاسكوتر',
+  };
+
+  bool get isHidden => switch (this) {
+    DriverDocumentType.medicalExam => true,
+    _ => false,
   };
 
   bool get isOptional =>
@@ -78,6 +89,10 @@ extension DriverDocumentTypeX on DriverDocumentType {
       orElse: () => DriverDocumentType.selfie,
     );
   }
+
+  static List<DriverDocumentType> get visibleTypes => DriverDocumentType.values
+      .where((type) => !type.isHidden)
+      .toList(growable: false);
 }
 
 enum DriverDocumentStatus { pending, approved, rejected }
@@ -192,9 +207,11 @@ class DriverVerification extends Equatable {
           .toList(),
       requiredTypes: required
           .map((e) => DriverDocumentTypeX.parse(e.toString()))
+          .where((type) => !type.isHidden)
           .toList(),
       missingTypes: missing
           .map((e) => DriverDocumentTypeX.parse(e.toString()))
+          .where((type) => !type.isHidden)
           .toList(),
       canGoOnline: json['canGoOnline'] == true,
       name: json['name']?.toString(),

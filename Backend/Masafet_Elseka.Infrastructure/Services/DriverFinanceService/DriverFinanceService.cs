@@ -39,7 +39,9 @@ namespace Masafet_Elseka.Infrastructure.Services.DriverFinanceService
             DriverDocumentType.NationalIdFront,
             DriverDocumentType.NationalIdBack,
             DriverDocumentType.DriverLicense,
+            DriverDocumentType.DriverLicenseBack,
             DriverDocumentType.VehicleLicense,
+            DriverDocumentType.VehicleLicenseBack,
         };
 
         public DriverFinanceService(Context context, UserManager<ApplicationUser> userManager,
@@ -52,6 +54,7 @@ namespace Masafet_Elseka.Infrastructure.Services.DriverFinanceService
         }
 
         private static decimal Money(decimal value) => Math.Round(value, 2, MidpointRounding.AwayFromZero);
+        private static decimal WholePounds(decimal value) => Math.Round(value, 0, MidpointRounding.AwayFromZero);
         private static DateTime Now => DateTime.Now.ToEgyptTime();
 
         #region Settings
@@ -195,7 +198,8 @@ namespace Masafet_Elseka.Infrastructure.Services.DriverFinanceService
                 var cashTrip = string.Equals(trip.PaymentMethod, "Cash", StringComparison.OrdinalIgnoreCase);
 
                 LedgerEntryType? desiredType =
-                    paidOnline ? LedgerEntryType.TripCardEarning
+                    trip.IsFreeRide ? LedgerEntryType.TripFreeRideEarning
+                    : paidOnline ? LedgerEntryType.TripCardEarning
                     : (paidCash || (cashTrip && !refused)) ? LedgerEntryType.TripCashCommission
                     : null;
 
@@ -211,12 +215,13 @@ namespace Masafet_Elseka.Infrastructure.Services.DriverFinanceService
                     var percent = existing.FirstOrDefault(e => e.CommissionPercent != null)?.CommissionPercent
                         ?? CompanyPercent(rule);
                     var fare = Money(trip.Price);
-                    var commission = Money(fare * percent / 100);
+                    var commission = WholePounds(fare * percent / 100);
                     var share = fare - commission;
                     var desiredAmount = desiredType switch
                     {
                         LedgerEntryType.TripCashCommission => -commission,
                         LedgerEntryType.TripCardEarning => share,
+                        LedgerEntryType.TripFreeRideEarning => share,
                         _ => 0m
                     };
 
@@ -255,7 +260,9 @@ namespace Masafet_Elseka.Infrastructure.Services.DriverFinanceService
                             CommissionAmount = commission,
                             Description = desiredType == LedgerEntryType.TripCashCommission
                                 ? $"عمولة الشركة على رحلة كاش: {fare:0.##} ج.م × {percent:0.##}%"
-                                : $"نصيبك من رحلة مدفوعة إلكترونياً: {fare:0.##} ج.م − عمولة {commission:0.##} ج.م",
+                                : desiredType == LedgerEntryType.TripFreeRideEarning
+                                    ? $"نصيبك من رحلة مجانية على حساب الشركة: {fare:0.##} ج.م - عمولة {commission:0.##} ج.م"
+                                    : $"نصيبك من رحلة مدفوعة إلكترونياً: {fare:0.##} ج.م − عمولة {commission:0.##} ج.م",
                             CreatedAt = now,
                         });
                     }
@@ -492,7 +499,8 @@ namespace Masafet_Elseka.Infrastructure.Services.DriverFinanceService
             if (user.DocumentsDeadline.HasValue && Now > user.DocumentsDeadline.Value)
             {
                 var uploaded = await _context.DriverDocuments
-                    .Where(d => d.DriverId == driverId && d.Status != DriverDocumentStatus.Rejected)
+                    .Where(d => d.DriverId == driverId && d.Status != DriverDocumentStatus.Rejected
+                        && RequiredDocuments.Contains(d.Type))
                     .Select(d => d.Type).Distinct().CountAsync();
                 if (uploaded < RequiredDocuments.Length)
                     return Blocked("DOCS_OVERDUE", "انتهت مهلة رفع المستندات. ارفع صورتك ومستنداتك علشان تقدر تشتغل تاني");

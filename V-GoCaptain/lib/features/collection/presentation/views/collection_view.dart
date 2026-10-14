@@ -95,7 +95,11 @@ class _CollectionViewState extends State<CollectionView> {
         return;
       }
     } else if (!validPhone) {
-      errorToast(context, 'اكتب رقمك', 'اكتب رقم المحفظة اللي هتحوّل منها (11 رقم)');
+      errorToast(
+        context,
+        'اكتب رقمك',
+        'اكتب رقم المحفظة أو رقم انستاباي اللي هتحوّل منه (11 رقم)',
+      );
       return;
     }
     if (amount < 1) {
@@ -124,7 +128,10 @@ class _CollectionViewState extends State<CollectionView> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('حوّلت ${_money(amount)} من الرقم:', style: AppStyle.body),
+            Text(
+              'حوّلت ${_money(amount)} من رقم المحفظة أو رقم انستاباي:',
+              style: AppStyle.body,
+            ),
             SizedBox(height: 8.h),
             Directionality(
               textDirection: TextDirection.ltr,
@@ -138,7 +145,7 @@ class _CollectionViewState extends State<CollectionView> {
             ),
             SizedBox(height: 8.h),
             Text(
-              'لو الرقم مش هو اللي حوّلت منه بالظبط، التحويل مش هيتأكد تلقائي.',
+              'لو رقم المحفظة أو رقم انستاباي مش هو اللي حوّلت منه بالظبط، التحويل مش هيتأكد تلقائي.',
               style: AppStyle.hint,
             ),
           ],
@@ -263,7 +270,7 @@ class _CollectionViewState extends State<CollectionView> {
                   ] else
                     _field(
                       _sender,
-                      'رقم المحفظة اللي هتحوّل منها (إجباري)',
+                      'رقم المحفظة أو رقم انستاباي اللي هتحوّل منه (إجباري)',
                       Icons.phone_android,
                     ),
                   SizedBox(height: 10.h),
@@ -272,7 +279,7 @@ class _CollectionViewState extends State<CollectionView> {
                   Text(
                     _selected(data)?.isInstaPay == true
                         ? 'حوّل المبلغ ده بالظبط (${_money(transferAmount)})، والعنوان والاسم زي اللي في انستاباي، علشان التأكيد يتم تلقائي.'
-                        : 'حوّل المبلغ ده بالظبط (${_money(transferAmount)}) من نفس الرقم اللي كتبته، علشان التأكيد يتم تلقائي.',
+                        : 'حوّل المبلغ ده بالظبط (${_money(transferAmount)}) من نفس رقم المحفظة أو رقم انستاباي اللي كتبته، علشان التأكيد يتم تلقائي.',
                     style: AppStyle.hint,
                   ),
                   SizedBox(height: 16.h),

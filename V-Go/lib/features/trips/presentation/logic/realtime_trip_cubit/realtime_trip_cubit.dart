@@ -13,6 +13,7 @@ import '../../../../../core/services/firebase_notification_service.dart';
 import '../../../../../core/services/trip_service.dart';
 import '../../../../../core/utils/app_constants.dart';
 import '../../../../../core/utils/model/current_trip_model.dart';
+import '../../../data/model/fare_quote_model.dart';
 import '../../../data/model/new_trip_requested_for_driver_model.dart';
 import '../../../data/model/payment_status_model.dart';
 import '../../../data/model/trip_approved_for_client_model.dart';
@@ -416,9 +417,12 @@ class RealTimeTripCubit extends Cubit<RealTimeTripState>
           // recovered pending ride cancels with an empty id → 404 → stuck).
           tripId: currentTrip.tripId,
           tripStatus: currentTrip.tripStatus,
+          tripPrice: currentTrip.isFreeRide ? 0 : currentTrip.price,
+          isFreeRide: currentTrip.isFreeRide,
           paymentStatusModel: PaymentStatusModel(
             paymentMessage: '',
-            paymentStatus: currentTrip.isPaid ? 'Paid' : 'Pending',
+            paymentStatus:
+                currentTrip.isPaid || currentTrip.isFreeRide ? 'Paid' : 'Pending',
           ),
         ),
       );
@@ -664,8 +668,19 @@ class RealTimeTripCubit extends Cubit<RealTimeTripState>
     );
   }
 
+  // Payment UI checks isFreeRide itself, so the payment status is left alone.
+  void setFareQuote(FareQuoteModel quote) {
+    emit(
+      state.copyWith(
+        tripPrice: quote.riderPrice,
+        isFreeRide: quote.isFreeRide,
+        freeRidesLeft: quote.freeRidesLeft,
+      ),
+    );
+  }
+
   void setTripPrice(double price) {
-    emit(state.copyWith(tripPrice: price));
+    emit(state.copyWith(tripPrice: price, isFreeRide: false));
   }
 
   // TEMP(debug): inject a simulated live captain location, exactly as if it had

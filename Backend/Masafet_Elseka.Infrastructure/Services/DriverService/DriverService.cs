@@ -456,16 +456,21 @@ namespace Masafet_Elseka.Infrastructure.Services.DriverService
                     .ToListAsync();
                 }
 
-                    var commission = await _unitOfWork.PricingRules.GetFirstOrDefaultAsync();
-                var commissionPercentage = commission != null ? commission.DriverCommissionPercentage : 100;
+                var commission = await _unitOfWork.PricingRules.GetFirstOrDefaultAsync();
+                var driverPercentage = commission != null ? commission.DriverCommissionPercentage : 100;
+                var companyPercentage = 100 - driverPercentage;
+                static decimal CaptainShare(decimal fare, decimal companyPercent)
+                {
+                    var companyCommission = Math.Round(fare * companyPercent / 100, 0, MidpointRounding.AwayFromZero);
+                    return fare - companyCommission;
+                }
+                decimal SumCaptainShare(IEnumerable<UserTrip> rows) =>
+                    rows.Sum(t => CaptainShare(t.Trip.Price, companyPercentage));
 
-                profits["DailyProfit"] = ((trips.Where(t => t.Date <= DateTime.Now.ToEgyptTime() && t.Date >= DateTime.Now.ToEgyptTime().AddHours(-24))
-                    .Select(t => t.Trip.Price).Sum()) * commissionPercentage) / 100;
-                profits["WeeklyProfit"] = ((trips.Where(t => t.Date <= DateTime.Now.ToEgyptTime() && t.Date >= DateTime.Now.ToEgyptTime().AddDays(-6))
-                    .Select(t => t.Trip.Price).Sum()) * commissionPercentage) / 100;
-                profits["MonthlyProfit"] = ((trips.Where(t => t.Date <= DateTime.Now.ToEgyptTime() && t.Date >= DateTime.Now.ToEgyptTime().AddDays(-29))
-                    .Select(t => t.Trip.Price).Sum()) *commissionPercentage) / 100;
-                profits["AllTimeProfit"] = ((trips.Select(t => t.Trip.Price).Sum()) *commissionPercentage) / 100;
+                profits["DailyProfit"] = SumCaptainShare(trips.Where(t => t.Date <= DateTime.Now.ToEgyptTime() && t.Date >= DateTime.Now.ToEgyptTime().AddHours(-24)));
+                profits["WeeklyProfit"] = SumCaptainShare(trips.Where(t => t.Date <= DateTime.Now.ToEgyptTime() && t.Date >= DateTime.Now.ToEgyptTime().AddDays(-6)));
+                profits["MonthlyProfit"] = SumCaptainShare(trips.Where(t => t.Date <= DateTime.Now.ToEgyptTime() && t.Date >= DateTime.Now.ToEgyptTime().AddDays(-29)));
+                profits["AllTimeProfit"] = SumCaptainShare(trips);
 
                 return profits;
             }

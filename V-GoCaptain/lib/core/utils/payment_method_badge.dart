@@ -10,6 +10,34 @@ bool isVisaMethod(String? method) => (method ?? '').toLowerCase() == 'visa';
 String paymentMethodLabel(String? method) =>
     isVisaMethod(method) ? 'فيزا' : 'نقدي';
 
+class FreeRideBadge extends StatelessWidget {
+  const FreeRideBadge({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: EdgeInsets.symmetric(vertical: 10.h, horizontal: 14.w),
+      decoration: BoxDecoration(
+        color: AppColors.success.withValues(alpha: 0.15),
+        borderRadius: BorderRadius.circular(14.r),
+        border: Border.all(color: AppColors.success, width: 1.2),
+      ),
+      child: Row(
+        children: [
+          Icon(Icons.card_giftcard, color: AppColors.success, size: 22.r),
+          SizedBox(width: 10.w),
+          Expanded(
+            child: Text(
+              'رحلة مجانية على حساب الشركة',
+              style: AppStyle.body.copyWith(color: AppColors.success),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 /// Clear "how is this trip paid" row, so the captain knows whether to collect
 /// cash or wait for the client's card payment.
 class PaymentMethodBadge extends StatelessWidget {

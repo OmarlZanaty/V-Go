@@ -41,7 +41,7 @@ class MapBloc extends Bloc<MapEvent, MapState> {
     on<SearchLocation>(
       _onSearchLocation,
       transformer: (events, mapper) => events
-          .debounceTime(const Duration(milliseconds: 350))
+          .debounceTime(const Duration(milliseconds: 550))
           .asyncExpand(mapper),
     );
     on<SelectPlace>(_onSelectPlace);

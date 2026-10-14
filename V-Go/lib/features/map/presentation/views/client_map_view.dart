@@ -1121,7 +1121,9 @@ class _ClientMapViewState extends State<ClientMapView> {
               return waitingAssignDriverSection();
             } else if (tripState.tripStatus == 'Accepted') {
               final ct = tripState.currentTrip ?? widget.currentTrip;
+              final isFreeRide = ct?.isFreeRide == true || tripState.isFreeRide;
               final isVisa =
+                  !isFreeRide &&
                   (ct?.paymentMethod ?? 'Cash').toLowerCase() == 'visa';
               // Prompt visa riders to pay early (while the captain is en route).
               // Cash riders settle with the captain at the end — no early prompt.
@@ -1585,9 +1587,14 @@ class _ClientMapViewState extends State<ClientMapView> {
               BlocConsumer<TripCubit, TripState>(
                 listener: (context, tripState) {
                   if (tripState.status.isFareQuoteSuccess) {
-                    context.read<RealTimeTripCubit>().setTripPrice(
-                      tripState.tripPrice,
-                    );
+                    final quote = tripState.fareQuote;
+                    if (quote != null) {
+                      context.read<RealTimeTripCubit>().setFareQuote(quote);
+                    } else {
+                      context.read<RealTimeTripCubit>().setTripPrice(
+                        tripState.tripPrice,
+                      );
+                    }
                   }
                 },
                 builder: (context, tripState) {
@@ -1612,6 +1619,44 @@ class _ClientMapViewState extends State<ClientMapView> {
                                 ),
                               ),
                               horizontalSpace(4),
+                              if (tripState.fareQuote?.isFreeRide == true)
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Row(
+                                        children: [
+                                          Text(
+                                            'مجانية 🎁',
+                                            style: AppStyle.styleMedium16
+                                                .copyWith(
+                                              color: AppColors.primary,
+                                            ),
+                                          ),
+                                          horizontalSpace(8),
+                                          Text(
+                                            '${tripState.fareQuote!.price.ceil()} ج.م',
+                                            style: AppStyle.styleMedium14
+                                                .copyWith(
+                                              color: AppColors.lightGrey,
+                                              decoration:
+                                                  TextDecoration.lineThrough,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                      verticalSpace(4),
+                                      Text(
+                                        'رحلة مجانية من V-Go — باقي لك ${tripState.fareQuote!.freeRidesLeft} رحلة مجانية',
+                                        style: AppStyle.styleMedium12.copyWith(
+                                          color: AppColors.white,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                )
+                              else
                               Text(
                                 '${tripState.tripPrice.ceil()} ج.م',
                                 style: AppStyle.styleMedium16.copyWith(
@@ -1752,7 +1797,12 @@ class _ClientMapViewState extends State<ClientMapView> {
                                                     distance:
                                                         state.distanceKm ?? 0.0,
                                                     paymentMethod:
-                                                        _selectedPaymentMethod,
+                                                        tripState
+                                                                    .fareQuote
+                                                                    ?.isFreeRide ==
+                                                                true
+                                                            ? 'Cash'
+                                                            : _selectedPaymentMethod,
                                                   );
                                               context
                                                   .read<RealTimeTripCubit>()
@@ -1929,9 +1979,11 @@ class _ClientMapViewState extends State<ClientMapView> {
 
   /// The trip's payment method: the server's record when we have the trip,
   /// otherwise what the rider picked on the confirm screen.
-  String _tripPaymentMethod(RealTimeTripState tripState) =>
-      (tripState.currentTrip ?? widget.currentTrip)?.paymentMethod ??
-      _selectedPaymentMethod;
+  String _tripPaymentMethod(RealTimeTripState tripState) {
+    final trip = tripState.currentTrip ?? widget.currentTrip;
+    if (trip?.isFreeRide == true || tripState.isFreeRide) return 'Cash';
+    return trip?.paymentMethod ?? _selectedPaymentMethod;
+  }
 
   Widget _payMethodChip(
     String value,
@@ -1987,9 +2039,11 @@ class _ClientMapViewState extends State<ClientMapView> {
   Widget _tripPriceBanner(RealTimeTripState tripState) {
     // The server's stored fare is what the captain collects — never show a
     // local re-estimate here (distanceKm keeps being recomputed after booking).
-    final serverPrice =
-        (tripState.currentTrip ?? widget.currentTrip)?.price ?? 0;
-    final price = serverPrice > 0 ? serverPrice : tripState.tripPrice;
+    final trip = tripState.currentTrip ?? widget.currentTrip;
+    final isFreeRide = trip?.isFreeRide == true || tripState.isFreeRide;
+    final serverPrice = trip?.price ?? 0;
+    final price =
+        isFreeRide ? 0.0 : (serverPrice > 0 ? serverPrice : tripState.tripPrice);
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 16),
@@ -2021,6 +2075,13 @@ class _ClientMapViewState extends State<ClientMapView> {
               ),
             ],
           ),
+          if (isFreeRide) ...[
+            verticalSpace(4),
+            Text(
+              'رحلة مجانية من V-Go 🎁',
+              style: AppStyle.styleMedium14.copyWith(color: AppColors.white),
+            ),
+          ],
         ],
       ),
     );

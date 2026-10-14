@@ -59,6 +59,11 @@ namespace Masafet_Elseka.Infrastructure.Services.PaymentService
                     return Response<PaymobIntentResponseDTO>.Failure("المستخدم غير موجود", 404);
                 }
 
+                if (await _context.Trips.AnyAsync(t => t.Id == request.TripId && t.IsFreeRide))
+                {
+                    return Response<PaymobIntentResponseDTO>.Failure("هذه الرحلة مجانية ولا تحتاج إلى دفع", 400);
+                }
+
                 if(_context.Payments.Any(p=>p.TripId==request.TripId && p.Status==PaymentStatus.Paid))
                 {
                     return Response<PaymobIntentResponseDTO>.Failure("تم دفع هذه الرحلة مسبقاً", 400);
@@ -212,6 +217,11 @@ namespace Masafet_Elseka.Infrastructure.Services.PaymentService
                     return Response<PaymobIntentResponseDTO>.Failure("المستخدم غير موجود", 404);
                 }
 
+                if (await _context.Trips.AnyAsync(t => t.Id == request.TripId && t.IsFreeRide))
+                {
+                    return Response<PaymobIntentResponseDTO>.Failure("هذه الرحلة مجانية ولا تحتاج إلى دفع", 400);
+                }
+
                 if (_context.Payments.Any(p => p.TripId == request.TripId &&
                         (p.Status == PaymentStatus.Paid || p.Status == PaymentStatus.Captured ||
                          p.Status == PaymentStatus.PreAuthSuccess)))
@@ -293,6 +303,11 @@ namespace Masafet_Elseka.Infrastructure.Services.PaymentService
         {
             try
             {
+                if (await _context.Trips.AnyAsync(t => t.Id == tripId && t.IsFreeRide))
+                {
+                    return Response<Payment>.Failure("هذه الرحلة مجانية ولا تحتاج إلى تحصيل", 400);
+                }
+
                 var payment = await _context.Payments
                     .Where(p => p.TripId == tripId)
                     .OrderByDescending(p => p.CreatedAt)
@@ -359,6 +374,11 @@ namespace Masafet_Elseka.Infrastructure.Services.PaymentService
         {
             try
             {
+                if (await _context.Trips.AnyAsync(t => t.Id == tripId && t.IsFreeRide))
+                {
+                    return Response<Payment>.Failure("هذه الرحلة مجانية ولا يوجد حجز لإلغائه", 400);
+                }
+
                 var payment = await _context.Payments
                     .Where(p => p.TripId == tripId)
                     .OrderByDescending(p => p.CreatedAt)
@@ -1126,6 +1146,11 @@ namespace Masafet_Elseka.Infrastructure.Services.PaymentService
                 {
                     return Response<string>.Failure("الرحلة غير موجودة", 404);
                 }
+                if (trip.IsFreeRide)
+                {
+                    await _finance.SyncTripLedgerAsync(tripId);
+                    return Response<string>.Success("الرحلة مجانية من V-Go", "الرحلة مجانية من V-Go", 200);
+                }
                 var isPaid = trip.Payment.Any(p => p.Status == PaymentStatus.Paid);
                 if (isPaid)
                 {
@@ -1176,6 +1201,11 @@ namespace Masafet_Elseka.Infrastructure.Services.PaymentService
                 {
                     return Response<string>.Failure("لم يتم العثور على عميل لهذه الرحلة", 404);
                 }
+                if (trip.IsFreeRide)
+                {
+                    await _finance.SyncTripLedgerAsync(tripId);
+                    return Response<string>.Success(clientId, "الرحلة مجانية من V-Go", 200);
+                }
                 if (trip.Payment.Any(p => p.Status == PaymentStatus.Paid))
                 {
                     return Response<string>.Failure("تم دفع هذه الرحلة بالفعل", 400);
@@ -1218,6 +1248,11 @@ namespace Masafet_Elseka.Infrastructure.Services.PaymentService
                 if (!trip.UserTrips.Any(ut => ut.UserId == driverId && ut.Role == UserTripRole.Driver))
                 {
                     return Response<string>.Failure("غير مصرح لك بهذه الرحلة", 403);
+                }
+                if (trip.IsFreeRide)
+                {
+                    await _finance.SyncTripLedgerAsync(tripId);
+                    return Response<string>.Failure("هذه الرحلة مجانية ولا يمكن تسجيل رفض دفع عليها", 400);
                 }
                 var clientId = trip.UserTrips
                     .FirstOrDefault(ut => ut.Role == UserTripRole.Client)?.UserId;

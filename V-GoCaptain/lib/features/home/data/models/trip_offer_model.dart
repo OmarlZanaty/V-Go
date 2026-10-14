@@ -8,6 +8,7 @@ class TripOfferModel {
   final double price;
   final TripClient client;
   final String paymentMethod;
+  final bool isFreeRide;
 
   TripOfferModel({
     required this.tripId,
@@ -16,6 +17,7 @@ class TripOfferModel {
     required this.price,
     required this.client,
     this.paymentMethod = 'Cash',
+    this.isFreeRide = false,
   });
 
   bool get isVisa => paymentMethod.toLowerCase() == 'visa';
@@ -38,7 +40,13 @@ class TripOfferModel {
       ),
       paymentMethod:
           _pick(map, 'paymentMethod', 'PaymentMethod')?.toString() ?? 'Cash',
+      isFreeRide: _toBool(_pick(map, 'isFreeRide', 'IsFreeRide')),
     );
+  }
+
+  static bool _toBool(dynamic v) {
+    if (v is bool) return v;
+    return v?.toString().toLowerCase() == 'true';
   }
 
   static double _toDouble(dynamic v) {

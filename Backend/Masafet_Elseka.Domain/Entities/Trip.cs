@@ -29,6 +29,7 @@ namespace Masafet_Elseka.Domain.Entities
         // Drives the cash-vs-visa flow (cash = captain confirms at end; visa =
         // client pays online once the ride starts).
         public string PaymentMethod { get; set; } = "Cash";
+        public bool IsFreeRide { get; set; }
 
         // Why the trip was cancelled (rider-supplied). Null unless cancelled.
         public string? CancelReason { get; set; }

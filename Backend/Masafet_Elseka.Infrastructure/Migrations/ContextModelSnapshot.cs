@@ -87,6 +87,9 @@ namespace Masafet_Elseka.Infrastructure.Migrations
                     b.Property<bool>("EmailConfirmed")
                         .HasColumnType("bit");
 
+                    b.Property<int>("FreeRidesGranted")
+                        .HasColumnType("int");
+
                     b.Property<string>("FullName")
                         .IsRequired()
                         .HasColumnType("nvarchar(max)");
@@ -788,6 +791,15 @@ namespace Masafet_Elseka.Infrastructure.Migrations
                     b.Property<decimal>("DriverCommissionPercentage")
                         .HasColumnType("decimal(18,2)");
 
+                    b.Property<bool>("FreeRidesEnabled")
+                        .HasColumnType("bit");
+
+                    b.Property<int>("FreeRidesPerRider")
+                        .HasColumnType("int");
+
+                    b.Property<int>("FreeRidesRiderLimit")
+                        .HasColumnType("int");
+
                     b.Property<DateTime>("LastUpdated")
                         .HasColumnType("datetime2");
 
@@ -928,6 +940,9 @@ namespace Masafet_Elseka.Infrastructure.Migrations
 
                     b.Property<DateTime?>("EndTime")
                         .HasColumnType("datetime2");
+
+                    b.Property<bool>("IsFreeRide")
+                        .HasColumnType("bit");
 
                     b.Property<string>("PaymentMethod")
                         .IsRequired()

@@ -187,7 +187,7 @@ class _VerificationViewState extends State<VerificationView> {
               children: [
                 _Header(verification: verification),
                 SizedBox(height: 16.h),
-                ...DriverDocumentType.values
+                ...DriverDocumentTypeX.visibleTypes
                     .where((type) => !type.isOptional)
                     .map(row),
                 SizedBox(height: 10.h),
@@ -198,7 +198,7 @@ class _VerificationViewState extends State<VerificationView> {
                   style: AppStyle.hint,
                 ),
                 SizedBox(height: 10.h),
-                ...DriverDocumentType.values
+                ...DriverDocumentTypeX.visibleTypes
                     .where((type) => type.isOptional)
                     .map(row),
                 SizedBox(height: 20.h),
@@ -351,7 +351,9 @@ IconData _icon(DriverDocumentType type) {
     DriverDocumentType.nationalIdFront => Icons.badge_outlined,
     DriverDocumentType.nationalIdBack => Icons.badge,
     DriverDocumentType.driverLicense => Icons.card_membership_outlined,
-    DriverDocumentType.vehicleLicense => Icons.directions_car_outlined,
+    DriverDocumentType.driverLicenseBack => Icons.card_membership,
+    DriverDocumentType.vehicleLicense => Icons.electric_scooter_outlined,
+    DriverDocumentType.vehicleLicenseBack => Icons.electric_scooter,
     DriverDocumentType.criminalRecord => Icons.gavel_outlined,
     DriverDocumentType.medicalExam => Icons.medical_services_outlined,
     DriverDocumentType.scooterMaintenance => Icons.build_circle_outlined,

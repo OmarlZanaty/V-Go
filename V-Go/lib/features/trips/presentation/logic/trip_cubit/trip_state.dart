@@ -50,6 +50,7 @@ class TripState extends Equatable {
   /// Server-quoted fare for the route in [quoteKey].
   final double tripPrice;
   final String quoteKey;
+  final FareQuoteModel? fareQuote;
 
   const TripState({
     this.status = TripStatus.initial,
@@ -61,6 +62,7 @@ class TripState extends Equatable {
     this.hasNextPage = true,
     this.tripPrice = 0.0,
     this.quoteKey = '',
+    this.fareQuote,
   });
 
   TripState copyWith({
@@ -73,6 +75,7 @@ class TripState extends Equatable {
     bool? hasNextPage,
     double? tripPrice,
     String? quoteKey,
+    FareQuoteModel? fareQuote,
     TripModel? trip,
   }) {
     return TripState(
@@ -84,12 +87,13 @@ class TripState extends Equatable {
       filteredTrips: filteredTrips ?? this.filteredTrips,
       tripPrice: tripPrice ?? this.tripPrice,
       quoteKey: quoteKey ?? this.quoteKey,
+      fareQuote: fareQuote ?? this.fareQuote,
       hasNextPage: hasNextPage ?? this.hasNextPage,
     );
   }
 
   @override
-  List<Object> get props => [
+  List<Object?> get props => [
     status,
     errorMessage,
     trips,
@@ -99,5 +103,6 @@ class TripState extends Equatable {
     hasNextPage,
     tripPrice,
     quoteKey,
+    fareQuote,
   ];
 }

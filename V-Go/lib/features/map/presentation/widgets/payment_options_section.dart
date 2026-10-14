@@ -64,12 +64,22 @@ Widget paymentOptionsSection(
       }
     },
     builder: (context, state) {
-      if (state.paymentStatusModel?.paymentStatus == 'Paid') {
-        return const SizedBox.shrink();
-      }
       // Prefer the rider's own selection (always known on the client). Fall back to
       // the server trip's method only when we don't have the local choice.
       final trip = state.currentTrip ?? currentTrip;
+      final isFreeRide = trip?.isFreeRide == true || state.isFreeRide;
+      if (isFreeRide) {
+        return const Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            SizedBox(height: 16),
+            _FreeRidePaymentTile(),
+          ],
+        );
+      }
+      if (state.paymentStatusModel?.paymentStatus == 'Paid') {
+        return const SizedBox.shrink();
+      }
       final method = (clientSelectedMethod != null &&
               clientSelectedMethod.isNotEmpty)
           ? clientSelectedMethod
@@ -91,6 +101,33 @@ Widget paymentOptionsSection(
       );
     },
   );
+}
+
+class _FreeRidePaymentTile extends StatelessWidget {
+  const _FreeRidePaymentTile();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      decoration: const BoxDecoration(
+        color: AppColors.lightWhite,
+        borderRadius: BorderRadius.all(Radius.circular(12)),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.card_giftcard, color: AppColors.primary, size: 22),
+          horizontalSpace(8),
+          Expanded(
+            child: Text(
+              '0 ج.م — رحلة مجانية',
+              style: AppStyle.styleMedium14.copyWith(color: AppColors.white),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 // Cash: the captain confirms receipt; guide the rider, no self-serve action.
@@ -206,6 +243,7 @@ void _createPaymentRequestModel(
   RealTimeTripState tripState, {
   CurrentTripModel? currentTrip,
 }) {
+  if (currentTrip?.isFreeRide == true || tripState.isFreeRide) return;
   context.read<PaymentCubit>().paymentRequest(
     model: PaymentRequestModel(
       userId: AppConstants.kUserId,

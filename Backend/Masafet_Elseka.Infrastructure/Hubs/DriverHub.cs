@@ -296,6 +296,7 @@ namespace Masafet_Elseka.Infrastructure.Hubs
                     Price = trip.Price,
                     CreatedAt = trip.CreatedAt,
                     PaymentMethod = trip.PaymentMethod,
+                    IsFreeRide = trip.IsFreeRide,
                     Client = new ClientTripDataDTO
                     {
                         ClientId = trip.ClientId,

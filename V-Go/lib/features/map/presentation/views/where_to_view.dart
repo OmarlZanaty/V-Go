@@ -210,7 +210,11 @@ class _WhereToViewState extends State<WhereToView> {
               onChanged: (e) {
                 sessionToken ??= uuid.v4();
                 context.read<MapBloc>().add(
-                  SearchLocation(e, isFrom: false, sessionToken: sessionToken!),
+                  SearchLocation(
+                    e,
+                    isFrom: widget.isFrom,
+                    sessionToken: sessionToken!,
+                  ),
                 );
               },
               controller: whereToController,

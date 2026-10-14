@@ -438,8 +438,8 @@ namespace Masafet_Elseka.Infrastructure.Hubs
                     return Response<object>.Failure(result.Message, result.StatusCode, result.Errors);
                 }
                 var clientId= result.Data.CLientId;
-                await NotifyClientTripArrived(result.Data.CLientId, tripId);
-                await NotifyDriverTripArrived(driverId, tripId);
+                await NotifyClientTripArrived(result.Data.CLientId, tripId, result.Data.IsFreeRide);
+                await NotifyDriverTripArrived(driverId, tripId, result.Data.IsFreeRide);
                 await _tripService.UpdateTripStateInCache(tripId, TripStatus.Arrived);
                 return Response<object>.Success(result.Data, result.Message, result.StatusCode);
             }
@@ -467,8 +467,8 @@ namespace Masafet_Elseka.Infrastructure.Hubs
                     return Response<object>.Failure(result.Message, result.StatusCode, result.Errors);
                 }
 
-                await NotifyClientTripStarted(result.Data.CLientId, tripId);
-                await NotifyDriverTripStarted(driverId, tripId);
+                await NotifyClientTripStarted(result.Data.CLientId, tripId, result.Data.IsFreeRide);
+                await NotifyDriverTripStarted(driverId, tripId, result.Data.IsFreeRide);
                 await _tripService.UpdateTripStateInCache(tripId, TripStatus.InProgress);
 
                 // Visa trips: the client pays online once the ride starts. Prompt
@@ -521,8 +521,8 @@ namespace Masafet_Elseka.Infrastructure.Hubs
                     return Response<object>.Failure(result.Message, result.StatusCode, result.Errors);
                 }
 
-                await NotifyClientTripEnded(result.Data.CLientId, tripId);
-                await NotifyDriverTripEnded(driverId, tripId);
+                await NotifyClientTripEnded(result.Data.CLientId, tripId, result.Data.IsFreeRide);
+                await NotifyDriverTripEnded(driverId, tripId, result.Data.IsFreeRide);
                 await _tripService.UpdateTripStateInCache(tripId, TripStatus.Completed);
 
                 // Visa pre-auth: capture the held amount now the ride is complete.
@@ -756,7 +756,8 @@ namespace Masafet_Elseka.Infrastructure.Hubs
                 },
                 Price = trip.Price,
                 CreatedAt = trip.CreatedAt,
-                PaymentMethod = string.Equals(request.PaymentMethod, "Visa", StringComparison.OrdinalIgnoreCase) ? "Visa" : "Cash",
+                PaymentMethod = trip.PaymentMethod,
+                IsFreeRide = trip.IsFreeRide,
                 Client = new ClientTripDataDTO
                 {
                     ClientId = client.Id,
@@ -823,6 +824,7 @@ namespace Masafet_Elseka.Infrastructure.Hubs
                     DriverRateCount = driver.RatingsReceived.Count,
                     ScooterType = driver.Scooter?.Type.ToString() ?? "",
                     ScooterLicense = driver.Scooter?.License ?? "",
+                    IsFreeRide = trip.IsFreeRide,
                     DriverLocation = new
                     {
                         Lat = latitude,
@@ -846,6 +848,7 @@ namespace Masafet_Elseka.Infrastructure.Hubs
                     ClientName = clientInTrip.User.FullName,
                     ClientPhone = clientInTrip.User.PhoneNumber,
                     ClientPhoto = clientInTrip.User.ProfilePicture,
+                    IsFreeRide = trip.IsFreeRide,
                     UpdatedAt = DateTime.Now.ToEgyptTime()
                 });
         } 
@@ -873,7 +876,7 @@ namespace Masafet_Elseka.Infrastructure.Hubs
         #endregion
 
         #region Arrived Events
-        private async Task NotifyClientTripArrived(string clientId, string tripId)
+        private async Task NotifyClientTripArrived(string clientId, string tripId, bool isFreeRide)
         {
             await _notificationService.SendNotificationToUserAsync(clientId,
                 "وصل الكابتن", "وصل الكابتن إلى نقطة الانطلاق، يرجى الاستعداد.");
@@ -883,24 +886,26 @@ namespace Masafet_Elseka.Infrastructure.Hubs
                 {
                     TripId = tripId,
                     Status = TripStatus.Arrived.ToString(),
+                    IsFreeRide = isFreeRide,
                     UpdatedAt = DateTime.Now.ToEgyptTime()
                 });
         }
 
-        private async Task NotifyDriverTripArrived(string driverId, string tripId)
+        private async Task NotifyDriverTripArrived(string driverId, string tripId, bool isFreeRide)
         {
             await Clients.Group(HubGroups.Driver(driverId))
                 .SendAsync(HubEvents.DriverArrivedTrip, new
                 {
                     TripId = tripId,
                     Status = TripStatus.Arrived.ToString(),
+                    IsFreeRide = isFreeRide,
                     UpdatedAt = DateTime.Now.ToEgyptTime()
                 });
         }
         #endregion
 
         #region Start Trip Events
-        private async Task NotifyClientTripStarted(string clientId, string tripId)
+        private async Task NotifyClientTripStarted(string clientId, string tripId, bool isFreeRide)
         {
             await _notificationService.SendNotificationToUserAsync(clientId,
                 "بدأت رحلتك", "انطلقت رحلتك إلى وجهتك. رحلة سعيدة!");
@@ -910,24 +915,26 @@ namespace Masafet_Elseka.Infrastructure.Hubs
                 {
                     TripId = tripId,
                     Status = TripStatus.InProgress.ToString(),
+                    IsFreeRide = isFreeRide,
                     UpdatedAt = DateTime.Now.ToEgyptTime()
                 });
         }
 
-        private async Task NotifyDriverTripStarted(string driverId, string tripId)
+        private async Task NotifyDriverTripStarted(string driverId, string tripId, bool isFreeRide)
         {
             await Clients.Group(HubGroups.Driver(driverId))
                 .SendAsync(HubEvents.TripStartedForDriver, new
                 {
                     TripId = tripId,
                     Status = TripStatus.InProgress.ToString(),
+                    IsFreeRide = isFreeRide,
                     UpdatedAt = DateTime.Now.ToEgyptTime()
                 });
         }
         #endregion
 
         #region End Trip Events
-        private async Task NotifyClientTripEnded(string clientId, string tripId)
+        private async Task NotifyClientTripEnded(string clientId, string tripId, bool isFreeRide)
         {
             await _notificationService.SendNotificationToUserAsync(clientId,
                 "انتهت رحلتك", "وصلت إلى وجهتك بأمان. شكرًا لاختيارك V-Go! 🎉");
@@ -937,17 +944,19 @@ namespace Masafet_Elseka.Infrastructure.Hubs
                 {
                     TripId = tripId,
                     Status = TripStatus.Completed.ToString(),
+                    IsFreeRide = isFreeRide,
                     UpdatedAt = DateTime.Now.ToEgyptTime()
                 });
         }
 
-        private async Task NotifyDriverTripEnded(string driverId, string tripId)
+        private async Task NotifyDriverTripEnded(string driverId, string tripId, bool isFreeRide)
         {
             await Clients.Group(HubGroups.Driver(driverId))
                 .SendAsync(HubEvents.TripEndedForDriver, new
                 {
                     TripId = tripId,
                     Status = TripStatus.Completed.ToString(),
+                    IsFreeRide = isFreeRide,
                     UpdatedAt = DateTime.Now.ToEgyptTime()
                 });
         }

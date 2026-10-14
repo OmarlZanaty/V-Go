@@ -5,6 +5,7 @@ import '../../../../../core/errors/exception.dart';
 import '../../../../../core/utils/app_constants.dart';
 import '../../../../../core/utils/model/current_trip_model.dart';
 import '../../../../../core/utils/model/location_model.dart';
+import '../../../data/model/fare_quote_model.dart';
 import '../../../data/model/trip_model.dart';
 import '../../../data/repo/trip_repo.dart';
 
@@ -152,10 +153,11 @@ class TripCubit extends Cubit<TripState> {
       emit(
         state.copyWith(
           status: TripStatus.fareQuoteSuccess,
-          tripPrice: quote.price,
+          tripPrice: quote.riderPrice,
+          fareQuote: quote,
         ),
       );
-      return quote.price;
+      return quote.riderPrice;
     } catch (e) {
       if (isClosed || state.quoteKey != key) return null;
       emit(

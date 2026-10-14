@@ -59,8 +59,11 @@ class ActiveTripPanel extends StatelessWidget {
                   ),
                 ),
                 SizedBox(height: 12.h),
-                PaymentMethodBadge(method: trip.paymentMethod),
-                if (trip.isVisa) ...[
+                if (trip.isFreeRide)
+                  const FreeRideBadge()
+                else
+                  PaymentMethodBadge(method: trip.paymentMethod),
+                if (!trip.isFreeRide && trip.isVisa) ...[
                   SizedBox(height: 12.h),
                   _visaPaymentStatus(),
                 ],
@@ -160,8 +163,18 @@ class ActiveTripPanel extends StatelessWidget {
   /// Big, clear fare display. Emphasised once the ride ends so the captain
   /// sees exactly how much to collect.
   Widget _priceBanner() {
-    final price = state.activeTrip?.price ?? 0;
+    final trip = state.activeTrip;
+    final price = trip?.price ?? 0;
+    final isFreeRide = trip?.isFreeRide ?? false;
     final isCompleted = state.stage == TripStage.completed;
+    late final String title;
+    if (isFreeRide && isCompleted) {
+      title = 'رحلة مجانية';
+    } else if (isCompleted) {
+      title = 'المبلغ المطلوب';
+    } else {
+      title = 'قيمة الرحلة';
+    }
     return Container(
       width: double.infinity,
       padding: EdgeInsets.symmetric(vertical: isCompleted ? 16.h : 12.h),
@@ -173,34 +186,44 @@ class ActiveTripPanel extends StatelessWidget {
       child: Column(
         children: [
           Text(
-            isCompleted ? 'المبلغ المطلوب' : 'قيمة الرحلة',
+            title,
             style: AppStyle.hint.copyWith(color: AppColors.black),
           ),
           SizedBox(height: 4.h),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            crossAxisAlignment: CrossAxisAlignment.baseline,
-            textBaseline: TextBaseline.alphabetic,
-            children: [
-              Text(
-                '${price.ceil()}',
-                style: GoogleFonts.cairo(
-                  fontSize: isCompleted ? 40.sp : 28.sp,
-                  fontWeight: FontWeight.bold,
-                  color: AppColors.black,
-                ),
+          if (isFreeRide && isCompleted)
+            Padding(
+              padding: EdgeInsets.symmetric(horizontal: 12.w),
+              child: Text(
+                'متحصّلش فلوس من العميل — نصيبك هيتضاف لرصيدك',
+                textAlign: TextAlign.center,
+                style: AppStyle.body.copyWith(color: AppColors.black),
               ),
-              SizedBox(width: 6.w),
-              Text(
-                'ج.م',
-                style: GoogleFonts.cairo(
-                  fontSize: isCompleted ? 20.sp : 16.sp,
-                  fontWeight: FontWeight.bold,
-                  color: AppColors.black,
+            )
+          else
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.baseline,
+              textBaseline: TextBaseline.alphabetic,
+              children: [
+                Text(
+                  '${price.ceil()}',
+                  style: GoogleFonts.cairo(
+                    fontSize: isCompleted ? 40.sp : 28.sp,
+                    fontWeight: FontWeight.bold,
+                    color: AppColors.black,
+                  ),
                 ),
-              ),
-            ],
-          ),
+                SizedBox(width: 6.w),
+                Text(
+                  'ج.م',
+                  style: GoogleFonts.cairo(
+                    fontSize: isCompleted ? 20.sp : 16.sp,
+                    fontWeight: FontWeight.bold,
+                    color: AppColors.black,
+                  ),
+                ),
+              ],
+            ),
         ],
       ),
     );
@@ -257,6 +280,7 @@ class ActiveTripPanel extends StatelessWidget {
   /// the client's visa payment, or — if already paid — just finish.
   VoidCallback _onPressed(CaptainHomeCubit cubit, CaptainHomeState state) {
     if (state.stage == TripStage.completed) {
+      if (state.activeTrip?.isFreeRide ?? false) return cubit.finishTrip;
       if (state.activeTripPaid) return cubit.finishTrip;
       return (state.activeTrip?.isVisa ?? false)
           ? () => cubit.recheckActivePayment(showFeedback: true)
@@ -267,6 +291,7 @@ class ActiveTripPanel extends StatelessWidget {
 
   String _buttonLabel(CaptainHomeState state) {
     if (state.stage == TripStage.completed) {
+      if (state.activeTrip?.isFreeRide ?? false) return 'تم';
       if (state.activeTripPaid) return 'تم';
       return (state.activeTrip?.isVisa ?? false)
           ? 'تحقّق من دفع العميل'

@@ -1,6 +1,7 @@
 ﻿using Masafet_Elseka.Application.Common.Pagination;
 using Masafet_Elseka.Application.DTOs.Trip;
 using Masafet_Elseka.Application.Interfaces.IAccountantService;
+using Masafet_Elseka.Application.Interfaces.IFreeRidesService;
 using Masafet_Elseka.Application.Interfaces.ITripService;
 using Masafet_Elseka.Application.Interfaces.Statistics;
 using Masafet_Elseka.Domain.Enums;
@@ -19,12 +20,14 @@ namespace Masafet_Elseka.Presentation.Controllers
         private readonly IAccountantService _accountantService;
         private readonly IStatisticsService _statisticsService;
         private readonly IFareService _fareService;
-        public TripController(ITripService tripService, IAccountantService accountantService, IStatisticsService statisticsService, IFareService fareService)
+        private readonly IFreeRidesService _freeRidesService;
+        public TripController(ITripService tripService, IAccountantService accountantService, IStatisticsService statisticsService, IFareService fareService, IFreeRidesService freeRidesService)
         {
             _fareService = fareService;
             _tripService = tripService;
             _accountantService = accountantService;
             _statisticsService = statisticsService;
+            _freeRidesService = freeRidesService;
         }
 
         // The id of the currently authenticated user (set as the "uid" claim by JWTService).
@@ -150,7 +153,20 @@ namespace Masafet_Elseka.Presentation.Controllers
             var quote = await _fareService.QuoteAsync(startLat, startLng, endLat, endLng, ct);
             if (quote == null)
                 return StatusCode(400, new { message = "لم يتم تحديد سعر الكيلو" });
-            return Ok(new { distanceKm = quote.DistanceKm, price = quote.Price, source = quote.Source });
+            var userId = CurrentUserId ?? User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+            var freeRides = string.IsNullOrEmpty(userId)
+                ? null
+                : await _freeRidesService.GetStatusAsync(userId);
+            var isFreeRide = freeRides?.Enabled == true && freeRides.Remaining > 0;
+            return Ok(new
+            {
+                distanceKm = quote.DistanceKm,
+                price = quote.Price,
+                source = quote.Source,
+                isFreeRide,
+                riderPrice = isFreeRide ? 0 : quote.Price,
+                freeRidesLeft = freeRides?.Remaining ?? 0
+            });
         }
 
         [HttpPost("addtrip")]
