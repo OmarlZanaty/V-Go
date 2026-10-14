@@ -47,6 +47,8 @@ async function http(method, path, { token, body, form } = {}) {
   return { status: res.status, json, text, headers: res.headers };
 }
 const data = (r) => r.json?.data ?? r.json?.Data;
+// Some endpoints return the object itself, not a {data} envelope.
+const body = (r) => data(r) ?? r.json;
 
 const pw = () => 'T' + crypto.randomBytes(9).toString('base64url') + '9!a';
 const phone = () => '010' + String(Math.floor(10_000_000 + Math.random() * 89_999_999));
@@ -160,6 +162,9 @@ async function setup() {
 
   const price = await http('POST', 'PricingRule', { token: state.admin.token, body: { pricePerKillo: 5 } });
   check('create pricing rule (5 EGP/km)', price.status === 201, price.text);
+  // Free rides would make the test riders' trips free; the freerides phase turns it back on.
+  const promo = await http('PUT', 'FreeRides/admin/settings', { token: state.admin.token, body: { enabled: false, perRider: 2, riderLimit: 100 } });
+  check('free rides promo off for the finance phases', promo.status === 200 && body(promo)?.enabled === false, promo.text);
 
   state.oldDriver = await registerDriver('Captain Before Launch');
   save();
@@ -191,7 +196,7 @@ async function main() {
 
   let v = data(await http('GET', 'DriverVerification/me', { token: cap.token }));
   check('KYC: new captain starts PendingDocuments', v?.status === 'PendingDocuments', JSON.stringify(v));
-  check('KYC: 5 required documents missing', v?.missingTypes?.length === 5, JSON.stringify(v?.missingTypes));
+  check('KYC: 7 required documents missing', v?.missingTypes?.length === 7, JSON.stringify(v?.missingTypes));
   let el = data(await http('GET', 'DriverFinance/me/eligibility', { token: cap.token }));
   check('KYC: new captain blocked with KYC_PENDING', el?.canGoOnline === false && el?.code === 'KYC_PENDING', JSON.stringify(el));
 
@@ -236,6 +241,10 @@ async function main() {
   for (const t of ['DriverLicense', 'VehicleLicense']) {
     const r = await uploadDoc(cap, t, { expiry: future });
     check(`KYC: ${t} uploaded with expiry`, r.status === 200 && !!data(r)?.expiryDate, r.text);
+  }
+  for (const t of ['DriverLicenseBack', 'VehicleLicenseBack']) {
+    const r = await uploadDoc(cap, t);
+    check(`KYC: ${t} uploaded (no expiry needed)`, r.status === 200, r.text);
   }
   v = data(await http('GET', 'DriverVerification/me', { token: cap.token }));
   check('KYC: complete set -> UnderReview', v?.status === 'UnderReview', v?.status);
@@ -592,6 +601,7 @@ async function collection() {
     const cap = await registerDriver(name);
     for (const t of ['Selfie', 'NationalIdFront', 'NationalIdBack']) await uploadDoc(cap, t);
     for (const t of ['DriverLicense', 'VehicleLicense']) await uploadDoc(cap, t, { expiry: future });
+    for (const t of ['DriverLicenseBack', 'VehicleLicenseBack']) await uploadDoc(cap, t);
     const docs = data(await http('GET', `DriverVerification/admin/drivers/${cap.id}`, { token: A })).documents;
     for (const d of docs) await http('POST', `DriverVerification/admin/documents/${d.id}/review`, { token: A, body: { approve: true } });
     return cap;
@@ -881,6 +891,61 @@ async function collection() {
     .every((x) => audit.data.some((e) => e.action === x)), JSON.stringify(audit.data.map((e) => e.action)));
 }
 
+async function freeRides() {
+  const A = state.admin.token;
+  const future = new Date(Date.now() + 400 * 86400000).toISOString().slice(0, 10);
+  const cap = await registerDriver('Captain Free Rides');
+  for (const t of ['Selfie', 'NationalIdFront', 'NationalIdBack', 'DriverLicenseBack', 'VehicleLicenseBack']) await uploadDoc(cap, t);
+  for (const t of ['DriverLicense', 'VehicleLicense']) await uploadDoc(cap, t, { expiry: future });
+  const docs = body(await http('GET', `DriverVerification/admin/drivers/${cap.id}`, { token: A })).documents;
+  for (const d of docs) await http('POST', `DriverVerification/admin/documents/${d.id}/review`, { token: A, body: { approve: true } });
+  await http('PUT', 'DriverFinance/admin/settings', { token: A, body: { companyCommissionPercent: 15, cashLimit: 100000, warningPercent: 80 } });
+
+  let s = body(await http('GET', 'FreeRides/admin/settings', { token: A }));
+  const r = await http('PUT', 'FreeRides/admin/settings', { token: A, body: { enabled: true, perRider: 1, riderLimit: s.grantedRiders + 1 } });
+  check('promo: admin enables 1 free ride for one more rider', r.status === 200 && body(r)?.enabled === true, r.text);
+  const bad = await http('PUT', 'FreeRides/admin/settings', { token: A, body: { enabled: true, perRider: 50, riderLimit: 1 } });
+  check('promo: perRider > 10 rejected', bad.status === 400, bad.text);
+
+  const lucky = await registerClient('Rider Lucky');
+  const late = await registerClient('Rider Late');
+  const status = async (c) => body(await http('GET', 'User/me/free-rides', { token: c.token }));
+  let st = await status(lucky);
+  check('promo: first new rider granted 1 free ride', st?.granted === 1 && st?.remaining === 1, JSON.stringify(st));
+  st = await status(late);
+  check('promo: rider after the limit gets nothing', st?.granted === 0 && st?.remaining === 0, JSON.stringify(st));
+
+  const quote = async (c) => body(await http('GET', 'Trip/quote?startLat=30.05&startLng=31.24&endLat=30.07&endLng=31.26', { token: c.token }));
+  let q = await quote(lucky);
+  check('promo: quote is free for the lucky rider', q?.isFreeRide === true && q?.riderPrice === 0 && q?.price > 0 && q?.freeRidesLeft === 1, JSON.stringify(q));
+  q = await quote(late);
+  check('promo: quote is paid for the late rider', q?.isFreeRide === false && q?.riderPrice === q?.price, JSON.stringify(q));
+
+  const { tripId, steps } = await ride(lucky, cap, { km: 3, method: 'Visa' });
+  check('promo: free trip completed through the hubs', ok(steps.end), JSON.stringify(steps));
+  const trip = body(await http('GET', `Trip/GetTripById/${tripId}`, { token: lucky.token }));
+  check('promo: free trip stored as free + cash (no Paymob)', trip?.isFreeRide === true && trip?.paymentMethod === 'Cash', JSON.stringify(trip));
+  const intent = await http('POST', 'Payment/createIntent', { token: lucky.token, body: { userId: lucky.id, tripId, price: 10, currency: 'EGP' } });
+  check('promo: no Paymob intention for a free trip', intent.status >= 400, intent.text);
+
+  await sleep(500);
+  const entries = (await ledger(cap)).filter((e) => e.tripId === tripId);
+  const e = entries[entries.length - 1];
+  const fare = e?.tripFare ?? 0;
+  const commission = Math.round(fare * 0.15);
+  check('promo: captain credited his share by the company', e?.type === 'TripFreeRideEarning' && e?.amount === fare - commission, JSON.stringify(entries));
+  check('commission is whole pounds', Number.isInteger(e?.commissionAmount) && Number.isInteger(e?.amount), JSON.stringify(e));
+  check('promo: captain balance is positive (company owes him)', (await balance(cap)) === fare - commission, String(await balance(cap)));
+
+  st = await status(lucky);
+  check('promo: free ride used up', st?.used === 1 && st?.remaining === 0, JSON.stringify(st));
+  q = await quote(lucky);
+  check('promo: next quote is paid', q?.isFreeRide === false, JSON.stringify(q));
+  s = body(await http('GET', 'FreeRides/admin/settings', { token: A }));
+  check('promo: admin stats count the ride and its cost', s?.freeRidesCompleted >= 1 && s?.companyCost >= fare - commission, JSON.stringify(s));
+  await http('PUT', 'FreeRides/admin/settings', { token: A, body: { enabled: false, perRider: 2, riderLimit: 100 } });
+}
+
 try {
   if (PHASE === 'setup') await setup();
   else if (PHASE === 'main') await main();
@@ -888,6 +953,7 @@ try {
   else if (PHASE === 'overdue') await overdue();
   else if (PHASE === 'banners') await banners();
   else if (PHASE === 'collection') await collection();
+  else if (PHASE === 'freerides') await freeRides();
 } catch (e) {
   failed++;
   results.push(`FAIL  crashed: ${e.stack ?? e}`);

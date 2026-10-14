@@ -61,6 +61,7 @@ node_run overdue || TOTAL_FAIL=1
 echo; echo "== phase: banners"; node_run banners || TOTAL_FAIL=1
 
 echo; echo "== phase: collection (wallet transfers + receipt SMS + deadline lock)"; node_run collection || TOTAL_FAIL=1
+echo; echo "== phase: freerides (promo grant, free trip, company-paid captain share)"; node_run freerides || TOTAL_FAIL=1
 
 echo; echo "== ledger integrity: balance = sum of entries, no duplicate settlement credit"
 sql MasafetElseka_Staging "SELECT COUNT(*) FROM (SELECT PaymentId FROM DriverLedgerEntries WHERE PaymentId IS NOT NULL GROUP BY PaymentId HAVING COUNT(*)>1) d" | sed 's/^/duplicate settlement credits: /'
