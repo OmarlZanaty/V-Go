@@ -24,6 +24,10 @@ definitions:
         # Plugins here are CocoaPods-only.
         flutter config --no-enable-swift-package-manager
         flutter pub get
+        # rive_native (via awesome_dialog) downloads its native libs on first use;
+        # left to its Xcode build phase it runs from ios/Pods and fails to find
+        # pubspec.yaml ("ARCHIVE FAILED"), so set it up here, from the app root.
+        dart run rive_native:setup --verbose --platform ios
     - &pods
       name: CocoaPods
       script: cd ios && pod install --repo-update
