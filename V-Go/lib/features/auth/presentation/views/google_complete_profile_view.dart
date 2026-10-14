@@ -39,7 +39,6 @@ class _GoogleCompleteProfileViewState extends State<GoogleCompleteProfileView> {
       TextEditingController(text: widget.name);
   final _phoneController = TextEditingController();
   // Optional (App Review 5.1.1(v)): nothing chosen by default; 'none' = prefers not to say.
-  String? _gender;
 
   @override
   void dispose() {
@@ -101,42 +100,6 @@ class _GoogleCompleteProfileViewState extends State<GoogleCompleteProfileView> {
                   controller: _phoneController,
                   keyboardType: TextInputType.phone,
                 ),
-                verticalSpace(16),
-                Text('الجنس (اختياري)', style: AppStyle.styleMedium14),
-                Row(
-                  children: [
-                    Expanded(
-                      child: RadioListTile<String>(
-                        value: 'Male',
-                        groupValue: _gender,
-                        title: const Text('ذكر'),
-                        activeColor: AppColors.primary,
-                        contentPadding: EdgeInsets.zero,
-                        onChanged: (v) => setState(() => _gender = v!),
-                      ),
-                    ),
-                    Expanded(
-                      child: RadioListTile<String>(
-                        value: 'Female',
-                        groupValue: _gender,
-                        title: const Text('أنثى'),
-                        activeColor: AppColors.primary,
-                        contentPadding: EdgeInsets.zero,
-                        onChanged: (v) => setState(() => _gender = v!),
-                      ),
-                    ),
-                    Expanded(
-                      child: RadioListTile<String>(
-                        value: 'none',
-                        groupValue: _gender,
-                        title: const Text('مش عايز أحدد'),
-                        activeColor: AppColors.primary,
-                        contentPadding: EdgeInsets.zero,
-                        onChanged: (v) => setState(() => _gender = v!),
-                      ),
-                    ),
-                  ],
-                ),
                 verticalSpace(24),
                 busy
                     ? const CustomLoadingWidget()
@@ -158,7 +121,7 @@ class _GoogleCompleteProfileViewState extends State<GoogleCompleteProfileView> {
                                 idToken: widget.idToken,
                                 fullName: name,
                                 phone: phone,
-                                gender: _gender == 'none' ? null : _gender,
+                                gender: null,
                                 profilePicture:
                                     widget.photo.isEmpty ? null : widget.photo,
                               );

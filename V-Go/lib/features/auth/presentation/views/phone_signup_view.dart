@@ -14,8 +14,8 @@ import '../../../../core/utils/widgets/custom_toastification.dart';
 import '../logic/phone_auth_cubit/phone_auth_cubit.dart';
 
 /// First-time sign-up for a new phone number: the user sets a password (saved as
-/// the account password), then fills the rest of the profile (name, email,
-/// gender). Reached only when the phone is NOT already registered.
+/// the account password), then fills the rest of the profile (name and
+/// optional email). Reached only when the phone is NOT already registered.
 class PhoneSignupView extends StatefulWidget {
   const PhoneSignupView({super.key, required this.phone});
   final String phone;
@@ -30,7 +30,6 @@ class _PhoneSignupViewState extends State<PhoneSignupView> {
   final _nameController = TextEditingController();
   final _emailController = TextEditingController();
   // Optional (App Review 5.1.1(v)): nothing chosen by default; 'none' = prefers not to say.
-  String? _gender;
 
   @override
   void dispose() {
@@ -91,42 +90,6 @@ class _PhoneSignupViewState extends State<PhoneSignupView> {
                   controller: _emailController,
                   keyboardType: TextInputType.emailAddress,
                 ),
-                verticalSpace(16),
-                Text('الجنس (اختياري)', style: AppStyle.styleMedium14),
-                Row(
-                  children: [
-                    Expanded(
-                      child: RadioListTile<String>(
-                        value: 'Male',
-                        groupValue: _gender,
-                        title: const Text('ذكر'),
-                        activeColor: AppColors.primary,
-                        contentPadding: EdgeInsets.zero,
-                        onChanged: (v) => setState(() => _gender = v!),
-                      ),
-                    ),
-                    Expanded(
-                      child: RadioListTile<String>(
-                        value: 'Female',
-                        groupValue: _gender,
-                        title: const Text('أنثى'),
-                        activeColor: AppColors.primary,
-                        contentPadding: EdgeInsets.zero,
-                        onChanged: (v) => setState(() => _gender = v!),
-                      ),
-                    ),
-                    Expanded(
-                      child: RadioListTile<String>(
-                        value: 'none',
-                        groupValue: _gender,
-                        title: const Text('مش عايز أحدد'),
-                        activeColor: AppColors.primary,
-                        contentPadding: EdgeInsets.zero,
-                        onChanged: (v) => setState(() => _gender = v!),
-                      ),
-                    ),
-                  ],
-                ),
                 verticalSpace(24),
                 busy
                     ? const CustomLoadingWidget()
@@ -164,7 +127,7 @@ class _PhoneSignupViewState extends State<PhoneSignupView> {
           password: password,
           fullName: name,
           email: email.isEmpty ? null : email,
-          gender: _gender == 'none' ? null : _gender,
+          gender: null,
         );
   }
 }

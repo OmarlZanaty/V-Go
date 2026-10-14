@@ -9,7 +9,6 @@ import '../../../../core/theming/app_colors.dart';
 import '../../../../core/theming/app_style.dart';
 import '../../../../core/utils/widgets/custom_app_bar.dart';
 import '../../../../core/utils/widgets/custom_text_field.dart';
-import '../widgets/gender_radio_widget.dart';
 import '../widgets/register_button_bloc.dart';
 import '../widgets/user_image_section.dart';
 
@@ -28,7 +27,6 @@ class _RegisterViewState extends State<RegisterView> {
   late final TextEditingController _phoneController;
   late final GlobalKey<FormState> _formKey;
   // Optional for riders (App Review 5.1.1(v)): nothing chosen by default.
-  String? _selectedGender;
   File? _selectedImage;
 
   void _onImageSelected(File? image) {
@@ -138,27 +136,6 @@ class _RegisterViewState extends State<RegisterView> {
                             obscureText: true,
                           ),
                         ),
-                        verticalSpace(18),
-                        Text(
-                          'الجنس (اختياري) :',
-                          style: AppStyle.styleRegular14.copyWith(
-                            color: AppColors.white,
-                          ),
-                        ),
-                        verticalSpace(4),
-                        SlideInLeft(
-                          from: 400,
-                          delay: const Duration(milliseconds: 480),
-                          child: GenderRadioWidget(
-                            allowUnspecified: true,
-                            groupValue: _selectedGender,
-                            onGenderChanged: (value) {
-                              setState(() {
-                                _selectedGender = value;
-                              });
-                            },
-                          ),
-                        ),
                       ],
                     ),
                   ),
@@ -172,7 +149,7 @@ class _RegisterViewState extends State<RegisterView> {
                       confirmPasswordController: _confirmPasswordController,
                       fullNameController: _fullNameController,
                       phoneController: _phoneController,
-                      gender: _selectedGender,
+                      gender: null,
                       imageProfile: _selectedImage,
                       formKey: _formKey,
                     ),
