@@ -3,13 +3,17 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
+import 'package:geolocator/geolocator.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:toastification/toastification.dart';
 
+import '../../../../core/api/dio_factory.dart';
+import '../../../../core/api/end_points.dart';
 import '../../../../core/routing/routes.dart';
 import '../../../../core/theming/app_colors.dart';
 import '../../../../core/theming/app_style.dart';
 import '../../../../core/utils/app_constants.dart';
+import '../../../navigation/services/routes_api_service.dart';
 import '../../../verification/data/models/verification_models.dart';
 import '../../../verification/presentation/cubit/verification_cubit.dart';
 import '../logic/cubit/captain_home_cubit.dart';
@@ -271,20 +275,147 @@ class _CaptainMapState extends State<_CaptainMap> {
     };
   }
 
-  /// A straight guide line from the captain to the current target. (Turn-by-turn
-  /// routing is handed off to Google Maps via the navigation button.)
+  // Road route to the current target (Google, else OSRM). Until it arrives —
+  // or if no router answers — a straight guide line is drawn instead.
+  final RoutesApiService _routes = RoutesApiService();
+  List<LatLng> _roadRoute = const [];
+  LatLng? _routedTarget;
+  LatLng? _routedFrom;
+  DateTime _lastRouteAt = DateTime.fromMillisecondsSinceEpoch(0);
+  bool _routing = false;
+
+  // Busy pickup areas (last 7 days), shown while online without a trip.
+  List<_Hotspot> _hotspots = const [];
+  bool _showHotspots = true;
+  Timer? _hotspotTimer;
+
   Set<Polyline> _polylines() {
     final from = _latLng;
     final to = _target;
     if (from == null || to == null) return const {};
+    final points = _roadRoute.length >= 2 && _routedTarget == to
+        ? [from, ..._roadRoute]
+        : [from, to];
     return {
       Polyline(
         polylineId: const PolylineId('route'),
-        points: [from, to],
+        points: points,
         color: AppColors.primary,
-        width: 5,
+        width: 6,
       ),
     };
+  }
+
+  /// Re-route when the target changes, or every 30 s once the captain has
+  /// moved more than ~150 m from where the current route starts.
+  Future<void> _maybeRoute() async {
+    final from = _latLng;
+    final to = _target;
+    if (from == null || to == null) {
+      if (_roadRoute.isNotEmpty) setState(() => _roadRoute = const []);
+      _routedTarget = null;
+      return;
+    }
+    if (_routing) return;
+    final targetChanged = _routedTarget != to;
+    final moved = _routedFrom == null ||
+        Geolocator.distanceBetween(from.latitude, from.longitude,
+                _routedFrom!.latitude, _routedFrom!.longitude) >
+            150;
+    final stale =
+        DateTime.now().difference(_lastRouteAt) > const Duration(seconds: 30);
+    if (!targetChanged && !(moved && stale)) return;
+
+    _routing = true;
+    _lastRouteAt = DateTime.now();
+    try {
+      final r = await _routes.computeRoute(origin: from, destination: to);
+      if (!mounted || _target != to) return;
+      setState(() {
+        _roadRoute = r.polyline;
+        _routedTarget = to;
+        _routedFrom = from;
+      });
+    } catch (_) {
+      // Keep the straight line.
+    } finally {
+      _routing = false;
+    }
+  }
+
+  void _syncHotspots() {
+    final wanted = widget.state.isOnline && !widget.state.hasActiveTrip;
+    if (wanted && _hotspotTimer == null) {
+      _loadHotspots();
+      _hotspotTimer = Timer.periodic(
+        const Duration(minutes: 10),
+        (_) => _loadHotspots(),
+      );
+    } else if (!wanted && _hotspotTimer != null) {
+      _hotspotTimer?.cancel();
+      _hotspotTimer = null;
+    }
+  }
+
+  Future<void> _loadHotspots() async {
+    try {
+      final res = await DioFactory.getDio().get(
+        EndPoint.tripHotspots,
+        queryParameters: {'days': 7},
+      );
+      final raw = res.data is Map ? (res.data['data'] ?? res.data['Data']) : res.data;
+      if (raw is! List || !mounted) return;
+      setState(() {
+        _hotspots = raw
+            .whereType<Map>()
+            .map(_Hotspot.fromJson)
+            .whereType<_Hotspot>()
+            .toList();
+      });
+    } catch (_) {
+      // Optional overlay: ignore failures.
+    }
+  }
+
+  Set<Circle> _circles() {
+    if (!_showHotspots ||
+        !widget.state.isOnline ||
+        widget.state.hasActiveTrip) {
+      return const {};
+    }
+    const colors = {
+      1: Color(0xFFFFB74D),
+      2: Color(0xFFFF7A00),
+      3: Color(0xFFE53935),
+    };
+    return {
+      for (var i = 0; i < _hotspots.length; i++)
+        Circle(
+          circleId: CircleId('hot$i'),
+          center: _hotspots[i].center,
+          radius: 350,
+          strokeWidth: 2,
+          strokeColor: colors[_hotspots[i].level] ?? colors[2]!,
+          fillColor: (colors[_hotspots[i].level] ?? colors[2]!)
+              .withValues(alpha: 0.28),
+        ),
+    };
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _syncHotspots();
+      _maybeRoute();
+    });
+  }
+
+  @override
+  void dispose() {
+    _hotspotTimer?.cancel();
+    _routes.dispose();
+    super.dispose();
   }
 
   @override
@@ -292,6 +423,8 @@ class _CaptainMapState extends State<_CaptainMap> {
     super.didUpdateWidget(old);
     _maybeFollow(old);
     _maybeFrameTrip(old);
+    _syncHotspots();
+    _maybeRoute();
   }
 
   void _maybeFollow(_CaptainMap old) {
@@ -340,23 +473,67 @@ class _CaptainMapState extends State<_CaptainMap> {
   @override
   Widget build(BuildContext context) {
     final hasFix = _latLng != null;
-    return GoogleMap(
-      initialCameraPosition: CameraPosition(
-        target: _latLng ?? _fallback,
-        zoom: hasFix ? 15.5 : 12,
-      ),
-      markers: _markers(),
-      polylines: _polylines(),
-      // Blue dot only once we have a fix (which means permission is granted).
-      myLocationEnabled: hasFix,
-      myLocationButtonEnabled: false,
-      zoomControlsEnabled: false,
-      mapToolbarEnabled: false,
-      compassEnabled: false,
-      onMapCreated: (c) {
-        if (!_controller.isCompleted) _controller.complete(c);
-      },
+    final hotspotsVisible = widget.state.isOnline &&
+        !widget.state.hasActiveTrip &&
+        _hotspots.isNotEmpty;
+    return Stack(
+      children: [
+        GoogleMap(
+          initialCameraPosition: CameraPosition(
+            target: _latLng ?? _fallback,
+            zoom: hasFix ? 15.5 : 12,
+          ),
+          markers: _markers(),
+          polylines: _polylines(),
+          circles: _circles(),
+          // Blue dot only once we have a fix (which means permission is granted).
+          myLocationEnabled: hasFix,
+          myLocationButtonEnabled: false,
+          zoomControlsEnabled: false,
+          mapToolbarEnabled: false,
+          compassEnabled: false,
+          onMapCreated: (c) {
+            if (!_controller.isCompleted) _controller.complete(c);
+          },
+        ),
+        if (hotspotsVisible)
+          PositionedDirectional(
+            start: 12.w,
+            bottom: 230.h,
+            child: FilterChip(
+              avatar: Icon(
+                Icons.local_fire_department,
+                size: 18.r,
+                color: _showHotspots ? Colors.white : const Color(0xFFFF7A00),
+              ),
+              label: const Text('أماكن الطلب'),
+              selected: _showHotspots,
+              showCheckmark: false,
+              selectedColor: const Color(0xFFFF7A00),
+              labelStyle: TextStyle(
+                color: _showHotspots ? Colors.white : Colors.black87,
+                fontWeight: FontWeight.w600,
+              ),
+              onSelected: (v) => setState(() => _showHotspots = v),
+            ),
+          ),
+      ],
     );
+  }
+}
+
+/// A grid cell with many recent pickups (from `Trip/hotspots`).
+class _Hotspot {
+  const _Hotspot(this.center, this.level);
+  final LatLng center;
+  final int level;
+
+  static _Hotspot? fromJson(Map j) {
+    final lat = (j['lat'] ?? j['Lat']) as num?;
+    final lng = (j['lng'] ?? j['Lng']) as num?;
+    if (lat == null || lng == null) return null;
+    final level = ((j['level'] ?? j['Level']) as num?)?.toInt() ?? 2;
+    return _Hotspot(LatLng(lat.toDouble(), lng.toDouble()), level.clamp(1, 3));
   }
 }
 

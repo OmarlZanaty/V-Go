@@ -132,6 +132,55 @@ namespace Masafet_Elseka.Infrastructure.Services.NotificationService
             await SendNotificationToUserAsync(userId, title, body, data, ct);
         }
 
+        public async Task<Response<object>> BroadcastAsync(string title, string body, string? role, CancellationToken ct = default)
+        {
+            if (string.IsNullOrWhiteSpace(title) || string.IsNullOrWhiteSpace(body))
+                return Response<object>.Failure("العنوان والنص مطلوبين", 400);
+
+            var roles = role is "Client" or "Driver" ? new[] { role } : new[] { "Client", "Driver" };
+            var userIds = new HashSet<string>();
+            foreach (var r in roles)
+                foreach (var u in await _userManager.GetUsersInRoleAsync(r))
+                    if (!u.IsDeleted && !u.IsBlocked) userIds.Add(u.Id);
+            if (userIds.Count == 0)
+                return Response<object>.Success(new { users = 0, devices = 0 }, "مفيش مستخدمين", 200);
+
+            // Saved so it also shows in each user's in-app notifications list.
+            var now = DateTime.Now.ToEgyptTime();
+            _context.Notifications.AddRange(userIds.Select(id => new Notification
+            {
+                UserId = id,
+                Title = title,
+                Body = body,
+                CreatedAt = now,
+                IsRead = false
+            }));
+            await _context.SaveChangesAsync(ct);
+
+            var devices = _context.Set<UserDevice>()
+                .Where(d => d.IsActive && !d.IsDeletd && userIds.Contains(d.UserId))
+                .ToList();
+            var tokens = devices.Select(d => d.DeviceToken).Distinct().ToList();
+            var message = new PushFireBaseNotificationMessage { Title = title, Body = body };
+
+            // FCM multicast takes at most 500 tokens per call.
+            var dead = new List<string>();
+            foreach (var chunk in tokens.Chunk(500))
+                dead.AddRange(await _firebaseNotification.SendToMultipleDevicesAsync(chunk.ToList(), message, ct));
+            if (dead.Count > 0)
+            {
+                foreach (var d in devices.Where(d => dead.Contains(d.DeviceToken)))
+                {
+                    d.IsActive = false;
+                    d.LastActive = now;
+                }
+                await _context.SaveChangesAsync(ct);
+            }
+
+            return Response<object>.Success(new { users = userIds.Count, devices = tokens.Count - dead.Count },
+                $"اتبعت لـ {userIds.Count} مستخدم", 200);
+        }
+
 
         public async Task<Response<object>> DeleteNotificationsAsync(string userId, List<int> notificationIds, CancellationToken ct = default)
         {

@@ -21,8 +21,10 @@ namespace Masafet_Elseka.Presentation.Controllers
         private readonly IStatisticsService _statisticsService;
         private readonly IFareService _fareService;
         private readonly IFreeRidesService _freeRidesService;
-        public TripController(ITripService tripService, IAccountantService accountantService, IStatisticsService statisticsService, IFareService fareService, IFreeRidesService freeRidesService)
+        private readonly ITripInsightsService _insights;
+        public TripController(ITripService tripService, IAccountantService accountantService, IStatisticsService statisticsService, IFareService fareService, IFreeRidesService freeRidesService, ITripInsightsService insights)
         {
+            _insights = insights;
             _fareService = fareService;
             _tripService = tripService;
             _accountantService = accountantService;
@@ -40,6 +42,18 @@ namespace Masafet_Elseka.Presentation.Controllers
         // Prevents IDOR: non-privileged callers are forced to their own id regardless of input.
         private string ResolveUserId(string requestedUserId) =>
             IsPrivileged ? requestedUserId : (CurrentUserId ?? requestedUserId);
+
+        // Busy pickup areas over the last `days` days, for the captain map.
+        [Authorize(Roles = "Driver, Admin, Dispatcher")]
+        [HttpGet("hotspots")]
+        public async Task<IActionResult> Hotspots([FromQuery] int days = 7, CancellationToken ct = default)
+            => Ok(await _insights.GetHotspotsAsync(days, ct));
+
+        // Trip counts by status and payment method for the dashboard.
+        [Authorize(Roles = "Admin, Dispatcher, Accountant")]
+        [HttpGet("admin/counts")]
+        public async Task<IActionResult> Counts([FromQuery] DateTime? from, [FromQuery] DateTime? to, CancellationToken ct = default)
+            => Ok(await _insights.GetCountsAsync(from, to, ct));
 
         [HttpGet("GetAllTripsByStatus")]
         public async Task<IActionResult> GetAllTrips([FromQuery] TripStatus? status, [FromQuery] PaginationRequest pagination, CancellationToken ct = default)

@@ -49,5 +49,31 @@ namespace Masafet_Elseka.Presentation.Controllers
             }
             return StatusCode(result.StatusCode, result.Data);
         }
+
+        // Dashboard «الإشعارات» page.
+        [Authorize(Roles = "Admin", AuthenticationSchemes = JwtBearerDefaults.AuthenticationScheme)]
+        [HttpPost("sendToAll")]
+        public async Task<IActionResult> SendToAll([FromBody] BroadcastNotificationDTO model, CancellationToken ct)
+        {
+            var result = await _notificationService.BroadcastAsync(model.Title, model.Body, null, ct);
+            return StatusCode(result.StatusCode, new { message = result.Message, data = result.Data });
+        }
+
+        [Authorize(Roles = "Admin", AuthenticationSchemes = JwtBearerDefaults.AuthenticationScheme)]
+        [HttpPost("sendToRole")]
+        public async Task<IActionResult> SendToRole([FromBody] BroadcastNotificationDTO model, CancellationToken ct)
+        {
+            if (model.Role is not ("Client" or "Driver"))
+                return BadRequest(new { message = "الفئة لازم تكون Client أو Driver" });
+            var result = await _notificationService.BroadcastAsync(model.Title, model.Body, model.Role, ct);
+            return StatusCode(result.StatusCode, new { message = result.Message, data = result.Data });
+        }
+    }
+
+    public class BroadcastNotificationDTO
+    {
+        public string Title { get; set; } = string.Empty;
+        public string Body { get; set; } = string.Empty;
+        public string? Role { get; set; }
     }
 }

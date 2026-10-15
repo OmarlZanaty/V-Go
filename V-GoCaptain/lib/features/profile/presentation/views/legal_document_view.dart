@@ -472,10 +472,11 @@ abstract final class LegalDocuments {
         'نحن هنا لمساعدتك! إذا كان لديك أي استفسار حول رحلاتك، أو واجهت مشكلة في الدفع أو مع السائقين أو أثناء استخدام التطبيق، يسعدنا تواصلك معنا عبر القنوات التالية:',
     contacts: [
       LegalContact(
-        icon: Icons.phone_in_talk_rounded,
-        label: 'رقم الهاتف',
+        icon: Icons.chat_rounded,
+        label: 'واتساب خدمة العملاء',
         value: supportPhone,
-        uri: 'tel:$supportPhone',
+        // Opens a WhatsApp chat with support (client request).
+        uri: 'https://wa.me/2$supportPhone',
         ltr: true,
       ),
       LegalContact(

@@ -32,8 +32,15 @@ namespace Masafet_Elseka.Infrastructure.Hubs
             _logger = logger;
         }
 
+        // Admins and dispatchers on the dashboard: every rider/captain support
+        // message is pushed here, whoever the chat is assigned to.
+        public const string StaffGroup = "support-staff";
+
         public override async Task OnConnectedAsync()
         {
+            if (Context.User != null && (Context.User.IsInRole("Admin") || Context.User.IsInRole("Dispatcher")))
+                await Groups.AddToGroupAsync(Context.ConnectionId, StaffGroup);
+
             var userId = Context.User?.FindFirst(ClaimTypes.NameIdentifier)?.Value;
             if(!string.IsNullOrEmpty(userId))
             {

@@ -777,9 +777,12 @@ namespace Masafet_Elseka.Infrastructure.Services.DriverFinanceService
                 .ToListAsync();
             var online = groups.Where(g => g.Method == "Visa").Sum(g => g.Sum);
             var total = groups.Sum(g => g.Sum);
+            var onlineTrips = groups.Where(g => g.Method == "Visa").Sum(g => g.Count);
             return new RevenueDTO
             {
                 Trips = groups.Sum(g => g.Count),
+                OnlineTrips = onlineTrips,
+                CashTrips = groups.Sum(g => g.Count) - onlineTrips,
                 Total = total,
                 Online = online,
                 Cash = total - online,
@@ -872,8 +875,27 @@ namespace Masafet_Elseka.Infrastructure.Services.DriverFinanceService
                 .Skip((page - 1) * size).Take(size)
                 .ToListAsync();
 
+            // Trip counts per captain on this page (all time).
+            var ids = rows.Select(x => x.User.Id).ToList();
+            var counts = (await _context.UserTrips
+                .Where(ut => ut.Role == UserTripRole.Driver && ids.Contains(ut.UserId))
+                .Select(ut => new { ut.UserId, ut.Trip.Status, ut.Trip.PaymentMethod })
+                .ToListAsync())
+                .GroupBy(x => x.UserId)
+                .ToDictionary(g => g.Key, g => (
+                    Completed: g.Count(x => x.Status == TripStatus.Completed),
+                    Cancelled: g.Count(x => x.Status == TripStatus.Canceled),
+                    Cash: g.Count(x => x.Status == TripStatus.Completed && x.PaymentMethod != "Visa"),
+                    Online: g.Count(x => x.Status == TripStatus.Completed && x.PaymentMethod == "Visa")));
+            (int Completed, int Cancelled, int Cash, int Online) CountsOf(string id) =>
+                counts.TryGetValue(id, out var c) ? c : (0, 0, 0, 0);
+
             var items = rows.Select(x => new AdminDriverFinanceRowDTO
             {
+                CompletedTrips = CountsOf(x.User.Id).Completed,
+                CancelledTrips = CountsOf(x.User.Id).Cancelled,
+                CashTrips = CountsOf(x.User.Id).Cash,
+                OnlineTrips = CountsOf(x.User.Id).Online,
                 DriverId = x.User.Id,
                 Name = x.User.FullName,
                 Phone = x.User.PhoneNumber,

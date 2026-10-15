@@ -20,7 +20,11 @@ enum _AuthScreen { phone, password, resetCode, resetNewPassword }
 /// registered. Returning users enter their password here; new users go to the
 /// sign-up screen. A "forgot password" path uses a one-time OTP, in place.
 class PhoneLoginView extends StatefulWidget {
-  const PhoneLoginView({super.key});
+  const PhoneLoginView({super.key, this.resetMode = false});
+
+  /// Opened from "forgot current password" on the Change password screen: the
+  /// phone goes straight to the OTP reset, and success returns to the caller.
+  final bool resetMode;
 
   @override
   State<PhoneLoginView> createState() => _PhoneLoginViewState();
@@ -59,7 +63,16 @@ class _PhoneLoginViewState extends State<PhoneLoginView> {
                 Routes.phoneSignupViewRoute,
                 arguments: state.phone,
               );
+            case PhoneAuthStatus.existingUser:
+              if (widget.resetMode) {
+                context.read<PhoneAuthCubit>().sendResetCode(state.phone);
+              }
             case PhoneAuthStatus.resetSuccess:
+              if (widget.resetMode) {
+                successToast(context, 'تم', 'تم تغيير كلمة المرور بنجاح.');
+                Navigator.of(context).pop();
+                break;
+              }
               successToast(
                 context,
                 'تم',

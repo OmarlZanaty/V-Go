@@ -101,11 +101,132 @@ class RoutesApiService {
     bool reroute = false,
   }) async {
     try {
-      return await _computeRoute(
-          origin, destination, 'TWO_WHEELER', heading, reroute);
-    } on RoutesApiException catch (e) {
-      if (e.network) rethrow;
-      return _computeRoute(origin, destination, 'DRIVE', heading, reroute);
+      try {
+        return await _computeRoute(
+            origin, destination, 'TWO_WHEELER', heading, reroute);
+      } on RoutesApiException catch (e) {
+        if (e.network) rethrow;
+        return await _computeRoute(
+            origin, destination, 'DRIVE', heading, reroute);
+      }
+    } on RoutesApiException catch (googleError) {
+      // Google rejects the key while its billing is off (403), so the route
+      // line used to disappear. The public OSRM router (same as the rider app
+      // and the server) keeps the line and the turn list working.
+      try {
+        return await _osrmRoute(origin, destination);
+      } catch (_) {
+        throw googleError;
+      }
+    }
+  }
+
+  static const String _osrmEndpoint =
+      'https://router.project-osrm.org/route/v1/driving/';
+
+  Future<RouteResult> _osrmRoute(LatLng origin, LatLng destination) async {
+    final uri = Uri.parse(
+      '$_osrmEndpoint${origin.longitude},${origin.latitude};'
+      '${destination.longitude},${destination.latitude}'
+      '?overview=full&geometries=polyline&steps=true',
+    );
+    final res = await _client.get(uri).timeout(const Duration(seconds: 10));
+    if (res.statusCode != 200) {
+      throw RoutesApiException('تعذر تحميل المسار (${res.statusCode})');
+    }
+    final json = jsonDecode(res.body) as Map<String, dynamic>;
+    final routes = json['routes'] as List?;
+    if (routes == null || routes.isEmpty) {
+      throw RoutesApiException('لا يوجد مسار متاح');
+    }
+    final route = routes.first as Map<String, dynamic>;
+    final polyline = PolylineDecoder.decode(route['geometry'] as String?);
+    if (polyline.isEmpty) throw RoutesApiException('تعذر قراءة المسار');
+
+    final steps = <NavStep>[];
+    for (final leg in route['legs'] as List? ?? const []) {
+      for (final raw in (leg as Map)['steps'] as List? ?? const []) {
+        final step = raw as Map;
+        final man = step['maneuver'] as Map? ?? const {};
+        final loc = man['location'] as List?;
+        if (loc == null || loc.length < 2) continue;
+        steps.add(NavStep(
+          // Empty → the screen speaks the Arabic phrase for the maneuver.
+          instruction: '',
+          maneuver: _osrmManeuver(
+            man['type'] as String? ?? '',
+            man['modifier'] as String? ?? '',
+          ),
+          distanceMeters: (step['distance'] as num?)?.toDouble() ?? 0,
+          location: LatLng(
+            (loc[1] as num).toDouble(),
+            (loc[0] as num).toDouble(),
+          ),
+          polyline: PolylineDecoder.decode(step['geometry'] as String?),
+        ));
+      }
+    }
+    if (steps.isEmpty) {
+      // A route with no turn data still draws: one depart step.
+      steps.add(NavStep(
+        instruction: '',
+        maneuver: 'DEPART',
+        distanceMeters: (route['distance'] as num?)?.toDouble() ?? 0,
+        location: polyline.first,
+        polyline: polyline,
+      ));
+    }
+
+    return RouteResult(
+      polyline: polyline,
+      steps: steps,
+      distanceMeters: (route['distance'] as num?)?.toDouble() ?? 0,
+      durationSeconds: (route['duration'] as num?)?.toDouble() ?? 0,
+    );
+  }
+
+  /// OSRM maneuver (type + modifier) → the Google maneuver names the
+  /// navigation screen's icons and Arabic phrases understand.
+  static String _osrmManeuver(String type, String modifier) {
+    final left = modifier.contains('left');
+    switch (type) {
+      case 'depart':
+        return 'DEPART';
+      case 'arrive':
+        return 'DESTINATION';
+      case 'roundabout':
+      case 'rotary':
+      case 'roundabout turn':
+      case 'exit roundabout':
+      case 'exit rotary':
+        return left ? 'ROUNDABOUT_LEFT' : 'ROUNDABOUT_RIGHT';
+      case 'fork':
+        return left ? 'FORK_LEFT' : 'FORK_RIGHT';
+      case 'merge':
+        return 'MERGE';
+      case 'on ramp':
+      case 'off ramp':
+        return left ? 'RAMP_LEFT' : 'RAMP_RIGHT';
+      case 'new name':
+        return 'NAME_CHANGE';
+    }
+    switch (modifier) {
+      case 'uturn':
+        return 'UTURN_LEFT';
+      case 'sharp left':
+        return 'TURN_SHARP_LEFT';
+      case 'sharp right':
+        return 'TURN_SHARP_RIGHT';
+      case 'left':
+        return 'TURN_LEFT';
+      case 'right':
+        return 'TURN_RIGHT';
+      case 'slight left':
+        return type == 'continue' ? 'KEEP_LEFT' : 'TURN_SLIGHT_LEFT';
+      case 'slight right':
+        return type == 'continue' ? 'KEEP_RIGHT' : 'TURN_SLIGHT_RIGHT';
+      default:
+        return 'STRAIGHT';
     }
   }
 

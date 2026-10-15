@@ -4,6 +4,7 @@ import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:flutter_spinkit/flutter_spinkit.dart';
 import 'package:toastification/toastification.dart';
 
+import '../../../../core/routing/routes.dart';
 import '../../../../core/theming/app_colors.dart';
 import '../../../../core/theming/app_style.dart';
 import '../logic/cubit/auth_cubit.dart';
@@ -73,7 +74,16 @@ class _ChangePasswordViewState extends State<ChangePasswordView> {
                   AuthTextField(controller: _old, hint: 'كلمة المرور الحالية',
                       icon: Icons.lock_outline, obscure: true,
                       validator: (v) => (v==null||v.isEmpty) ? 'أدخل كلمة المرور الحالية' : null),
-                  SizedBox(height: 14.h),
+                  Align(
+                    alignment: AlignmentDirectional.centerStart,
+                    child: TextButton(
+                      // OTP reset to the phone: no current password needed.
+                      onPressed: () => Navigator.of(context)
+                          .pushNamed(Routes.phoneLoginViewRoute, arguments: 'reset'),
+                      child: Text('نسيت كلمة المرور الحالية؟',
+                          style: AppStyle.body.copyWith(color: AppColors.primary)),
+                    ),
+                  ),
                   AuthTextField(controller: _new, hint: 'كلمة المرور الجديدة',
                       icon: Icons.lock_reset_outlined, obscure: true,
                       validator: (v) => (v==null||v.length<6) ? '6 أحرف على الأقل' : null),

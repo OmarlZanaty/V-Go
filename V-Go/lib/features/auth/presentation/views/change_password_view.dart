@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 
 import '../../../../core/helpers/form_validator.dart';
 import '../../../../core/helpers/spacing.dart';
+import '../../../../core/routing/routes.dart';
 import '../../../../core/utils/widgets/custom_app_bar.dart';
 import '../../../../core/utils/widgets/custom_text_field.dart';
 import '../widgets/change_password_button.dart';
@@ -71,7 +72,18 @@ class _ChangePasswordViewState extends State<ChangePasswordView> {
                         obscureText: true,
                       ),
                     ),
-                    verticalSpace(16),
+                    Align(
+                      alignment: AlignmentDirectional.centerStart,
+                      child: TextButton(
+                        // OTP reset to the phone: no current password needed.
+                        onPressed: () => Navigator.of(context).pushNamed(
+                          Routes.phoneLoginViewRoute,
+                          arguments: 'reset',
+                        ),
+                        child: const Text('نسيت كلمة المرور الحالية؟'),
+                      ),
+                    ),
+                    verticalSpace(8),
                     SlideInLeft(
                       from: 400,
                       delay: const Duration(milliseconds: 200),

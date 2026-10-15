@@ -7,7 +7,9 @@ using Masafet_Elseka.Application.Response;
 using Masafet_Elseka.Domain.Entities;
 using Masafet_Elseka.Domain.Enums;
 using Masafet_Elseka.Infrastructure.Data;
+using Masafet_Elseka.Infrastructure.Hubs;
 using Masafet_Elseka.Infrastructure.UOW;
+using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using MimeKit;
@@ -27,9 +29,11 @@ namespace Masafet_Elseka.Infrastructure.Services.MessageService
         private readonly ICacheService _cacheService;
         private readonly ILogger<MessageService> _logger;
         private readonly INotificationService _notificationService;
+        private readonly IHubContext<SupportChatHub> _supportHub;
 
-        public MessageService(IUnitOfWork unitOfWork, Context context, IChatService chatService, ICacheService cacheService, ILogger<MessageService> logger, INotificationService notificationService)
+        public MessageService(IUnitOfWork unitOfWork, Context context, IChatService chatService, ICacheService cacheService, ILogger<MessageService> logger, INotificationService notificationService, IHubContext<SupportChatHub> supportHub)
         {
+            _supportHub = supportHub;
             _unitOfWork = unitOfWork;
             _context = context;
             _chatService = chatService;
@@ -48,10 +52,12 @@ namespace Masafet_Elseka.Infrastructure.Services.MessageService
             using var transaction = await _context.Database.BeginTransactionAsync();
             try
             {
+                // Only support chats: a rider with an open trip chat must not have
+                // their support message filed into it.
                 var chat = await _context.Chats.AsNoTracking()
                     .Include(c=>c.UserChats)
-                    .FirstOrDefaultAsync(c => (c.IsOpen && c.Id==chatId!) || 
-                    (c.IsOpen && (c.Id == chatId! || c.UserChats.Any(uc => uc.UserId == senderId))));
+                    .FirstOrDefaultAsync(c => c.Type == ChatType.SupportChat && c.IsOpen &&
+                    (c.Id == chatId! || c.UserChats.Any(uc => uc.UserId == senderId)));
                 if (chat is null)
                 {
                     var newChatResponse = await _chatService.CreateSupportChatAsync(senderId);
@@ -81,14 +87,19 @@ namespace Masafet_Elseka.Infrastructure.Services.MessageService
                 await _unitOfWork.Message.AddAsync(message);
                 await _unitOfWork.SaveAsync();
 
-                var receiverId= chat.UserChats
-                        .Where(uc => uc.UserId != senderId)
-                        .Select(uc => uc.UserId).FirstOrDefault()!;
+                // The other participant (a dispatcher), if the chat has one.
+                var receiverId = await _context.UserChats.AsNoTracking()
+                        .Where(uc => uc.ChatId == chat.Id && uc.UserId != senderId)
+                        .Select(uc => uc.UserId).FirstOrDefaultAsync() ?? string.Empty;
 
-                await _notificationService.SendNotificationToUserAsync(receiverId, "رسالة جديدة", $"لديك رسالة جديدة:\n {content}");
+                if (!string.IsNullOrEmpty(receiverId))
+                {
+                    try { await _notificationService.SendNotificationToUserAsync(receiverId, "رسالة جديدة", $"لديك رسالة جديدة:\n {content}"); }
+                    catch (Exception ex) { _logger.LogWarning(ex, "Support message push failed"); }
+                }
 
                 await transaction.CommitAsync();
-                return Response<MessageDTO>.Success(new MessageDTO
+                var dto = new MessageDTO
                 {
                     Id = message.Id,
                     SenderId = message.UserId,
@@ -96,7 +107,11 @@ namespace Masafet_Elseka.Infrastructure.Services.MessageService
                     ChatId = message.ChatId,
                     Content = message.Content,
                     SendAt = message.SendAt
-                }, "تم إرسال الرسالة بنجاح", 200);
+                };
+                // Live on the dashboard support inbox (all admins / dispatchers).
+                try { await _supportHub.Clients.Group(SupportChatHub.StaffGroup).SendAsync("ReceiveSupportMessage", dto); }
+                catch (Exception ex) { _logger.LogWarning(ex, "Support inbox broadcast failed"); }
+                return Response<MessageDTO>.Success(dto, "تم إرسال الرسالة بنجاح", 200);
             }
             catch (Exception ex)
             {

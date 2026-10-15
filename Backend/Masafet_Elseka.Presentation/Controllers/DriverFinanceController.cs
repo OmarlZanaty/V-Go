@@ -3,6 +3,7 @@ using Masafet_Elseka.Application.DTOs.DriverFinance;
 using Masafet_Elseka.Application.Interfaces.IDriverFinanceService;
 using Masafet_Elseka.Application.Interfaces.IPaymentService;
 using Masafet_Elseka.Application.Interfaces.IPrivateFileStorage;
+using Masafet_Elseka.Application.Interfaces.ITripService;
 using Masafet_Elseka.Application.Response;
 using Masafet_Elseka.Infrastructure.Data;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
@@ -111,6 +112,13 @@ namespace Masafet_Elseka.Presentation.Controllers
         [Authorize(Roles = FinanceAdmins)]
         [HttpGet("admin/overview")]
         public async Task<IActionResult> Overview() => Reply(await _finance.GetOverviewAsync());
+
+        // Completed-trip revenue per day (newest first) with a totals row.
+        [Authorize(Roles = FinanceAdmins)]
+        [HttpGet("admin/revenue/daily")]
+        public async Task<IActionResult> DailyRevenue([FromQuery] DateTime? from, [FromQuery] DateTime? to,
+            [FromServices] ITripInsightsService insights, CancellationToken ct = default)
+            => Ok(await insights.GetDailyRevenueAsync(from, to, ct));
 
         // filter: locked | near | owes | owed (optional)
         [Authorize(Roles = FinanceAdmins)]

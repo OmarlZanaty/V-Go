@@ -132,15 +132,22 @@ namespace Masafet_Elseka.Infrastructure.Services.ChatService
                 await _unitOfWork.Chats.AddAsync(chat);
                 _logger.LogInformation("Chat with Id {ChatId} is added", chat.Id);
 
-                var dispatcherId = await _dispatcherService.GetAvailableDispatcherId();
-                // update dispatcher LastHandledChatAt
-                var dispatcher = await _userManager.FindByIdAsync(dispatcherId);
-                dispatcher!.LastHandledChatAt = DateTime.Now.ToEgyptTime();
-                var cachedDispatcher = _cacheService.GetData<DispatcherDTO>($"Dispatcher_{dispatcherId}");
-                if (cachedDispatcher != null)
+                // A dispatcher is optional: with none the chat still opens and the
+                // dashboard's support inbox (Admin/Dispatcher) answers it.
+                string? dispatcherId = null;
+                try { dispatcherId = await _dispatcherService.GetAvailableDispatcherId(); }
+                catch (Exception ex) { _logger.LogWarning(ex, "No dispatcher available for support chat"); }
+                var dispatcher = string.IsNullOrEmpty(dispatcherId) ? null : await _userManager.FindByIdAsync(dispatcherId);
+                if (dispatcher != null)
                 {
-                    cachedDispatcher.LastHandledChatAt = DateTime.Now.ToEgyptTime();
-                    _cacheService.SetData($"Dispatcher_{dispatcher.Id}", cachedDispatcher);
+                    // update dispatcher LastHandledChatAt
+                    dispatcher.LastHandledChatAt = DateTime.Now.ToEgyptTime();
+                    var cachedDispatcher = _cacheService.GetData<DispatcherDTO>($"Dispatcher_{dispatcher.Id}");
+                    if (cachedDispatcher != null)
+                    {
+                        cachedDispatcher.LastHandledChatAt = DateTime.Now.ToEgyptTime();
+                        _cacheService.SetData($"Dispatcher_{dispatcher.Id}", cachedDispatcher);
+                    }
                 }
 
                 var userChats = new List<UserChat>
@@ -152,14 +159,17 @@ namespace Masafet_Elseka.Infrastructure.Services.ChatService
                         Role="Client",
                         ChatId=chat.Id,
                     },
-                    new UserChat
+                };
+                if (dispatcher != null)
+                {
+                    userChats.Add(new UserChat
                     {
                         Id = Guid.NewGuid().ToString(),
-                        UserId=dispatcherId,
+                        UserId=dispatcher.Id,
                         Role="Dispatcher",
                         ChatId=chat.Id,
-                    }
-                };
+                    });
+                }
                 await _unitOfWork.UserChats.AddRangeAsync(userChats);
                 await _unitOfWork.SaveAsync();
                 _logger.LogInformation("UserChats for client {ClientId} and dispatcher {DispatcherId} are added", clientId, dispatcherId);

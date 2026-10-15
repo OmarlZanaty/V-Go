@@ -79,7 +79,7 @@ class AppRouter {
         return MaterialPageRoute(
           builder: (_) => BlocProvider(
             create: (context) => PhoneAuthCubit(getIt()),
-            child: const PhoneLoginView(),
+            child: PhoneLoginView(resetMode: settings.arguments == 'reset'),
           ),
         );
       case Routes.phoneSignupViewRoute:

@@ -145,6 +145,10 @@ namespace Masafet_Elseka.Application.DTOs.DriverFinance
         public string? Phone { get; set; }
         public string? ProfilePicture { get; set; }
         public decimal Balance { get; set; }
+        public int CompletedTrips { get; set; }
+        public int CancelledTrips { get; set; }
+        public int CashTrips { get; set; }
+        public int OnlineTrips { get; set; }
         public bool IsLocked { get; set; }
         public bool IsNearLimit { get; set; }
         public bool CollectionLocked { get; set; }
@@ -176,6 +180,8 @@ namespace Masafet_Elseka.Application.DTOs.DriverFinance
     public class RevenueDTO
     {
         public int Trips { get; set; }
+        public int CashTrips { get; set; }
+        public int OnlineTrips { get; set; }
         public decimal Total { get; set; }
         public decimal Cash { get; set; }
         public decimal Online { get; set; }

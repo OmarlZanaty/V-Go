@@ -62,7 +62,9 @@ class AppRouter {
         return _page(_auth(const LoginView()));
 
       case Routes.phoneLoginViewRoute:
-        return _page(_phoneAuth(const PhoneLoginView()));
+        return _page(_phoneAuth(
+          PhoneLoginView(resetMode: settings.arguments == 'reset'),
+        ));
 
       case Routes.phoneDriverSignupViewRoute:
         final signupView = PhoneDriverSignupView(

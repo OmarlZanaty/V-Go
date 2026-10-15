@@ -73,6 +73,9 @@ abstract class EndPoint {
   static String updateUser(String userId) => 'User/update/$userId';
   static String getUserRates(String userId) => 'Rate/userRates/$userId';
 
+  // Busy pickup areas for the captain map.
+  static const String tripHotspots = 'Trip/hotspots';
+
   // Support (in-app report -> support chat)
   static const String createSupportChat = 'Chat/createSupportChat';
   static const String sendSupportMessage = 'Message/sendSupportMessage';
