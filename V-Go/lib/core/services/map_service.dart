@@ -9,6 +9,7 @@ import '../helpers/convert_time.dart';
 import '../helpers/geo_utils.dart';
 import '../utils/model/edit_distance_result_model.dart';
 import '../utils/model/location_model.dart';
+import 'suez_places.dart';
 
 class MapService {
   final Dio dio;
@@ -402,7 +403,11 @@ class MapService {
     double? originLng,
     required bool includeNominatim,
   }) async {
-    final local = _localSuezSuggestions(query);
+    final local = _localSuezSuggestions(
+      query,
+      originLat: originLat,
+      originLng: originLng,
+    );
     final futures = <Future<List<PlaceSuggestionModel>>>[
       _getPhotonSuggestions(
         query,
@@ -460,10 +465,25 @@ class MapService {
     }).whereType<PlaceSuggestionModel>().toList();
   }
 
-  List<PlaceSuggestionModel> _localSuezSuggestions(String query) {
-    final normalizedQuery = _normalizeArabic(query);
-    return _knownSuezPlaces
-        .where((place) => _normalizeArabic(place.name).contains(normalizedQuery))
+  // The OSM gazetteer, normalised once: (normalised name, normalised English, entry).
+  static final List<(String, String, (String, double, double, String, String))>
+  _gazetteer = [
+    for (final p in suezPlaces)
+      (_normalizeArabic(p.$1), p.$5.toLowerCase(), p),
+  ];
+
+  /// Offline search over curated landmarks + every named place and street in
+  /// Suez from OpenStreetMap (works even when Photon / Nominatim return nothing).
+  List<PlaceSuggestionModel> _localSuezSuggestions(
+    String query, {
+    double? originLat,
+    double? originLng,
+  }) {
+    final q = _normalizeArabic(query);
+    if (q.length < 2) return const [];
+    final qCompact = q.replaceAll(' ', '');
+    final curated = _knownSuezPlaces
+        .where((place) => _normalizeArabic(place.name).contains(q))
         .map(
           (place) => PlaceSuggestionModel(
             placeId:
@@ -472,6 +492,51 @@ class MapService {
           ),
         )
         .toList();
+
+    final origin = originLat != null && originLng != null
+        ? LatLng(originLat, originLng)
+        : null;
+    // Best match per name: a street is split into many OSM segments.
+    final best = <String, (int, double, (String, double, double, String, String))>{};
+    for (final (name, en, p) in _gazetteer) {
+      final int rank;
+      if (name.startsWith(q) || en.startsWith(q)) {
+        rank = 0;
+      } else if (name.contains(' $q') || en.contains(' $q')) {
+        rank = 1;
+      } else if (name.contains(q) ||
+          en.contains(q) ||
+          name.replaceAll(' ', '').contains(qCompact)) {
+        rank = 2;
+      } else {
+        continue;
+      }
+      // Areas and landmarks before streets.
+      final score = rank * 2 + (p.$4 == 's' ? 1 : 0);
+      final dist = origin == null
+          ? 0.0
+          : GeoUtils.haversine(origin, LatLng(p.$2, p.$3));
+      final prev = best[name];
+      if (prev == null ||
+          score < prev.$1 ||
+          (score == prev.$1 && dist < prev.$2)) {
+        best[name] = (score, dist, p);
+      }
+    }
+    final ranked = best.values.toList()
+      ..sort((a, b) {
+        final s = a.$1.compareTo(b.$1);
+        return s != 0 ? s : a.$2.compareTo(b.$2);
+      });
+    final fromOsm = ranked.take(10).map((e) {
+      final p = e.$3;
+      final kind = p.$4 == 's' && !p.$1.startsWith('شارع') ? 'شارع ' : '';
+      return PlaceSuggestionModel(
+        placeId: '$_latLngPlacePrefix${p.$2},${p.$3}',
+        description: '$kind${p.$1}، السويس',
+      );
+    });
+    return [...curated, ...fromOsm];
   }
 
   List<PlaceSuggestionModel> _mergeSuggestions(
