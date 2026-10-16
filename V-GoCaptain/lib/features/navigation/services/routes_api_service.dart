@@ -124,12 +124,31 @@ class RoutesApiService {
   static const String _osrmEndpoint =
       'https://router.project-osrm.org/route/v1/driving/';
 
+  /// OSRM through our server first: phones on Egyptian networks can't open
+  /// router.project-osrm.org (the TLS handshake fails), the server can.
   Future<RouteResult> _osrmRoute(LatLng origin, LatLng destination) async {
-    final uri = Uri.parse(
+    final viaServer = Uri.parse('${AppConfig.apiBaseUrl}Route').replace(
+      queryParameters: {
+        'fromLat': '${origin.latitude}',
+        'fromLng': '${origin.longitude}',
+        'toLat': '${destination.latitude}',
+        'toLng': '${destination.longitude}',
+        'steps': 'true',
+      },
+    );
+    final direct = Uri.parse(
       '$_osrmEndpoint${origin.longitude},${origin.latitude};'
       '${destination.longitude},${destination.latitude}'
       '?overview=full&geometries=polyline&steps=true',
     );
+    try {
+      return await _osrmRouteFrom(viaServer);
+    } catch (_) {
+      return _osrmRouteFrom(direct);
+    }
+  }
+
+  Future<RouteResult> _osrmRouteFrom(Uri uri) async {
     final res = await _client.get(uri).timeout(const Duration(seconds: 10));
     if (res.statusCode != 200) {
       throw RoutesApiException('تعذر تحميل المسار (${res.statusCode})');

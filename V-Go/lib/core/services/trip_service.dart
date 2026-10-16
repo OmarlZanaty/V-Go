@@ -442,31 +442,47 @@ class TripService {
     if (!_isConnected) {
       log('Cancel: socket down, reconnecting first…', name: 'TripService');
       try {
-        await connect();
+        await connect().timeout(const Duration(seconds: 10));
       } catch (e) {
         log('Cancel: reconnect attempt failed: $e', name: 'TripService');
       }
     }
 
     for (var attempt = 1; attempt <= 2; attempt++) {
+      Object? result;
       try {
-        await _hubConnection
-            .invoke('CancelTripRequest', args: [tripId, userId, reason ?? '']);
-        log('Trip $tripId Canceled (attempt $attempt)', name: 'TripService');
-        return;
+        // A half-dead mobile socket never answers; without a timeout the
+        // cancel button spun forever.
+        result = await _hubConnection
+            .invoke('CancelTripRequest', args: [tripId, userId, reason ?? ''])
+            .timeout(const Duration(seconds: 12));
       } catch (e) {
         log('Error canceling trip (attempt $attempt): $e', name: 'TripService');
         if (attempt == 2) {
-          throw 'حدث خطاء اثناء الغاء الرحلة , حاول مره اخرى';
+          throw 'تعذر الاتصال بالخادم لإلغاء الرحلة، تأكد من الإنترنت وحاول مرة أخرى';
         }
         // The connection likely died mid-invoke; force a fresh reconnect.
         _isConnected = false;
         try {
-          await connect();
+          await connect().timeout(const Duration(seconds: 10));
         } catch (e2) {
           log('Cancel: reconnect before retry failed: $e2', name: 'TripService');
         }
+        continue;
       }
+      // The hub answers with a Response (PascalCase over SignalR); a refusal
+      // used to be shown as "cancelled" while the trip went on.
+      if (result is Map) {
+        final ok = result['IsSuccess'] ?? result['isSuccess'];
+        if (ok == false) {
+          final msg = result['Message'] ?? result['message'];
+          throw msg is String && msg.isNotEmpty
+              ? msg
+              : 'حدث خطاء اثناء الغاء الرحلة , حاول مره اخرى';
+        }
+      }
+      log('Trip $tripId Canceled (attempt $attempt)', name: 'TripService');
+      return;
     }
   }
 

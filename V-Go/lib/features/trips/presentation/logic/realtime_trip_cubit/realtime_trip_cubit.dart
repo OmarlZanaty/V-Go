@@ -256,6 +256,9 @@ class RealTimeTripCubit extends Cubit<RealTimeTripState>
           errorMessage: ServerFailure.fromError(e).errMessage,
         ),
       );
+      // The screen may be behind the server (e.g. a missed "accepted" event
+      // left it on "waiting for a captain"): ask for the real trip state.
+      _tripService.requestCurrentTrip().catchError((Object _) {});
     }
   }
 

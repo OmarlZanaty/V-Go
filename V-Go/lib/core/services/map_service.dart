@@ -5,6 +5,7 @@ import 'package:google_maps_flutter/google_maps_flutter.dart';
 
 import '../../features/map/data/model/place_suggestion_model.dart';
 import '../../features/map/data/model/route_result_model.dart';
+import '../config/app_config.dart';
 import '../helpers/convert_time.dart';
 import '../helpers/geo_utils.dart';
 import '../utils/model/edit_distance_result_model.dart';
@@ -285,17 +286,34 @@ class MapService {
     _KnownSuezPlace('مستشفى التأمين الصحي الشامل، السويس', 29.9693, 32.5176),
   ];
 
-  /// Road route from the free public OSRM server.
+  /// Road route from the free public OSRM server, asked through our server
+  /// first: phones on Egyptian networks can't open router.project-osrm.org
+  /// (the TLS handshake fails), the server can.
   Future<RouteResultModel> getOsrmRoute(
     LocationModel from,
     LocationModel to,
   ) async {
-    final response = await dio
-        .get(
-          '$_osrmUrl${from.longitude},${from.latitude};${to.longitude},${to.latitude}',
-          queryParameters: {'overview': 'full', 'geometries': 'polyline'},
-        )
-        .timeout(const Duration(seconds: 8));
+    Response response;
+    try {
+      response = await dio
+          .get(
+            '${AppConfig.apiBaseUrl}Route',
+            queryParameters: {
+              'fromLat': from.latitude,
+              'fromLng': from.longitude,
+              'toLat': to.latitude,
+              'toLng': to.longitude,
+            },
+          )
+          .timeout(const Duration(seconds: 8));
+    } catch (_) {
+      response = await dio
+          .get(
+            '$_osrmUrl${from.longitude},${from.latitude};${to.longitude},${to.latitude}',
+            queryParameters: {'overview': 'full', 'geometries': 'polyline'},
+          )
+          .timeout(const Duration(seconds: 8));
+    }
     final routes = response.data['routes'] as List?;
     if (routes == null || routes.isEmpty) throw Exception('No OSRM routes');
     final route = routes[0];

@@ -593,13 +593,19 @@ namespace Masafet_Elseka.Infrastructure.Hubs
                 if (!result.IsSuccess)
                     return Response<object>.Failure(result.Message, result.StatusCode, result.Errors);
 
-                if (isAcceptedTrip)
-                    await NotifyDriverTripCancelled(tripId, userId);
-                else
-                    await NotifyAvailableDriversTripCancelled(tripId, userId,result.Data);
+                // The trip is cancelled in the DB now; a failed push or socket
+                // send must not tell the rider the cancel failed.
+                try
+                {
+                    if (isAcceptedTrip)
+                        await NotifyDriverTripCancelled(tripId, userId);
+                    else
+                        await NotifyAvailableDriversTripCancelled(tripId, userId, result.Data);
 
-                await NotifyAdminTripCancelled(tripId, userId);
-                await NotifyClientTripCancelled(tripId, userId);
+                    await NotifyAdminTripCancelled(tripId, userId);
+                    await NotifyClientTripCancelled(tripId, userId);
+                }
+                catch (Exception notifyEx) { Log.Error(notifyEx, "Cancel notifications failed for trip {TripId}", tripId); }
                 await _tripService.UpdateTripStateInCache(tripId, TripStatus.Canceled);
 
                 // Visa pre-auth: release the hold on cancellation (no-op otherwise).
