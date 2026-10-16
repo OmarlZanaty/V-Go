@@ -72,8 +72,8 @@ namespace Masafet_Elseka.Infrastructure.Services.TripService
             if (to != null) q = q.Where(t => t.CreatedAt < to.Value.Date.AddDays(1));
 
             var rows = await q
-                .GroupBy(t => new { t.Status, t.PaymentMethod, t.IsFreeRide })
-                .Select(g => new { g.Key.Status, g.Key.PaymentMethod, g.Key.IsFreeRide, Count = g.Count() })
+                .GroupBy(t => new { t.Status, t.PaymentMethod, t.IsFreeRide, WithOffer = t.PromotionId != null })
+                .Select(g => new { g.Key.Status, g.Key.PaymentMethod, g.Key.IsFreeRide, g.Key.WithOffer, Count = g.Count() })
                 .ToListAsync(ct);
 
             int Sum(Func<TripStatus, bool> status, Func<string?, bool>? method = null) =>
@@ -94,6 +94,7 @@ namespace Masafet_Elseka.Infrastructure.Services.TripService
                 CancelledCash = Sum(s => s == TripStatus.Canceled, m => !IsOnline(m)),
                 CancelledOnline = Sum(s => s == TripStatus.Canceled, IsOnline),
                 Free = rows.Where(r => r.IsFreeRide).Sum(r => r.Count),
+                WithOffer = rows.Where(r => r.WithOffer).Sum(r => r.Count),
             };
         }
 
@@ -108,7 +109,7 @@ namespace Masafet_Elseka.Infrastructure.Services.TripService
             var trips = await _context.Trips.AsNoTracking()
                 .Where(t => t.Status == TripStatus.Completed)
                 .Where(t => (t.EndTime ?? t.CreatedAt) >= start && (t.EndTime ?? t.CreatedAt) < end.AddDays(1))
-                .Select(t => new { t.Id, Day = (t.EndTime ?? t.CreatedAt).Date, t.Price, t.PaymentMethod, t.IsFreeRide })
+                .Select(t => new { t.Id, Day = (t.EndTime ?? t.CreatedAt).Date, t.Price, t.DiscountAmount, t.PaymentMethod, t.IsFreeRide })
                 .ToListAsync(ct);
 
             // The company's commission as posted to the captain ledgers (latest entry per trip).
@@ -125,10 +126,10 @@ namespace Masafet_Elseka.Infrastructure.Services.TripService
             for (var day = end; day >= start; day = day.AddDays(-1))
             {
                 var list = byDay.TryGetValue(day, out var l) ? l : new();
-                // A free ride brings in no fare: the rider paid nothing.
+                // What riders paid: an offer's discount (all of a free ride) is the company's cost.
                 var paid = list.Where(t => !t.IsFreeRide).ToList();
-                var online = paid.Where(t => IsOnline(t.PaymentMethod)).Sum(t => t.Price);
-                var total = paid.Sum(t => t.Price);
+                var online = paid.Where(t => IsOnline(t.PaymentMethod)).Sum(t => t.Price - t.DiscountAmount);
+                var total = paid.Sum(t => t.Price - t.DiscountAmount);
                 result.Days.Add(new DailyRevenueRowDTO
                 {
                     Date = day,
@@ -140,6 +141,7 @@ namespace Masafet_Elseka.Infrastructure.Services.TripService
                     Online = online,
                     Cash = total - online,
                     CompanyCommission = list.Sum(t => commissions.TryGetValue(t.Id, out var c) ? c : 0m),
+                    Discounts = list.Sum(t => t.DiscountAmount),
                 });
             }
 
@@ -154,6 +156,7 @@ namespace Masafet_Elseka.Infrastructure.Services.TripService
                 Cash = result.Days.Sum(d => d.Cash),
                 Online = result.Days.Sum(d => d.Online),
                 CompanyCommission = result.Days.Sum(d => d.CompanyCommission),
+                Discounts = result.Days.Sum(d => d.Discounts),
             };
             return result;
         }

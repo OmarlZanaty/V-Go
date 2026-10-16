@@ -10,6 +10,10 @@ class TripOfferModel {
   final String paymentMethod;
   final bool isFreeRide;
 
+  /// Offer discount the company pays; the rider pays [riderPrice] and the
+  /// captain's share is still taken from the full [price].
+  final double discountAmount;
+
   TripOfferModel({
     required this.tripId,
     required this.start,
@@ -18,9 +22,13 @@ class TripOfferModel {
     required this.client,
     this.paymentMethod = 'Cash',
     this.isFreeRide = false,
+    this.discountAmount = 0,
   });
 
   bool get isVisa => paymentMethod.toLowerCase() == 'visa';
+  bool get hasDiscount => !isFreeRide && discountAmount > 0;
+  double get riderPrice =>
+      isFreeRide ? 0 : (price - discountAmount).clamp(0, price).toDouble();
 
   static dynamic _pick(Map map, String camel, String pascal) =>
       map[camel] ?? map[pascal];
@@ -41,6 +49,7 @@ class TripOfferModel {
       paymentMethod:
           _pick(map, 'paymentMethod', 'PaymentMethod')?.toString() ?? 'Cash',
       isFreeRide: _toBool(_pick(map, 'isFreeRide', 'IsFreeRide')),
+      discountAmount: _toDouble(_pick(map, 'discountAmount', 'DiscountAmount')),
     );
   }
 

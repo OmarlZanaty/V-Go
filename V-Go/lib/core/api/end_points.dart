@@ -9,6 +9,10 @@ abstract class EndPoint {
   static const String activeBanners = 'HomeBanners/active';
   static String bannerClick(int id) => 'HomeBanners/$id/click';
 
+  // Offers (free rides, discounts, promo codes).
+  static const String myPromotions = 'Promotions/mine';
+  static const String redeemPromotion = 'Promotions/redeem';
+
   static const String login = 'Auth/login';
   static const String phoneLogin = 'Auth/phone-login'; // phone + password
   static const String phoneRegister = 'Auth/phone-register'; // phone + password

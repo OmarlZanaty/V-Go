@@ -63,6 +63,14 @@ class ActiveTripPanel extends StatelessWidget {
                   const FreeRideBadge()
                 else
                   PaymentMethodBadge(method: trip.paymentMethod),
+                if (trip.hasDiscount) ...[
+                  SizedBox(height: 12.h),
+                  DiscountBadge(
+                    discount: trip.discountAmount,
+                    riderPrice: trip.riderPrice,
+                    isVisa: trip.isVisa,
+                  ),
+                ],
                 if (!trip.isFreeRide && trip.isVisa) ...[
                   SizedBox(height: 12.h),
                   _visaPaymentStatus(),
@@ -164,7 +172,8 @@ class ActiveTripPanel extends StatelessWidget {
   /// sees exactly how much to collect.
   Widget _priceBanner() {
     final trip = state.activeTrip;
-    final price = trip?.price ?? 0;
+    // With an offer discount the rider pays less; the company covers the rest.
+    final price = trip?.riderPrice ?? 0;
     final isFreeRide = trip?.isFreeRide ?? false;
     final isCompleted = state.stage == TripStage.completed;
     late final String title;

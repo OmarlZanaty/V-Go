@@ -10,7 +10,7 @@ using Masafet_Elseka.Application.ExternalInterfaces;
 using Masafet_Elseka.Application.ExternalInterfaces.ICachService;
 using Masafet_Elseka.Application.ExternalInterfaces.ICloudinaryService;
 using Masafet_Elseka.Application.Interfaces.IAuthService;
-using Masafet_Elseka.Application.Interfaces.IFreeRidesService;
+using Masafet_Elseka.Application.Interfaces.IPromotionService;
 using Masafet_Elseka.Application.Interfaces.INotificationService;
 using Masafet_Elseka.Application.Response;
 using FirebaseAdmin.Auth;
@@ -51,7 +51,7 @@ namespace Masafet_Elseka.Infrastructure.Services.AuthService
         private readonly IHttpContextAccessor _httpContextAccessor;
         private readonly OnlineTrackerService.OnlineTrackerService _onlineTrackerService;
         private readonly IConfiguration _config;
-        private readonly IFreeRidesService _freeRidesService;
+        private readonly IPromotionService _promotionService;
 
         // Cross-app sign-in guards — friendly Arabic messages shown to the user.
         private const string CaptainOnRiderMessage =
@@ -60,7 +60,7 @@ namespace Masafet_Elseka.Infrastructure.Services.AuthService
             "عذرًا، هذا الحساب مُسجَّل كحساب راكب 🧍\nلا يمكنك الدخول من تطبيق الكباتن، يُرجى استخدام تطبيق الركاب.";
 
         public AuthService(UserManager<ApplicationUser> userManager, RoleManager<IdentityRole> roleManager, OTP oTP, IJWTService jWTService,
-            ICacheService cacheService, ICloudinaryService cloudinaryService, IUnitOfWork unitOfWork, Context context, IUserCleanupService userCleanup, IHttpContextAccessor httpContextAccessor, INotificationService notificationService, OnlineTrackerService.OnlineTrackerService onlineTrackerService, IConfiguration config, IFreeRidesService freeRidesService)
+            ICacheService cacheService, ICloudinaryService cloudinaryService, IUnitOfWork unitOfWork, Context context, IUserCleanupService userCleanup, IHttpContextAccessor httpContextAccessor, INotificationService notificationService, OnlineTrackerService.OnlineTrackerService onlineTrackerService, IConfiguration config, IPromotionService promotionService)
         {
             _userManager = userManager;
             _roleManager = roleManager;
@@ -75,7 +75,7 @@ namespace Masafet_Elseka.Infrastructure.Services.AuthService
             _notificationService = notificationService;
             _onlineTrackerService = onlineTrackerService;
             _config = config;
-            _freeRidesService = freeRidesService;
+            _promotionService = promotionService;
         }
 
         public async Task<Response<string>> Register(RegisterDTO model)
@@ -132,7 +132,7 @@ namespace Masafet_Elseka.Infrastructure.Services.AuthService
 
                 if (model.Role == "Client")
                 {
-                    await _freeRidesService.GrantToNewClientAsync(user);
+                    await _promotionService.GrantSignUpOffersAsync(user);
                 }
 
                 if (!string.IsNullOrEmpty(model.FCMToken))
@@ -444,7 +444,7 @@ namespace Masafet_Elseka.Infrastructure.Services.AuthService
                 }
 
                 await _userManager.AddToRoleAsync(user, "Client");
-                await _freeRidesService.GrantToNewClientAsync(user);
+                await _promotionService.GrantSignUpOffersAsync(user);
 
                 if (!string.IsNullOrEmpty(model.FCMToken))
                     await _notificationService.RegisterDeviceAsync(user.Id, model.FCMToken, model.DeviceType);
@@ -1156,7 +1156,7 @@ namespace Masafet_Elseka.Infrastructure.Services.AuthService
                         return Response<LoginResponseDTO>.Failure(string.IsNullOrWhiteSpace(err) ? "تعذّر إنشاء الحساب" : err, 400);
                     }
                     await _userManager.AddToRoleAsync(user, "Client");
-                    await _freeRidesService.GrantToNewClientAsync(user);
+                    await _promotionService.GrantSignUpOffersAsync(user);
                 }
 
                 // Captain accounts cannot sign in to the rider app.

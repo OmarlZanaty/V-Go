@@ -18,6 +18,9 @@ namespace Masafet_Elseka.Application.DTOs.Trip
         public bool IsPaid { get; set; }
         public string PaymentMethod { get; set; } = "Cash";
         public bool IsFreeRide { get; set; }
+        // Company-paid offer discount; the rider pays RiderPrice = Price - DiscountAmount.
+        public decimal DiscountAmount { get; set; }
+        public decimal RiderPrice { get; set; }
 
         public string UserId { get; set; }
         public string UserName { get; set; } // Full Name 

@@ -50,6 +50,14 @@ class SettingsView extends StatelessWidget {
                     AppSettings.openAppSettings(type: AppSettingsType.location);
                   },
                 ),
+                if (!isDriver)
+                  SettingsItem(
+                    title: 'العروض وأكواد الخصم',
+                    icon: HugeIcons.strokeRoundedGift,
+                    onTap: () {
+                      context.pushNamed(Routes.promotionsViewRoute);
+                    },
+                  ),
                 SettingsItem(
                   title: 'بطاقاتي',
                   icon: Icons.credit_card,

@@ -22,6 +22,8 @@ namespace Masafet_Elseka.Application.DTOs.Trip
         public int CancelledCash { get; set; }
         public int CancelledOnline { get; set; }
         public int Free { get; set; }
+        // Trips that used an offer (free or discounted).
+        public int WithOffer { get; set; }
     }
 
     public class DailyRevenueRowDTO
@@ -35,6 +37,8 @@ namespace Masafet_Elseka.Application.DTOs.Trip
         public decimal Cash { get; set; }
         public decimal Online { get; set; }
         public decimal CompanyCommission { get; set; }
+        // Offer discounts the company paid on these trips.
+        public decimal Discounts { get; set; }
     }
 
     public class DailyRevenueDTO

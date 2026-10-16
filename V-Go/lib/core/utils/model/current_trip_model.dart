@@ -23,6 +23,11 @@ class CurrentTripModel {
   final String paymentMethod;
   final bool isFreeRide;
 
+  /// Offer discount paid by the company; the rider pays [riderPrice].
+  final double discountAmount;
+  double get riderPrice =>
+      isFreeRide ? 0 : (price - discountAmount).clamp(0, price).toDouble();
+
   CurrentTripModel({
     required this.tripId,
     required this.tripStatus,
@@ -45,6 +50,7 @@ class CurrentTripModel {
     this.isPaid = false,
     this.paymentMethod = 'Cash',
     this.isFreeRide = false,
+    this.discountAmount = 0,
   });
 
   factory CurrentTripModel.fromJson(Map<String, dynamic> json) {
@@ -76,6 +82,9 @@ class CurrentTripModel {
             (json['paymentMethod'] ?? json['PaymentMethod'] ?? 'Cash')
                 .toString(),
         isFreeRide: isFreeRide,
+        discountAmount:
+            ((json['discountAmount'] ?? json['DiscountAmount'] ?? 0) as num)
+                .toDouble(),
       );
   }
 }

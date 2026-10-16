@@ -51,6 +51,14 @@ class IncomingTripCard extends StatelessWidget {
             const FreeRideBadge()
           else
             PaymentMethodBadge(method: offer.paymentMethod),
+          if (offer.hasDiscount) ...[
+            SizedBox(height: 10.h),
+            DiscountBadge(
+              discount: offer.discountAmount,
+              riderPrice: offer.riderPrice,
+              isVisa: offer.isVisa,
+            ),
+          ],
           SizedBox(height: 20.h),
           Row(
             children: [

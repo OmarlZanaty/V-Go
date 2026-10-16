@@ -1,7 +1,7 @@
 ﻿using Masafet_Elseka.Application.Common.Pagination;
 using Masafet_Elseka.Application.DTOs.Trip;
 using Masafet_Elseka.Application.Interfaces.IAccountantService;
-using Masafet_Elseka.Application.Interfaces.IFreeRidesService;
+using Masafet_Elseka.Application.Interfaces.IPromotionService;
 using Masafet_Elseka.Application.Interfaces.ITripService;
 using Masafet_Elseka.Application.Interfaces.Statistics;
 using Masafet_Elseka.Domain.Enums;
@@ -20,16 +20,16 @@ namespace Masafet_Elseka.Presentation.Controllers
         private readonly IAccountantService _accountantService;
         private readonly IStatisticsService _statisticsService;
         private readonly IFareService _fareService;
-        private readonly IFreeRidesService _freeRidesService;
+        private readonly IPromotionService _promotionService;
         private readonly ITripInsightsService _insights;
-        public TripController(ITripService tripService, IAccountantService accountantService, IStatisticsService statisticsService, IFareService fareService, IFreeRidesService freeRidesService, ITripInsightsService insights)
+        public TripController(ITripService tripService, IAccountantService accountantService, IStatisticsService statisticsService, IFareService fareService, IPromotionService promotionService, ITripInsightsService insights)
         {
             _insights = insights;
             _fareService = fareService;
             _tripService = tripService;
             _accountantService = accountantService;
             _statisticsService = statisticsService;
-            _freeRidesService = freeRidesService;
+            _promotionService = promotionService;
         }
 
         // The id of the currently authenticated user (set as the "uid" claim by JWTService).
@@ -168,18 +168,22 @@ namespace Masafet_Elseka.Presentation.Controllers
             if (quote == null)
                 return StatusCode(400, new { message = "لم يتم تحديد سعر الكيلو" });
             var userId = CurrentUserId ?? User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
-            var freeRides = string.IsNullOrEmpty(userId)
-                ? null
-                : await _freeRidesService.GetStatusAsync(userId);
-            var isFreeRide = freeRides?.Enabled == true && freeRides.Remaining > 0;
+            var offer = await _promotionService.BestOfferAsync(userId, quote.Price);
+            var discount = offer?.Discount ?? 0m;
+            var isFreeRide = offer != null && discount >= quote.Price;
             return Ok(new
             {
                 distanceKm = quote.DistanceKm,
                 price = quote.Price,
                 source = quote.Source,
                 isFreeRide,
-                riderPrice = isFreeRide ? 0 : quote.Price,
-                freeRidesLeft = freeRides?.Remaining ?? 0
+                riderPrice = quote.Price - discount,
+                freeRidesLeft = isFreeRide ? offer!.RidesLeft : 0,
+                discount,
+                promotionId = offer?.PromotionId,
+                promotionTitle = offer?.Title,
+                promotionType = offer?.Type,
+                promotionRidesLeft = offer?.RidesLeft ?? 0
             });
         }
 

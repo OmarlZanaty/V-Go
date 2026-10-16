@@ -31,6 +31,12 @@ namespace Masafet_Elseka.Domain.Entities
         public string PaymentMethod { get; set; } = "Cash";
         public bool IsFreeRide { get; set; }
 
+        // The offer applied to this trip and what it took off the fare (the
+        // company pays it). The rider pays Price - DiscountAmount.
+        public int? PromotionId { get; set; }
+        public decimal DiscountAmount { get; set; }
+        public virtual Promotion? Promotion { get; set; }
+
         // Why the trip was cancelled (rider-supplied). Null unless cancelled.
         public string? CancelReason { get; set; }
 

@@ -105,6 +105,26 @@ namespace Masafet_Elseka.Infrastructure.Data
                 entity.HasIndex(c => c.CycleDate).IsUnique();
                 entity.Property(c => c.CycleDate).HasColumnType("date");
             });
+            // Promotions.
+            builder.Entity<Promotion>(entity =>
+            {
+                entity.Property(p => p.Title).HasMaxLength(120);
+                entity.Property(p => p.Description).HasMaxLength(500);
+                entity.Property(p => p.Code).HasMaxLength(32);
+                entity.HasIndex(p => p.Code).IsUnique().HasFilter("[Code] IS NOT NULL");
+            });
+            builder.Entity<PromotionGrant>(entity =>
+            {
+                entity.HasIndex(g => new { g.PromotionId, g.UserId }).IsUnique();
+                entity.HasIndex(g => g.UserId);
+                entity.HasOne(g => g.Promotion).WithMany(p => p.Grants).HasForeignKey(g => g.PromotionId)
+                    .OnDelete(DeleteBehavior.Cascade);
+                entity.HasOne(g => g.User).WithMany().HasForeignKey(g => g.UserId)
+                    .OnDelete(DeleteBehavior.Restrict);
+            });
+            builder.Entity<Trip>().HasOne(t => t.Promotion).WithMany().HasForeignKey(t => t.PromotionId)
+                .OnDelete(DeleteBehavior.Restrict);
+
             base.OnModelCreating(builder);
         }
 
@@ -130,6 +150,8 @@ namespace Masafet_Elseka.Infrastructure.Data
         public DbSet<WalletSms> WalletSms { get; set; }
         public DbSet<CollectionRequest> CollectionRequests { get; set; }
         public DbSet<CollectionCycle> CollectionCycles { get; set; }
+        public DbSet<Promotion> Promotions { get; set; }
+        public DbSet<PromotionGrant> PromotionGrants { get; set; }
 
     }
 }

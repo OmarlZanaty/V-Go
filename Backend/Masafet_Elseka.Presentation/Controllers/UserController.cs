@@ -1,6 +1,6 @@
 ﻿using Masafet_Elseka.Application.Common.Pagination;
 using Masafet_Elseka.Application.DTOs.User;
-using Masafet_Elseka.Application.Interfaces.IFreeRidesService;
+using Masafet_Elseka.Application.Interfaces.IPromotionService;
 using Masafet_Elseka.Application.Interfaces.User;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authorization;
@@ -17,15 +17,15 @@ namespace Masafet_Elseka.Presentation.Controllers
     {
 
         private readonly IUserService _userService;
-        private readonly IFreeRidesService _freeRidesService;
+        private readonly IPromotionService _promotionService;
 
         private bool IsStaff => User.IsInRole("Admin") || User.IsInRole("Dispatcher");
         private bool CanEdit(string userId) =>
             IsStaff || User.FindFirstValue(ClaimTypes.NameIdentifier) == userId;
-        public UserController(IUserService userService, IFreeRidesService freeRidesService)
+        public UserController(IUserService userService, IPromotionService promotionService)
         {
             _userService = userService;
-            _freeRidesService = freeRidesService;
+            _promotionService = promotionService;
         }
 
         [HttpGet("me/free-rides")]
@@ -34,7 +34,7 @@ namespace Masafet_Elseka.Presentation.Controllers
         {
             var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
             if (string.IsNullOrEmpty(userId)) return Unauthorized();
-            return Ok(await _freeRidesService.GetStatusAsync(userId));
+            return Ok(await _promotionService.GetFreeRidesStatusAsync(userId));
         }
 
         [HttpGet("allUsers")]

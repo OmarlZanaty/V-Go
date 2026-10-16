@@ -157,7 +157,7 @@ class TripItem extends StatelessWidget {
                       title: 'السعر',
                       value: trip.isFreeRide
                           ? 'مجانية'
-                          : '${trip.price.ceil()} ج.م',
+                          : '${trip.riderPrice.ceil()} ج.م',
                     ),
                   ),
                 ],

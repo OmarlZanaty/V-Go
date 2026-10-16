@@ -257,6 +257,7 @@ class CaptainHomeCubit extends Cubit<CaptainHomeState>
     ),
     paymentMethod: t.paymentMethod,
     isFreeRide: t.isFreeRide,
+    discountAmount: t.discountAmount,
   );
 
   Future<void> goOffline() async {

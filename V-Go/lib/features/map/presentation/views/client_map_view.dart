@@ -1656,6 +1656,43 @@ class _ClientMapViewState extends State<ClientMapView> {
                                     ],
                                   ),
                                 )
+                              else if (tripState.fareQuote?.hasDiscount == true)
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Row(
+                                        children: [
+                                          Text(
+                                            '${tripState.fareQuote!.riderPrice.ceil()} ج.م',
+                                            style: AppStyle.styleMedium16
+                                                .copyWith(
+                                              color: AppColors.primary,
+                                            ),
+                                          ),
+                                          horizontalSpace(8),
+                                          Text(
+                                            '${tripState.fareQuote!.price.ceil()} ج.م',
+                                            style: AppStyle.styleMedium14
+                                                .copyWith(
+                                              color: AppColors.lightGrey,
+                                              decoration:
+                                                  TextDecoration.lineThrough,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                      verticalSpace(4),
+                                      Text(
+                                        'خصم ${tripState.fareQuote!.discount.ceil()} ج.م 🎁 ${tripState.fareQuote!.promotionTitle ?? ''}',
+                                        style: AppStyle.styleMedium12.copyWith(
+                                          color: AppColors.white,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                )
                               else
                               Text(
                                 '${tripState.tripPrice.ceil()} ج.م',
@@ -2042,8 +2079,11 @@ class _ClientMapViewState extends State<ClientMapView> {
     final trip = tripState.currentTrip ?? widget.currentTrip;
     final isFreeRide = trip?.isFreeRide == true || tripState.isFreeRide;
     final serverPrice = trip?.price ?? 0;
-    final price =
-        isFreeRide ? 0.0 : (serverPrice > 0 ? serverPrice : tripState.tripPrice);
+    // An offer discount is paid by the company: the rider pays what's left.
+    final discount = isFreeRide ? 0.0 : (trip?.discountAmount ?? 0);
+    final price = isFreeRide
+        ? 0.0
+        : (serverPrice > 0 ? serverPrice - discount : tripState.tripPrice);
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 16),
@@ -2079,6 +2119,12 @@ class _ClientMapViewState extends State<ClientMapView> {
             verticalSpace(4),
             Text(
               'رحلة مجانية من V-Go 🎁',
+              style: AppStyle.styleMedium14.copyWith(color: AppColors.white),
+            ),
+          ] else if (discount > 0) ...[
+            verticalSpace(4),
+            Text(
+              'بدل ${serverPrice.ceil()} ج.م — خصم ${discount.ceil()} ج.م من V-Go 🎁',
               style: AppStyle.styleMedium14.copyWith(color: AppColors.white),
             ),
           ],

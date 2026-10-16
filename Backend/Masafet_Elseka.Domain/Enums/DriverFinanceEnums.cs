@@ -1,4 +1,4 @@
-namespace Masafet_Elseka.Domain.Enums
+﻿namespace Masafet_Elseka.Domain.Enums
 {
     // Every money movement on a captain's account. Amounts are signed:
     // positive = the company owes the captain, negative = the captain owes the company.
@@ -11,7 +11,8 @@ namespace Masafet_Elseka.Domain.Enums
         Payout = 5,             // company transferred the captain's balance to him (-)
         Adjustment = 6,         // manual bonus / penalty by an admin, always with a reason (+/-)
         WalletCollection = 7,   // captain transferred his dues to a company wallet, confirmed by the receipt SMS (+)
-        TripFreeRideEarning = 8 // free promo trip: company owes the captain his share (+)
+        TripFreeRideEarning = 8, // free promo trip: company owes the captain his share (+)
+        TripCashDiscount = 9     // cash trip with a company-paid discount: discount - commission (+/-)
     }
 
     // What a Payment row is for. Trip payments keep the default so existing rows are unaffected.

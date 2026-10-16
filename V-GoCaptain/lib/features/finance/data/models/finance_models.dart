@@ -242,6 +242,7 @@ class FinanceLedgerEntry extends Equatable {
       type == 'TripCashCommission' ||
       type == 'TripCardEarning' ||
       type == 'TripFreeRideEarning' ||
+      type == 'TripCashDiscount' ||
       type == 'TripCorrection';
 
   bool get isPayout => type == 'Payout';

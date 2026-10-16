@@ -38,6 +38,48 @@ class FreeRideBadge extends StatelessWidget {
   }
 }
 
+/// The rider has an offer discount: the company pays it, the captain's share
+/// still comes from the full fare.
+class DiscountBadge extends StatelessWidget {
+  const DiscountBadge({
+    super.key,
+    required this.discount,
+    required this.riderPrice,
+    required this.isVisa,
+  });
+
+  final double discount;
+  final double riderPrice;
+  final bool isVisa;
+
+  @override
+  Widget build(BuildContext context) {
+    final text = isVisa
+        ? 'خصم ${discount.ceil()} ج.م للعميل على حساب الشركة — نصيبك من السعر الكامل'
+        : 'خصم ${discount.ceil()} ج.م على حساب الشركة — حصّل ${riderPrice.ceil()} ج.م بس، والخصم يتضاف لرصيدك';
+    return Container(
+      padding: EdgeInsets.symmetric(vertical: 10.h, horizontal: 14.w),
+      decoration: BoxDecoration(
+        color: AppColors.success.withValues(alpha: 0.15),
+        borderRadius: BorderRadius.circular(14.r),
+        border: Border.all(color: AppColors.success, width: 1.2),
+      ),
+      child: Row(
+        children: [
+          Icon(Icons.local_offer_outlined, color: AppColors.success, size: 22.r),
+          SizedBox(width: 10.w),
+          Expanded(
+            child: Text(
+              text,
+              style: AppStyle.body.copyWith(color: AppColors.success),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 /// Clear "how is this trip paid" row, so the captain knows whether to collect
 /// cash or wait for the client's card payment.
 class PaymentMethodBadge extends StatelessWidget {

@@ -162,9 +162,12 @@ async function setup() {
 
   const price = await http('POST', 'PricingRule', { token: state.admin.token, body: { pricePerKillo: 5 } });
   check('create pricing rule (5 EGP/km)', price.status === 201, price.text);
-  // Free rides would make the test riders' trips free; the freerides phase turns it back on.
-  const promo = await http('PUT', 'FreeRides/admin/settings', { token: state.admin.token, body: { enabled: false, perRider: 2, riderLimit: 100 } });
-  check('free rides promo off for the finance phases', promo.status === 200 && body(promo)?.enabled === false, promo.text);
+  // Offers would discount the test riders' trips; the promotions phase creates its own.
+  const promos = body(await http('GET', 'Promotions/admin', { token: state.admin.token })) ?? [];
+  for (const p of promos.filter((p) => p.isActive))
+    await http('PUT', `Promotions/admin/${p.id}/active?value=false`, { token: state.admin.token });
+  const after = body(await http('GET', 'Promotions/admin', { token: state.admin.token })) ?? [];
+  check('all offers off for the finance phases', after.every((p) => !p.isActive), JSON.stringify(after));
 
   state.oldDriver = await registerDriver('Captain Before Launch');
   save();
@@ -891,59 +894,159 @@ async function collection() {
     .every((x) => audit.data.some((e) => e.action === x)), JSON.stringify(audit.data.map((e) => e.action)));
 }
 
-async function freeRides() {
+async function promotions() {
   const A = state.admin.token;
   const future = new Date(Date.now() + 400 * 86400000).toISOString().slice(0, 10);
-  const cap = await registerDriver('Captain Free Rides');
+  const cap = await registerDriver('Captain Promotions');
   for (const t of ['Selfie', 'NationalIdFront', 'NationalIdBack', 'DriverLicenseBack', 'VehicleLicenseBack']) await uploadDoc(cap, t);
   for (const t of ['DriverLicense', 'VehicleLicense']) await uploadDoc(cap, t, { expiry: future });
   const docs = body(await http('GET', `DriverVerification/admin/drivers/${cap.id}`, { token: A })).documents;
   for (const d of docs) await http('POST', `DriverVerification/admin/documents/${d.id}/review`, { token: A, body: { approve: true } });
   await http('PUT', 'DriverFinance/admin/settings', { token: A, body: { companyCommissionPercent: 15, cashLimit: 100000, warningPercent: 80 } });
 
-  let s = body(await http('GET', 'FreeRides/admin/settings', { token: A }));
-  const r = await http('PUT', 'FreeRides/admin/settings', { token: A, body: { enabled: true, perRider: 1, riderLimit: s.grantedRiders + 1 } });
-  check('promo: admin enables 1 free ride for one more rider', r.status === 200 && body(r)?.enabled === true, r.text);
-  const bad = await http('PUT', 'FreeRides/admin/settings', { token: A, body: { enabled: true, perRider: 50, riderLimit: 1 } });
-  check('promo: perRider > 10 rejected', bad.status === 400, bad.text);
+  const all = async () => body(await http('GET', 'Promotions/admin', { token: A })) ?? [];
+  const create = (p) => http('POST', 'Promotions/admin', { token: A, body: p });
+  const setActive = (id, v) => http('PUT', `Promotions/admin/${id}/active?value=${v}`, { token: A });
+  const status = async (c) => body(await http('GET', 'User/me/free-rides', { token: c.token }));
+  const mine = async (c) => body(await http('GET', 'Promotions/mine', { token: c.token })) ?? [];
+  const quote = async (c) => body(await http('GET', 'Trip/quote?startLat=30.05&startLng=31.24&endLat=30.07&endLng=31.26', { token: c.token }));
+  const tripOf = async (c, id) => body(await http('GET', `Trip/GetTripById/${id}`, { token: c.token }));
+  const lastEntry = async (tripId) => { const es = (await ledger(cap)).filter((e) => e.tripId === tripId); return es[es.length - 1]; };
+
+  // --- validation ---
+  let r = await create({ title: 'x', type: 1, audience: 1, ridesPerRider: 1, isActive: false });
+  check('promo: too-short title rejected', r.status === 400, r.text);
+  r = await create({ title: 'خصم', type: 2, value: 150, audience: 2, ridesPerRider: 1, isActive: false });
+  check('promo: percent over 100 rejected', r.status === 400, r.text);
+  r = await create({ title: 'كود', type: 3, value: 5, audience: 3, ridesPerRider: 1, isActive: false });
+  check('promo: code offer without a code rejected', r.status === 400, r.text);
+  r = await create({ title: 'رحلات', type: 1, audience: 1, ridesPerRider: 99, isActive: false });
+  check('promo: more than 50 rides per rider rejected', r.status === 400, r.text);
+
+  // --- free rides for new riders (the old free-rides offer) ---
+  r = await create({ title: 'أول رحلة مجانًا', type: 1, audience: 1, ridesPerRider: 1, riderLimit: 1, isActive: true });
+  const free = body(r);
+  check('promo: admin creates a free ride for the next new rider', r.status === 201 && free?.isRunning === true, r.text);
 
   const lucky = await registerClient('Rider Lucky');
   const late = await registerClient('Rider Late');
-  const status = async (c) => body(await http('GET', 'User/me/free-rides', { token: c.token }));
   let st = await status(lucky);
   check('promo: first new rider granted 1 free ride', st?.granted === 1 && st?.remaining === 1, JSON.stringify(st));
   st = await status(late);
   check('promo: rider after the limit gets nothing', st?.granted === 0 && st?.remaining === 0, JSON.stringify(st));
 
-  const quote = async (c) => body(await http('GET', 'Trip/quote?startLat=30.05&startLng=31.24&endLat=30.07&endLng=31.26', { token: c.token }));
   let q = await quote(lucky);
-  check('promo: quote is free for the lucky rider', q?.isFreeRide === true && q?.riderPrice === 0 && q?.price > 0 && q?.freeRidesLeft === 1, JSON.stringify(q));
+  check('promo: quote is free for the lucky rider', q?.isFreeRide === true && q?.riderPrice === 0 && q?.price > 0 && q?.discount === q?.price && q?.freeRidesLeft === 1 && q?.promotionId === free.id, JSON.stringify(q));
   q = await quote(late);
-  check('promo: quote is paid for the late rider', q?.isFreeRide === false && q?.riderPrice === q?.price, JSON.stringify(q));
+  check('promo: quote is paid for the late rider', q?.isFreeRide === false && q?.riderPrice === q?.price && q?.discount === 0, JSON.stringify(q));
 
-  const { tripId, steps } = await ride(lucky, cap, { km: 3, method: 'Visa' });
-  check('promo: free trip completed through the hubs', ok(steps.end), JSON.stringify(steps));
-  const trip = body(await http('GET', `Trip/GetTripById/${tripId}`, { token: lucky.token }));
-  check('promo: free trip stored as free + cash (no Paymob)', trip?.isFreeRide === true && trip?.paymentMethod === 'Cash', JSON.stringify(trip));
-  const intent = await http('POST', 'Payment/createIntent', { token: lucky.token, body: { userId: lucky.id, tripId, price: 10, currency: 'EGP' } });
+  let ridden = await ride(lucky, cap, { km: 3, method: 'Visa' });
+  check('promo: free trip completed through the hubs', ok(ridden.steps.end), JSON.stringify(ridden.steps));
+  let trip = await tripOf(lucky, ridden.tripId);
+  check('promo: free trip stored as free + cash (no Paymob)', trip?.isFreeRide === true && trip?.paymentMethod === 'Cash' && trip?.riderPrice === 0, JSON.stringify(trip));
+  const intent = await http('POST', 'Payment/createIntent', { token: lucky.token, body: { userId: lucky.id, tripId: ridden.tripId, price: 10, currency: 'EGP' } });
   check('promo: no Paymob intention for a free trip', intent.status >= 400, intent.text);
 
   await sleep(500);
-  const entries = (await ledger(cap)).filter((e) => e.tripId === tripId);
-  const e = entries[entries.length - 1];
-  const fare = e?.tripFare ?? 0;
-  const commission = Math.round(fare * 0.15);
-  check('promo: captain credited his share by the company', e?.type === 'TripFreeRideEarning' && e?.amount === fare - commission, JSON.stringify(entries));
+  let e = await lastEntry(ridden.tripId);
+  let fare = e?.tripFare ?? 0;
+  let commission = Math.round(fare * 0.15);
+  check('promo: captain credited his share by the company', e?.type === 'TripFreeRideEarning' && e?.amount === fare - commission, JSON.stringify(e));
   check('commission is whole pounds', Number.isInteger(e?.commissionAmount) && Number.isInteger(e?.amount), JSON.stringify(e));
-  check('promo: captain balance is positive (company owes him)', (await balance(cap)) === fare - commission, String(await balance(cap)));
+  let bal = await balance(cap);
+  check('promo: captain balance is positive (company owes him)', bal === fare - commission, String(bal));
 
   st = await status(lucky);
   check('promo: free ride used up', st?.used === 1 && st?.remaining === 0, JSON.stringify(st));
   q = await quote(lucky);
-  check('promo: next quote is paid', q?.isFreeRide === false, JSON.stringify(q));
-  s = body(await http('GET', 'FreeRides/admin/settings', { token: A }));
-  check('promo: admin stats count the ride and its cost', s?.freeRidesCompleted >= 1 && s?.companyCost >= fare - commission, JSON.stringify(s));
-  await http('PUT', 'FreeRides/admin/settings', { token: A, body: { enabled: false, perRider: 2, riderLimit: 100 } });
+  check('promo: next quote is paid', q?.isFreeRide === false && q?.discount === 0, JSON.stringify(q));
+  let row = (await all()).find((p) => p.id === free.id);
+  check('promo: admin stats count the ride and its cost', row?.ridesCompleted === 1 && row?.grantedRiders === 1 && row?.companyCost === fare, JSON.stringify(row));
+  r = await setActive(free.id, false);
+  check('promo: admin stops the offer', r.status === 200 && body(r)?.isActive === false, r.text);
+  r = await http('DELETE', `Promotions/admin/${free.id}`, { token: A });
+  check('promo: an offer used in trips cannot be deleted', r.status === 400, r.text);
+
+  // --- percentage off for every rider, capped, cash ---
+  r = await create({ title: 'خصم 50%', type: 2, value: 50, maxDiscount: 4, audience: 2, ridesPerRider: 1, isActive: true });
+  const pct = body(r);
+  check('promo: admin creates 50% off (max 4) for all riders', r.status === 201, r.text);
+  q = await quote(late);
+  const expected = Math.min(Math.round(q.price * 0.5), 4);
+  check('promo: quote shows the capped discount', q?.discount === expected && q?.riderPrice === q.price - expected && q?.promotionTitle === 'خصم 50%' && q?.isFreeRide === false, JSON.stringify(q));
+  const before = await balance(cap);
+  ridden = await ride(late, cap, { km: 3, method: 'Cash' });
+  check('promo: discounted cash trip completed', ok(ridden.steps.end), JSON.stringify(ridden.steps));
+  trip = await tripOf(late, ridden.tripId);
+  check('promo: trip keeps the fare, discount and rider price', trip?.discountAmount === expected && trip?.riderPrice === trip?.price - expected, JSON.stringify(trip));
+  const conf = await (async () => { const d = await hub('tripHub', cap.token); const x = await d.invoke('ConfirmCashPayment', ridden.tripId); await d.stop(); return x; })();
+  check('promo: captain confirms the (discounted) cash', ok(conf), JSON.stringify(conf));
+  await sleep(500);
+  e = await lastEntry(ridden.tripId);
+  fare = e?.tripFare ?? 0;
+  commission = Math.round(fare * 0.15);
+  check('promo: cash discount posted as discount - commission', e?.type === 'TripCashDiscount' && e?.amount === expected - commission, JSON.stringify(e));
+  bal = await balance(cap);
+  check('promo: captain balance moved by discount - commission', bal === before + expected - commission, `${before} -> ${bal}`);
+  q = await quote(late);
+  check('promo: all-riders offer used up after its one ride', q?.discount === 0, JSON.stringify(q));
+  await setActive(pct.id, false);
+
+  // --- promo code, fixed amount, limited to one rider ---
+  r = await create({ title: 'كود 3 جنيه', type: 3, value: 3, audience: 3, code: 'vgo-e2e', ridesPerRider: 2, riderLimit: 1, isActive: true });
+  const code = body(r);
+  check('promo: code offer created, code upper-cased', r.status === 201 && code?.code === 'VGO-E2E', r.text);
+  r = await create({ title: 'نفس الكود', type: 3, value: 3, audience: 3, code: 'VGO-E2E', ridesPerRider: 1, isActive: false });
+  check('promo: duplicate code rejected', r.status === 400, r.text);
+  q = await quote(late);
+  check('promo: code offer not applied before redeeming', q?.discount === 0, JSON.stringify(q));
+  r = await http('POST', 'Promotions/redeem', { token: late.token, body: { code: 'nope' } });
+  check('promo: wrong code -> 404', r.status === 404, r.text);
+  r = await http('POST', 'Promotions/redeem', { token: late.token, body: { code: ' vgo-e2e ' } });
+  check('promo: rider redeems the code', r.status === 200 && r.json?.promotion?.ridesLeft === 2, r.text);
+  r = await http('POST', 'Promotions/redeem', { token: late.token, body: { code: 'VGO-E2E' } });
+  check('promo: redeeming twice is harmless', r.status === 200, r.text);
+  const other = await registerClient('Rider Other');
+  r = await http('POST', 'Promotions/redeem', { token: other.token, body: { code: 'VGO-E2E' } });
+  check('promo: code limited to one rider', r.status === 400, r.text);
+  let m = await mine(late);
+  check('promo: rider sees the offer in the list', m.length === 1 && m[0].id === code.id && m[0].ridesLeft === 2, JSON.stringify(m));
+  q = await quote(late);
+  check('promo: quote takes 3 pounds off', q?.discount === 3 && q?.riderPrice === q.price - 3, JSON.stringify(q));
+
+  // Cancel gives the ride back, and the hub reports success.
+  const c = await hub('tripHub', late.token);
+  const req = await c.invoke('RequestTrip', { startLat: 30.05, startLng: 31.24, endLat: 30.07, endLng: 31.26, startAddress: 'A', endAddress: 'B', distance: 3, userId: late.id, paymentMethod: 'Cash' });
+  const reqData = req?.data ?? req?.Data;
+  const pendingId = reqData?.id ?? reqData?.Id;
+  check('promo: requested trip carries the discount', (reqData?.discountAmount ?? reqData?.DiscountAmount) === 3, JSON.stringify(req));
+  m = await mine(late);
+  check('promo: a pending trip holds one ride', m[0]?.ridesLeft === 1, JSON.stringify(m));
+  const other2 = await hub('tripHub', other.token);
+  const refused = await other2.invoke('CancelTripRequest', pendingId, other.id, 'x');
+  await other2.stop();
+  check("promo: cancelling another rider's trip is refused", !ok(refused) && statusCode(refused) === 403, JSON.stringify(refused));
+  const cancel = await c.invoke('CancelTripRequest', pendingId, late.id, 'test');
+  check('promo: rider cancel succeeds', ok(cancel), JSON.stringify(cancel));
+  await c.stop();
+  m = await mine(late);
+  check('promo: cancelled trip gives the ride back', m[0]?.ridesLeft === 2, JSON.stringify(m));
+
+  ridden = await ride(late, cap, { km: 3, method: 'Visa' });
+  trip = await tripOf(late, ridden.tripId);
+  check('promo: visa trip with the code: rider price = fare - 3', trip?.discountAmount === 3 && trip?.riderPrice === trip?.price - 3, JSON.stringify(trip));
+
+  // --- reports ---
+  const today = new Date().toISOString().slice(0, 10);
+  const counts = body(await http('GET', `Trip/admin/counts?from=${today}&to=${today}`, { token: A }));
+  check('reports: trip counts include offer trips', counts?.withOffer >= 3, JSON.stringify(counts));
+  const daily = body(await http('GET', `DriverFinance/admin/revenue/daily?from=${today}&to=${today}`, { token: A }));
+  check('reports: daily revenue shows the discounts', daily?.totals?.discounts >= expected + 3, JSON.stringify(daily?.totals));
+
+  r = await create({ title: 'تجربة حذف', type: 3, value: 1, audience: 2, ridesPerRider: 1, isActive: false });
+  r = await http('DELETE', `Promotions/admin/${body(r)?.id}`, { token: A });
+  check('promo: an unused offer can be deleted', r.status === 200, r.text);
+  for (const p of await all()) if (p.isActive) await setActive(p.id, false);
 }
 
 try {
@@ -953,7 +1056,7 @@ try {
   else if (PHASE === 'overdue') await overdue();
   else if (PHASE === 'banners') await banners();
   else if (PHASE === 'collection') await collection();
-  else if (PHASE === 'freerides') await freeRides();
+  else if (PHASE === 'promotions') await promotions();
 } catch (e) {
   failed++;
   results.push(`FAIL  crashed: ${e.stack ?? e}`);

@@ -13,6 +13,7 @@ class TripModel {
   final DateTime? createdAt;
   final String paymentMethod;
   final bool isFreeRide;
+  final double discountAmount;
 
   TripModel({
     required this.tripId,
@@ -28,6 +29,7 @@ class TripModel {
     this.createdAt,
     this.paymentMethod = 'Cash',
     this.isFreeRide = false,
+    this.discountAmount = 0,
   });
 
   bool get isCompleted => status == 'Completed';
@@ -57,6 +59,7 @@ class TripModel {
       createdAt: DateTime.tryParse(j['createdAt']?.toString() ?? ''),
       paymentMethod: j['paymentMethod']?.toString() ?? 'Cash',
       isFreeRide: _bool(j['isFreeRide'] ?? j['IsFreeRide']),
+      discountAmount: d(j['discountAmount'] ?? j['DiscountAmount']),
     );
   }
 

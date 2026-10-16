@@ -420,7 +420,7 @@ class RealTimeTripCubit extends Cubit<RealTimeTripState>
           // recovered pending ride cancels with an empty id → 404 → stuck).
           tripId: currentTrip.tripId,
           tripStatus: currentTrip.tripStatus,
-          tripPrice: currentTrip.isFreeRide ? 0 : currentTrip.price,
+          tripPrice: currentTrip.riderPrice,
           isFreeRide: currentTrip.isFreeRide,
           paymentStatusModel: PaymentStatusModel(
             paymentMessage: '',

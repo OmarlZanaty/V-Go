@@ -200,7 +200,8 @@ namespace Masafet_Elseka.Infrastructure.Services.DriverFinanceService
                 LedgerEntryType? desiredType =
                     trip.IsFreeRide ? LedgerEntryType.TripFreeRideEarning
                     : paidOnline ? LedgerEntryType.TripCardEarning
-                    : (paidCash || (cashTrip && !refused)) ? LedgerEntryType.TripCashCommission
+                    : (paidCash || (cashTrip && !refused))
+                        ? (trip.DiscountAmount > 0 ? LedgerEntryType.TripCashDiscount : LedgerEntryType.TripCashCommission)
                     : null;
 
                 var (before, after) = await InDriverLockAsync(driverId, async () =>
@@ -217,11 +218,15 @@ namespace Masafet_Elseka.Infrastructure.Services.DriverFinanceService
                     var fare = Money(trip.Price);
                     var commission = WholePounds(fare * percent / 100);
                     var share = fare - commission;
+                    // An offer's discount is paid by the company: the captain collected
+                    // less cash, so it is credited back against the commission.
+                    var discount = Money(trip.DiscountAmount);
                     var desiredAmount = desiredType switch
                     {
                         LedgerEntryType.TripCashCommission => -commission,
                         LedgerEntryType.TripCardEarning => share,
                         LedgerEntryType.TripFreeRideEarning => share,
+                        LedgerEntryType.TripCashDiscount => discount - commission,
                         _ => 0m
                     };
 
@@ -262,6 +267,8 @@ namespace Masafet_Elseka.Infrastructure.Services.DriverFinanceService
                                 ? $"عمولة الشركة على رحلة كاش: {fare:0.##} ج.م × {percent:0.##}%"
                                 : desiredType == LedgerEntryType.TripFreeRideEarning
                                     ? $"نصيبك من رحلة مجانية على حساب الشركة: {fare:0.##} ج.م - عمولة {commission:0.##} ج.م"
+                                : desiredType == LedgerEntryType.TripCashDiscount
+                                    ? $"رحلة كاش {fare:0.##} ج.م بخصم {discount:0.##} ج.م على حساب الشركة − عمولة {commission:0.##} ج.م"
                                     : $"نصيبك من رحلة مدفوعة إلكترونياً: {fare:0.##} ج.م − عمولة {commission:0.##} ج.م",
                             CreatedAt = now,
                         });
@@ -576,7 +583,9 @@ namespace Masafet_Elseka.Infrastructure.Services.DriverFinanceService
                 GrossFare = list.Sum(r => r.Fare ?? 0),
                 CompanyCommission = list.Sum(r => r.Commission ?? 0),
                 DriverNet = list.Sum(r => (r.Fare ?? 0) - (r.Commission ?? 0)),
-                CashCollected = list.Where(r => r.Type == LedgerEntryType.TripCashCommission).Sum(r => r.Fare ?? 0),
+                CashCollected = list.Where(r => r.Type == LedgerEntryType.TripCashCommission).Sum(r => r.Fare ?? 0)
+                    // discount - commission = amount, so the cash taken is fare - amount - commission.
+                    + list.Where(r => r.Type == LedgerEntryType.TripCashDiscount).Sum(r => (r.Fare ?? 0) - r.Amount - (r.Commission ?? 0)),
                 OnlineCollected = list.Where(r => r.Type == LedgerEntryType.TripCardEarning).Sum(r => r.Fare ?? 0),
             };
         }

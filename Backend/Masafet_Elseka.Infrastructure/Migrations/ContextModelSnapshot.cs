@@ -817,6 +817,97 @@ namespace Masafet_Elseka.Infrastructure.Migrations
                     b.ToTable("PricingRules", (string)null);
                 });
 
+            modelBuilder.Entity("Masafet_Elseka.Domain.Entities.Promotion", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<int>("Audience")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Code")
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("Description")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<DateTime?>("EndsAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("bit");
+
+                    b.Property<decimal?>("MaxDiscount")
+                        .HasColumnType("decimal(18,2)");
+
+                    b.Property<int?>("RiderLimit")
+                        .HasColumnType("int");
+
+                    b.Property<int>("RidesPerRider")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime?>("StartsAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("Title")
+                        .IsRequired()
+                        .HasMaxLength(120)
+                        .HasColumnType("nvarchar(120)");
+
+                    b.Property<int>("Type")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<decimal>("Value")
+                        .HasColumnType("decimal(18,2)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Code")
+                        .IsUnique()
+                        .HasFilter("[Code] IS NOT NULL");
+
+                    b.ToTable("Promotions");
+                });
+
+            modelBuilder.Entity("Masafet_Elseka.Domain.Entities.PromotionGrant", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<DateTime>("GrantedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int>("PromotionId")
+                        .HasColumnType("int");
+
+                    b.Property<string>("UserId")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(450)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("UserId");
+
+                    b.HasIndex("PromotionId", "UserId")
+                        .IsUnique();
+
+                    b.ToTable("PromotionGrants");
+                });
+
             modelBuilder.Entity("Masafet_Elseka.Domain.Entities.Rate", b =>
                 {
                     b.Property<string>("Id")
@@ -926,6 +1017,9 @@ namespace Masafet_Elseka.Infrastructure.Migrations
                         .HasColumnType("datetime2")
                         .HasDefaultValueSql("GETDATE()");
 
+                    b.Property<decimal>("DiscountAmount")
+                        .HasColumnType("decimal(18,2)");
+
                     b.Property<double>("DistanceInKm")
                         .HasColumnType("float");
 
@@ -951,6 +1045,9 @@ namespace Masafet_Elseka.Infrastructure.Migrations
                     b.Property<decimal>("Price")
                         .HasColumnType("decimal(10,2)");
 
+                    b.Property<int?>("PromotionId")
+                        .HasColumnType("int");
+
                     b.Property<byte[]>("RowVersion")
                         .IsConcurrencyToken()
                         .IsRequired()
@@ -973,6 +1070,8 @@ namespace Masafet_Elseka.Infrastructure.Migrations
                         .HasColumnType("int");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("PromotionId");
 
                     b.ToTable("Trips", (string)null);
                 });
@@ -1480,6 +1579,25 @@ namespace Masafet_Elseka.Infrastructure.Migrations
                     b.Navigation("User");
                 });
 
+            modelBuilder.Entity("Masafet_Elseka.Domain.Entities.PromotionGrant", b =>
+                {
+                    b.HasOne("Masafet_Elseka.Domain.Entities.Promotion", "Promotion")
+                        .WithMany("Grants")
+                        .HasForeignKey("PromotionId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("Masafet_Elseka.Domain.Entities.ApplicationUser", "User")
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Promotion");
+
+                    b.Navigation("User");
+                });
+
             modelBuilder.Entity("Masafet_Elseka.Domain.Entities.Rate", b =>
                 {
                     b.HasOne("Masafet_Elseka.Domain.Entities.ApplicationUser", "FromUser")
@@ -1527,6 +1645,16 @@ namespace Masafet_Elseka.Infrastructure.Migrations
                         .IsRequired();
 
                     b.Navigation("Driver");
+                });
+
+            modelBuilder.Entity("Masafet_Elseka.Domain.Entities.Trip", b =>
+                {
+                    b.HasOne("Masafet_Elseka.Domain.Entities.Promotion", "Promotion")
+                        .WithMany()
+                        .HasForeignKey("PromotionId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.Navigation("Promotion");
                 });
 
             modelBuilder.Entity("Masafet_Elseka.Domain.Entities.UserChat", b =>
@@ -1677,6 +1805,11 @@ namespace Masafet_Elseka.Infrastructure.Migrations
                     b.Navigation("Messages");
 
                     b.Navigation("UserChats");
+                });
+
+            modelBuilder.Entity("Masafet_Elseka.Domain.Entities.Promotion", b =>
+                {
+                    b.Navigation("Grants");
                 });
 
             modelBuilder.Entity("Masafet_Elseka.Domain.Entities.Trip", b =>

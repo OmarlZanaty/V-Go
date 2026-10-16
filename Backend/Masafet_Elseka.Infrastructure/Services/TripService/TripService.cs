@@ -7,7 +7,7 @@ using Masafet_Elseka.Application.DTOs.Trip;
 using Masafet_Elseka.Application.ExternalInterfaces.ICachService;
 using Masafet_Elseka.Application.Helpers;
 using Masafet_Elseka.Application.Interfaces.IDriverService;
-using Masafet_Elseka.Application.Interfaces.IFreeRidesService;
+using Masafet_Elseka.Application.Interfaces.IPromotionService;
 using Masafet_Elseka.Application.Interfaces.IRatingService;
 using Masafet_Elseka.Application.Interfaces.ITripService;
 using Masafet_Elseka.Application.Interfaces.User;
@@ -33,9 +33,9 @@ namespace Masafet_Elseka.Infrastructure.Services.TripService
         private readonly IDriverService _driverService;
         private readonly IHubContext<TripHub> _tripHubContext;
         private readonly IFareService _fareService;
-        private readonly IFreeRidesService _freeRidesService;
+        private readonly IPromotionService _promotionService;
 
-        public TripService(IUnitOfWork unitOfWork, Context context, ICacheService cacheService, IRatingService ratingService, IDriverService driverService, IHubContext<TripHub> tripHubContext, IFareService fareService, IFreeRidesService freeRidesService)
+        public TripService(IUnitOfWork unitOfWork, Context context, ICacheService cacheService, IRatingService ratingService, IDriverService driverService, IHubContext<TripHub> tripHubContext, IFareService fareService, IPromotionService promotionService)
         {
             _unitOfWork = unitOfWork;
             _context = context;
@@ -44,7 +44,7 @@ namespace Masafet_Elseka.Infrastructure.Services.TripService
             _driverService = driverService;
             _tripHubContext = tripHubContext;
             _fareService = fareService;
-            _freeRidesService = freeRidesService;
+            _promotionService = promotionService;
         }
 
         public async Task<Response<TripResponseDTO>> AddTrip(TripRequest request)
@@ -65,7 +65,10 @@ namespace Masafet_Elseka.Infrastructure.Services.TripService
             using var transaction = await _context.Database.BeginTransactionAsync();
             try
             {
-                var isFreeRide = await _freeRidesService.HasFreeRideAvailableAsync(request.UserId);
+                // The best running offer for this rider; the company pays the discount.
+                var offer = await _promotionService.ApplyToNewTripAsync(request.UserId, quote.Price);
+                var discount = offer?.Discount ?? 0m;
+                var isFreeRide = offer != null && discount >= quote.Price;
                 var trip = new Trip
                 {
                     Price = quote.Price,
@@ -79,6 +82,8 @@ namespace Masafet_Elseka.Infrastructure.Services.TripService
                     CreatedAt = DateTime.Now.ToEgyptTime(),
                     Status = TripStatus.Pending,
                     IsFreeRide = isFreeRide,
+                    PromotionId = offer?.PromotionId,
+                    DiscountAmount = discount,
                     PaymentMethod = isFreeRide
                         ? "Cash"
                         : string.Equals(request.PaymentMethod, "Visa", StringComparison.OrdinalIgnoreCase)
@@ -112,7 +117,10 @@ namespace Masafet_Elseka.Infrastructure.Services.TripService
                     CreatedAt = trip.CreatedAt,
                     Status = trip.Status,
                     PaymentMethod = trip.PaymentMethod,
-                    IsFreeRide = trip.IsFreeRide
+                    IsFreeRide = trip.IsFreeRide,
+                    DiscountAmount = trip.DiscountAmount,
+                    RiderPrice = trip.Price - trip.DiscountAmount,
+                    PromotionTitle = offer?.Title
                 };
 
                 return Response<TripResponseDTO>.Success(result, "تم إضافة الرحلة بنجاح", 201);
@@ -266,6 +274,8 @@ namespace Masafet_Elseka.Infrastructure.Services.TripService
                         DistanceKm = trip.DistanceInKm,
                         PaymentMethod = trip.PaymentMethod,
                         IsFreeRide = trip.IsFreeRide,
+                        DiscountAmount = trip.DiscountAmount,
+                        RiderPrice = trip.Price - trip.DiscountAmount,
                     };
                 }).ToList();
 
@@ -348,6 +358,8 @@ namespace Masafet_Elseka.Infrastructure.Services.TripService
                     IsPaid = trip.IsFreeRide || trip.Payment.Any(p => p.Status == PaymentStatus.Paid || p.Status == PaymentStatus.Captured),
                     PaymentMethod = trip.PaymentMethod,
                     IsFreeRide = trip.IsFreeRide,
+                    DiscountAmount = trip.DiscountAmount,
+                    RiderPrice = trip.Price - trip.DiscountAmount,
 
                     UserId = passengerTrip?.User?.Id,
                     UserName = passengerTrip?.User?.FullName,
@@ -443,6 +455,8 @@ namespace Masafet_Elseka.Infrastructure.Services.TripService
                         DistanceKm = trip.DistanceInKm,
                         PaymentMethod = trip.PaymentMethod,
                         IsFreeRide = trip.IsFreeRide,
+                        DiscountAmount = trip.DiscountAmount,
+                        RiderPrice = trip.Price - trip.DiscountAmount,
                     };
                 }).ToList();
                 return Response<List<TripDetailsDTO>>.Success(tripDtos, "تم استرجاع الرحلات الحالية بنجاح", 200);
@@ -483,7 +497,7 @@ namespace Masafet_Elseka.Infrastructure.Services.TripService
                 trip.StartTime = DateTime.Now.ToEgyptTime();
                 await _context.SaveChangesAsync();
                 await transaction.CommitAsync();
-                return Response<TripProgressDTO>.Success(new TripProgressDTO { CLientId= clientId! , DriverId=driverId!, PaymentMethod = trip.PaymentMethod, IsFreeRide = trip.IsFreeRide }, "تم بدء الرحلة بنجاح", 200);
+                return Response<TripProgressDTO>.Success(new TripProgressDTO { CLientId= clientId! , DriverId=driverId!, PaymentMethod = trip.PaymentMethod, IsFreeRide = trip.IsFreeRide, DiscountAmount = trip.DiscountAmount, RiderPrice = trip.Price - trip.DiscountAmount }, "تم بدء الرحلة بنجاح", 200);
             }
             catch (Exception ex)
             {
@@ -522,7 +536,7 @@ namespace Masafet_Elseka.Infrastructure.Services.TripService
                 await _unitOfWork.SaveAsync();
                 await transaction.CommitAsync();
                
-                return Response<TripProgressDTO>.Success(new TripProgressDTO { CLientId = Client.UserId!, DriverId = Driver.UserId!, PaymentMethod = trip.PaymentMethod, IsFreeRide = trip.IsFreeRide }, "تم الوصول الى الرحلة بنجاح", 200);
+                return Response<TripProgressDTO>.Success(new TripProgressDTO { CLientId = Client.UserId!, DriverId = Driver.UserId!, PaymentMethod = trip.PaymentMethod, IsFreeRide = trip.IsFreeRide, DiscountAmount = trip.DiscountAmount, RiderPrice = trip.Price - trip.DiscountAmount }, "تم الوصول الى الرحلة بنجاح", 200);
 
             }
             catch (Exception ex)
@@ -576,7 +590,7 @@ namespace Masafet_Elseka.Infrastructure.Services.TripService
                 });
                 await _context.SaveChangesAsync();
                 await transaction.CommitAsync();
-                return Response<TripProgressDTO>.Success(new TripProgressDTO { CLientId = clientId!, DriverId = driver.Id!, PaymentMethod = trip.PaymentMethod, IsFreeRide = trip.IsFreeRide }, "تم إنهاء الرحلة بنجاح", 200);
+                return Response<TripProgressDTO>.Success(new TripProgressDTO { CLientId = clientId!, DriverId = driver.Id!, PaymentMethod = trip.PaymentMethod, IsFreeRide = trip.IsFreeRide, DiscountAmount = trip.DiscountAmount, RiderPrice = trip.Price - trip.DiscountAmount }, "تم إنهاء الرحلة بنجاح", 200);
             }
             catch (Exception ex)
             {
@@ -620,6 +634,8 @@ namespace Masafet_Elseka.Infrastructure.Services.TripService
                         DistanceKm = trip.DistanceInKm,
                         PaymentMethod = trip.PaymentMethod,
                         IsFreeRide = trip.IsFreeRide,
+                        DiscountAmount = trip.DiscountAmount,
+                        RiderPrice = trip.Price - trip.DiscountAmount,
                         DriverRating= driverTrip != null ? rates.GetValueOrDefault(driverTrip.UserId) : 0,
                         Userrating= passengerTrip != null ? rates.GetValueOrDefault(passengerTrip.UserId) : 0,
                     };
@@ -672,6 +688,8 @@ namespace Masafet_Elseka.Infrastructure.Services.TripService
                     DistanceKm = trip.DistanceInKm,
                     PaymentMethod = trip.PaymentMethod,
                     IsFreeRide = trip.IsFreeRide,
+                    DiscountAmount = trip.DiscountAmount,
+                    RiderPrice = trip.Price - trip.DiscountAmount,
                     Ratings = await _ratingService.GetCurrentUserTripRates()
                 };
                 return Response<TripDetailsDTO>.Success(tripDto, "تم استرجاع الرحلة بنجاح", 200);
@@ -785,6 +803,8 @@ namespace Masafet_Elseka.Infrastructure.Services.TripService
                         DistanceKm = trip.DistanceInKm,
                         PaymentMethod = trip.PaymentMethod,
                         IsFreeRide = trip.IsFreeRide,
+                        DiscountAmount = trip.DiscountAmount,
+                        RiderPrice = trip.Price - trip.DiscountAmount,
                         // Was never set → every trip showed "awaiting payment" in
                         // the captain's earnings regardless of actual status.
                         IsPaid = trip.IsFreeRide || trip.Payment.Any(p => p.Status == PaymentStatus.Paid || p.Status == PaymentStatus.Captured),
@@ -941,6 +961,8 @@ namespace Masafet_Elseka.Infrastructure.Services.TripService
                         DistanceKm = trip.DistanceInKm,
                         PaymentMethod = trip.PaymentMethod,
                         IsFreeRide = trip.IsFreeRide,
+                        DiscountAmount = trip.DiscountAmount,
+                        RiderPrice = trip.Price - trip.DiscountAmount,
                     };
                 }).ToList();
 

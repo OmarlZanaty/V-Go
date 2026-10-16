@@ -64,6 +64,11 @@ namespace Masafet_Elseka.Infrastructure.Services.PaymentService
                     return Response<PaymobIntentResponseDTO>.Failure("هذه الرحلة مجانية ولا تحتاج إلى دفع", 400);
                 }
 
+                // The server's price wins over the app's: the fare minus any offer discount.
+                var riderPrice = await _context.Trips.Where(t => t.Id == request.TripId)
+                    .Select(t => (decimal?)(t.Price - t.DiscountAmount)).FirstOrDefaultAsync();
+                if (riderPrice != null) request.Price = riderPrice.Value;
+
                 if(_context.Payments.Any(p=>p.TripId==request.TripId && p.Status==PaymentStatus.Paid))
                 {
                     return Response<PaymobIntentResponseDTO>.Failure("تم دفع هذه الرحلة مسبقاً", 400);
@@ -221,6 +226,11 @@ namespace Masafet_Elseka.Infrastructure.Services.PaymentService
                 {
                     return Response<PaymobIntentResponseDTO>.Failure("هذه الرحلة مجانية ولا تحتاج إلى دفع", 400);
                 }
+
+                // The server's price wins over the app's: the fare minus any offer discount.
+                var riderPrice = await _context.Trips.Where(t => t.Id == request.TripId)
+                    .Select(t => (decimal?)(t.Price - t.DiscountAmount)).FirstOrDefaultAsync();
+                if (riderPrice != null) request.Price = riderPrice.Value;
 
                 if (_context.Payments.Any(p => p.TripId == request.TripId &&
                         (p.Status == PaymentStatus.Paid || p.Status == PaymentStatus.Captured ||
@@ -1158,7 +1168,7 @@ namespace Masafet_Elseka.Infrastructure.Services.PaymentService
                 }
                 var payment = new Payment
                 {
-                    Amount = trip.Price,
+                    Amount = trip.Price - trip.DiscountAmount,
                     Currency = "EGP",
                     Method = "Cash",
                     Status = PaymentStatus.Paid,
@@ -1212,7 +1222,7 @@ namespace Masafet_Elseka.Infrastructure.Services.PaymentService
                 }
                 var payment = new Payment
                 {
-                    Amount = trip.Price,
+                    Amount = trip.Price - trip.DiscountAmount,
                     Currency = "EGP",
                     Method = "Cash",
                     Status = PaymentStatus.Paid,
@@ -1273,7 +1283,7 @@ namespace Masafet_Elseka.Infrastructure.Services.PaymentService
                 {
                     _context.Payments.Add(new Payment
                     {
-                        Amount = trip.Price,
+                        Amount = trip.Price - trip.DiscountAmount,
                         Currency = "EGP",
                         Method = trip.PaymentMethod,
                         Status = PaymentStatus.Failed,

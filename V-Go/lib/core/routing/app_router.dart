@@ -61,6 +61,7 @@ import '../utils/model/dispatcher_chat_model.dart';
 import '../utils/model/user_model.dart';
 import '../utils/widgets/custom_payment_web_view.dart';
 import '../../features/client/presentation/views/saved_cards_view.dart';
+import '../../features/client/presentation/views/promotions_view.dart';
 import 'routes.dart';
 
 class AppRouter {
@@ -381,6 +382,8 @@ class AppRouter {
         );
       case Routes.savedCardsViewRoute:
         return MaterialPageRoute(builder: (_) => const SavedCardsView());
+      case Routes.promotionsViewRoute:
+        return MaterialPageRoute(builder: (_) => const PromotionsView());
       case Routes.expenseViewRoute:
         return MaterialPageRoute(
           builder: (_) => BlocProvider(
