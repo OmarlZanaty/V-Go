@@ -77,15 +77,20 @@
     cancelGIS(); clearHandoff();
   }
   function resetForm() {
-    stopWork(); state.phase = 'form'; state.synced = false; state.statusKey = ''; state.errorKey = ''; state.rejectedEmail = '';
+    stopWork(); state.phase = 'form'; state.synced = false; state.pickerPrompted = false; state.statusKey = ''; state.errorKey = ''; state.rejectedEmail = '';
     ['actProgress','actErr','actSpin','actPickSpin','actPickerStage','actOpenPlay','actSwitch','actDelayedWa','actRetry'].forEach(function (id) { hide(id, true); });
     hide('actFormStage', false); hide('actWarn', false); hide('actProgSpin', false);
     $('actGo').disabled = false; $('actStatus').textContent = '';
   }
   function manual() {
     if (state.phase !== 'form') return;
-    cancelGIS(); clearTimeout(state.fallback); clearInterval(state.gisWait);
-    hide('actPickerStage', true); hide('actFormStage', false); $('actEmail').focus();
+    // Reveal the typed field but leave Google's account chooser running: on
+    // Chrome/Edge it is a native FedCM sheet that can take longer than the
+    // fallback delay, and cancelling it here meant visitors never saw it.
+    clearTimeout(state.fallback); clearInterval(state.gisWait);
+    hide('actPickerStage', true); hide('actFormStage', false);
+    // A focused field pops the phone keyboard over the account chooser.
+    if (!state.pickerPrompted) $('actEmail').focus();
   }
   function webview() { return /FBAN|FBAV|FB_IAB|Instagram|Line\/|Twitter|WhatsApp|; wv\)/i.test(navigator.userAgent || ''); }
   function gisReady() { return !!(window.google && window.google.accounts && window.google.accounts.id); }
@@ -95,13 +100,15 @@
     try {
       window.google.accounts.id.initialize({
         client_id: CONFIG.GOOGLE_CLIENT_ID, auto_select: true, cancel_on_tap_outside: false,
+        use_fedcm_for_prompt: true,
         callback: function (response) {
           if (generation !== state.generation || state.phase !== 'form' || !response.credential) return;
           enrollAll(null, response.credential);
         }
       });
       // No renderButton: the fallback must never navigate to Google's sign-in page.
-      window.google.accounts.id.prompt(function () {});
+      window.google.accounts.id.prompt();
+      state.pickerPrompted = true;
       return true;
     } catch (_) { return false; }
   }
