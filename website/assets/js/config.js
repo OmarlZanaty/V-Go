@@ -2,7 +2,7 @@
 window.VGO_CONFIG = Object.freeze({
   API_BASE: '', // Same origin: https://vgo-eg.com
   PACKAGE: 'com.scooterapp.vgo.v_go_captain',
-  GOOGLE_CLIENT_ID: '792221536894-qlpar24br7eecn3fkhn4b5jdttjjiqn2.apps.googleusercontent.com',
+  GOOGLE_CLIENT_ID: '792221536894-fmupld3v24c6q6d3pv029kk4nhv0lb78.apps.googleusercontent.com',
   SOURCE: 'site-captain',
   // Internal-testing join page. Clear it once the closed track is live: closed
   // email-list testers install straight from the store listing.

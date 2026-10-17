@@ -21,7 +21,7 @@ Edit index.html, privacy.html, delete-account.html and assets/js/i18n.js directl
 | --- | --- |
 | API_BASE | '' (same origin) |
 | PACKAGE | com.scooterapp.vgo.v_go_captain |
-| GOOGLE_CLIENT_ID | 792221536894-qlpar24br7eecn3fkhn4b5jdttjjiqn2.apps.googleusercontent.com |
+| GOOGLE_CLIENT_ID | 792221536894-fmupld3v24c6q6d3pv029kk4nhv0lb78.apps.googleusercontent.com |
 | SOURCE | site-captain |
 | WHATSAPP | '' — TODO: V.Go support WhatsApp |
 | CONTACT_EMAIL | '' — TODO: V.Go privacy contact email |
