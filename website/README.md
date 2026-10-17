@@ -1,12 +1,19 @@
-# V.Go Captain marketing website
+# V.Go rider and captain website
 
 Static Arabic-first pages with an English toggle. No build step. Runtime external resources are Google Fonts and Google Identity Services only.
 
 ## Serving
 
-Caddy serves this directory as the static root of https://vgo-eg.com. Route /api/* to the backend and /downloads/* to release storage before the static file handler. The website calls POST /api/beta/enroll and GET /api/beta/enroll/status on the same origin. The APK URL is /downloads/vgo-captain.apk; the binary is not bundled here. Do not return index.html for missing API or download paths.
+Caddy serves this directory as the static root of https://vgo-eg.com. Route /api/* to the backend and /downloads/* to release storage before the static file handler. Captain activation calls POST /api/beta/enroll and GET /api/beta/enroll/status on the same origin. APK URLs are /downloads/vgo-client.apk and /downloads/vgo-captain.apk; the binaries are not bundled here. Do not return index.html for missing API or download paths.
 
-App Store: https://apps.apple.com/app/id6820956040. Every Play download button has class js-play-activate and data-app="captain".
+| App | Google Play | App Store | APK |
+| --- | --- | --- | --- |
+| V.Go (rider) | https://play.google.com/store/apps/details?id=com.scooterapp.vgo | https://apps.apple.com/app/id6820955516 | /downloads/vgo-client.apk |
+| V.Go Captain | Activation modal, package com.scooterapp.vgo.v_go_captain | https://apps.apple.com/app/id6820956040 | /downloads/vgo-captain.apk |
+
+Rider Play links are plain anchors with no activation handler. Captain Play buttons keep class js-play-activate and data-app="captain". CONFIG continues to apply only to captain activation. Both apps have download cards in the hero and final section; all direct store and APK links work without JavaScript.
+
+Edit index.html, privacy.html, delete-account.html and assets/js/i18n.js directly. The old _author.py generator predates hand edits and is not the source of truth. No build step is needed.
 
 ## Public CONFIG (assets/js/config.js)
 
@@ -48,14 +55,20 @@ Token enrollment must return the resolved email; the server must verify the toke
 
 ## Source-grounded content
 
-Read: Captain auth, home, trips, navigation, finance, collection, notifications, profile, verification, shell and pubspec. There is no separate earnings implementation in this checkout; earnings are part of Finance. No fixed income, immediate approval, instant payout or coverage claims are made. The phone UI is HTML/CSS and labeled illustrative.
+Captain copy is based on auth, home, trips, navigation, finance, collection, notifications, profile, verification, shell and pubspec. Earnings are part of Finance. No fixed income, immediate approval, instant payout or coverage claims are made.
 
-App palette: #DCE01E, #030407, restrained #FE7600. The real black-on-yellow icon comes from the Captain iOS asset catalog. design/branding/logo-mark.svg is AL MOBARMG's developer mark, so it is not used for V.Go identity.
+Rider copy is based on V-Go/lib/features/client, map, trips, auth, onboarding and settings, plus V-Go/pubspec.yaml. Destination search/map pins, fare quotes, live captain position/ETA and trip history are present in the app. docs/PROMOTIONS_API.md documents free rides, percentage/amount discounts and promo codes; availability is qualified by offer terms and account eligibility. Backend/Masafet_Elseka.Infrastructure/Services/PaymentService/PaymentService.cs configures Paymob card and wallet methods; the site qualifies those by checkout availability.
+
+App palette: #DCE01E, #030407, restrained #FE7600. The captain icon comes from the Captain iOS asset catalog; rider-icon.png comes from V-Go/assets/images/icon.png, matching the rider launcher mark. design/branding/logo-mark.svg is AL MOBARMG's developer mark, so it is not used for V.Go identity.
 
 See ARTWORK.md for generated image prompts and provenance. Each WebP targets less than 300 KB. OG includes a 1200 × 630 JPEG. Below-the-fold images have lazy loading, dimensions and bilingual alt text.
 
 ## Verification
 
 JavaScript syntax: node --check assets/js/*.js (run per file). Development-only browser checks live in qa/check.cjs; use an existing puppeteer-core installation through PUPPETEER_MODULE and an existing Chrome through CHROME_PATH. These checks mock enrollment; they never send real signup requests. qa/results.json records the result.
+
+Additional checks: `python qa/check-static.py http://127.0.0.1:4191` validates local HTTP assets, image decoding and aspect ratios, translations, download links, and preservation of the committed activation code. It requires Pillow. `node qa/check-i18n.cjs` exercises the actual language runtime against the elements declared by all three pages, including unavailable localStorage and pages without OG metadata. Neither replaces browser layout checks.
+
+For the rider update, static checks and language runtime checks passed against the local server. Browser verification could not run in this workspace: Puppeteer reported `spawn EPERM`, and automatic approval review rejected a headless Chrome launch as `blocked by policy`. The extended browser checks are ready, but 360px overflow, rendered language appearance, browser console output and modal interactions remain unverified for this update.
 
 Live GIS origin configuration, backend/daemon enrollment and Android intent handoff still need an end-to-end check on the production origin and a real Android device. No commit, push or deployment is part of this task.
