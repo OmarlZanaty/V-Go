@@ -12,6 +12,7 @@
       working: 'جارِ تفعيل التحميل لحسابك…',
       propagating: 'تم تأكيد التفعيل — بنجهّز التحميل على Google Play…',
       ready: 'التحميل جاهز. اضغط الزر لفتح Google Play.',
+      readyOptin: 'التحميل جاهز. اضغط الزر، وفي صفحة Google Play اضغط «قبول الدعوة» ثم «التنزيل من Google Play».',
       delayed: 'التفعيل متأخر حاليًا. تقدر ترجع وتحاول بعد شوية، أو تستخدم رابط APK المباشر في الصفحة.',
       holdlong: 'التفعيل بياخد وقت أطول من المعتاد. جرّب التفعيل تاني بعد شوية، أو استخدم رابط APK في الصفحة.',
       support: 'تقدر تتواصل معانا على واتساب للمساعدة.',
@@ -27,6 +28,7 @@
       working: 'Activating the download for your account…',
       propagating: 'Activation confirmed — preparing your Google Play download…',
       ready: 'Your download is ready. Tap below to open Google Play.',
+      readyOptin: 'Your download is ready. Tap below, then on the Google Play page tap “Accept invite” and “Download it on Google Play”.',
       delayed: 'Activation is delayed right now. You can return and retry later, or use the direct APK link on the page.',
       holdlong: 'Activation is taking longer than usual. Please retry later, or use the APK link on the page.',
       support: 'You can contact us on WhatsApp for help.',
@@ -173,8 +175,10 @@
   }
   function ready() {
     stopWork(); state.phase = 'ready'; hide('actProgSpin', true); hide('actWarn', true);
-    hide('actDelayedWa', true); hide('actRetry', true); status('ready');
-    $('actOpenPlay').href = storeUrl(); hide('actOpenPlay', false); hide('actSwitch', false);
+    hide('actDelayedWa', true); hide('actRetry', true); status(CONFIG.TEST_OPTIN_URL ? 'readyOptin' : 'ready');
+    // While the app is on internal testing, Play hides its listing until the
+    // tester accepts the test invite, so the button opens the join page.
+    $('actOpenPlay').href = CONFIG.TEST_OPTIN_URL || storeUrl(); hide('actOpenPlay', false); hide('actSwitch', false);
     // Never launch on a timer, on Android OR desktop. A fresh user tap owns handoff.
   }
   function showDelayed() { status('delayed'); hide('actWarn', true); support(); }
@@ -252,6 +256,7 @@
   function storeUrl() { return 'https://play.google.com/store/apps/details?id=' + CONFIG.PACKAGE; }
   function openStore(event) {
     if (!/Android/i.test(navigator.userAgent || '')) return; // Desktop link remains a user-initiated normal URL.
+    if (CONFIG.TEST_OPTIN_URL) return; // The join page is a normal https link; Play opens from there.
     event.preventDefault(); clearHandoff();
     var handedOff = false;
     state.handoffListener = function () { if (document.hidden) handedOff = true; };
