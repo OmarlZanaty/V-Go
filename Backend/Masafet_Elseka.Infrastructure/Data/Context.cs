@@ -152,6 +152,8 @@ namespace Masafet_Elseka.Infrastructure.Data
         public DbSet<CollectionCycle> CollectionCycles { get; set; }
         public DbSet<Promotion> Promotions { get; set; }
         public DbSet<PromotionGrant> PromotionGrants { get; set; }
+        public DbSet<BetaTester> BetaTesters { get; set; }
+        public DbSet<AppSetting> AppSettings { get; set; }
 
     }
 }

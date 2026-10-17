@@ -1,5 +1,7 @@
 ﻿#region Usings
 using FirebaseAdmin;
+using Masafet_Elseka.Application.Interfaces.IBetaService;
+using Masafet_Elseka.Infrastructure.Services.BetaService;
 using FluentValidation;
 using Google.Apis.Auth.OAuth2;
 using Hangfire;
@@ -110,6 +112,11 @@ builder.Services.AddEndpointsApiExplorer();
 builder.Services.ConfigureSwagger();
 builder.Services.AddDistributedMemoryCache();
 builder.Services.AddValidatorsFromAssemblyContaining<ScooterValidator>();
+builder.Services.AddSingleton(BetaOptions.FromEnvironment());
+builder.Services.AddSingleton(TimeProvider.System);
+builder.Services.AddScoped<IBetaGoogleTokenVerifier, BetaGoogleTokenVerifier>();
+builder.Services.AddScoped<IBetaService, BetaService>();
+builder.Services.AddScoped<BetaSyncWatchdog>();
 
 #endregion
 
@@ -347,6 +354,16 @@ builder.Services.AddRateLimiter(options =>
 {
     options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
 
+    options.AddPolicy("beta-enroll", httpContext =>
+        RateLimitPartition.GetFixedWindowLimiter(
+            partitionKey: httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+            factory: _ => new FixedWindowRateLimiterOptions
+            {
+                PermitLimit = 10,
+                Window = TimeSpan.FromMinutes(1),
+                QueueLimit = 0
+            }));
+
     // Limiter for auth/OTP endpoints: 20 requests / minute per client IP.
     // The phone+password flow makes ~2 calls per login (phone-exists + sign-in),
     // so 20/min still blocks brute-forcing while not locking out normal use.
@@ -385,6 +402,8 @@ builder.Services.AddCors(options =>
         {
             "https://vgo-eg.com",
             "https://www.vgo-eg.com",
+            // Admin dashboard moved here when vgo-eg.com became the captain website.
+            "https://admin.vgo-eg.com",
             "https://v-go-two.vercel.app",
             "https://vgo-admin-792221536894.europe-west1.run.app",
             // Admin dashboard on the Hetzner box (sslip name works before DNS).
@@ -523,6 +542,9 @@ app.MapHub<TripChatHub>("/tripChatHub");
 app.MapHub<RatingHub>("/ratingHub");
 
 app.MapControllers();
+
+app.Services.GetRequiredService<IRecurringJobManager>().AddOrUpdate<BetaSyncWatchdog>(
+    "beta-sync-watchdog", job => job.CheckAsync(CancellationToken.None), Cron.Minutely());
 
 // Public pages linked from the App Store listings (wwwroot/*.html).
 foreach (var page in new[] { "privacy", "support" })
