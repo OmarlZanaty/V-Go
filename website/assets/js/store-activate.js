@@ -1,162 +1,132 @@
-/* V.Go Captain: port of Cairo Shuttle Bus's account picker → enroll → poll →
- * propagation → user-tapped Play Store handoff. See README for preserved rules.
- * Wall-clock deadlines also bound enrollment requests, background tabs and retries.
- */
+/* Captain: Google account -> explicit confirmation -> enroll -> sync -> closed-test opt-in. */
 (function () {
   'use strict';
   var CONFIG = window.VGO_CONFIG;
   var $ = function (id) { return document.getElementById(id); };
   if (!$('actOverlay')) return;
-  var STR = {
-    ar: {
-      working: 'جارِ تفعيل التحميل لحسابك…',
-      propagating: 'تم تأكيد التفعيل — بنجهّز التحميل على Google Play…',
-      ready: 'التحميل جاهز. اضغط الزر لفتح Google Play.',
-      readyOptin: 'التحميل جاهز. اضغط الزر، وفي صفحة Google Play اضغط «قبول الدعوة» ثم «التنزيل من Google Play».',
-      delayed: 'التفعيل متأخر حاليًا. تقدر ترجع وتحاول بعد شوية، أو تستخدم رابط APK المباشر في الصفحة.',
-      holdlong: 'التفعيل بياخد وقت أطول من المعتاد. جرّب التفعيل تاني بعد شوية، أو استخدم رابط APK في الصفحة.',
-      support: 'تقدر تتواصل معانا على واتساب للمساعدة.',
-      rejected: 'العنوان ده مش مقبول كحساب Google. صحّحه أو احذفه، واستخدم حساب المتجر على هاتفك:',
-      badEmail: 'اكتب بريدًا إلكترونيًا صحيحًا للحساب الأساسي ولكل حساب إضافي.',
-      network: 'تعذّر إكمال الاتصال. تأكد من الإنترنت وجرّب تاني.',
-      missingEmail: 'تعذّر معرفة بريد الحساب. اكتبه يدويًا لإكمال التفعيل.',
-      extra: 'بريد حساب Google إضافي',
-      remove: 'حذف الحساب الإضافي',
-      handoff: 'لو المتجر ما اتفتحش، اضغط فتح Google Play مرة تانية. من المتصفح الداخلي، جرّب فتح الموقع في متصفح هاتفك.'
-    },
-    en: {
-      working: 'Activating the download for your account…',
-      propagating: 'Activation confirmed — preparing your Google Play download…',
-      ready: 'Your download is ready. Tap below to open Google Play.',
-      readyOptin: 'Your download is ready. Tap below, then on the Google Play page tap “Accept invite” and “Download it on Google Play”.',
-      delayed: 'Activation is delayed right now. You can return and retry later, or use the direct APK link on the page.',
-      holdlong: 'Activation is taking longer than usual. Please retry later, or use the APK link on the page.',
-      support: 'You can contact us on WhatsApp for help.',
-      rejected: 'This address was not accepted as a Google account. Correct or remove it and use your phone’s Play Store account:',
-      badEmail: 'Enter a valid email for the main account and every extra account.',
-      network: 'Could not complete the connection. Check your internet and try again.',
-      missingEmail: 'We could not identify the account email. Please enter it manually to continue.',
-      extra: 'Additional Google account email',
-      remove: 'Remove extra account',
-      handoff: 'If the store did not open, tap Open Google Play again. In an in-app browser, try opening this site in your phone’s browser.'
-    }
-  };
-  function t(key) { return STR[document.documentElement.lang === 'en' ? 'en' : 'ar'][key] || key; }
-  var state = {
-    generation: 0, phase: 'closed', emails: [], synced: false,
-    deadline: 0, holdDeadline: 0, manualDeadline: 0, statusKey: '', errorKey: '', rejectedEmail: '',
-    tick: null, poll: null, fallback: null, gisWait: null, controllers: [],
-    opener: null, handoffTimers: [], handoffListener: null, inertElements: []
-  };
+  function t(key) { return window.VGO_I18N.t('am.' + key); }
   function hide(id, value) { $(id).hidden = value; }
+  var state = {
+    generation: 0, phase: 'closed', email: '', idToken: '', synced: false,
+    deadline: 0, holdDeadline: 0, pickerDeadline: 0, statusKey: '', errorKey: '',
+    tick: null, poll: null, controllers: [], opener: null, inertElements: [],
+    timings: null, timingLogged: false, pickerAttempt: 0
+  };
+  var gisInitialized = false, gisLoading = null;
+  function mark(key) { if (state.timings) state.timings[key] = performance.now(); }
   function status(key) {
     state.statusKey = key;
     $('actStatus').textContent = t(key) + ((key === 'delayed' || key === 'holdlong') && CONFIG.WHATSAPP ? ' ' + t('support') : '');
   }
-  function error(key, address) {
-    state.errorKey = key; state.rejectedEmail = address || '';
-    $('actErr').textContent = t(key) + (address ? ' ' + address : '');
-    hide('actErr', false);
-  }
+  function error(key) { state.errorKey = key; $('actErr').textContent = t(key); hide('actErr', false); }
   function support() {
-    var wa = $('actDelayedWa');
-    wa.hidden = !CONFIG.WHATSAPP;
+    var wa = $('actDelayedWa'); wa.hidden = !CONFIG.WHATSAPP;
     if (CONFIG.WHATSAPP) wa.href = 'https://wa.me/' + CONFIG.WHATSAPP;
     else wa.removeAttribute('href');
   }
-  function cancelGIS() {
-    try { if (window.google && window.google.accounts) window.google.accounts.id.cancel(); } catch (_) {}
-  }
-  function clearHandoff() {
-    state.handoffTimers.forEach(clearTimeout); state.handoffTimers = [];
-    if (state.handoffListener) document.removeEventListener('visibilitychange', state.handoffListener);
-    state.handoffListener = null;
-  }
   function stopWork() {
-    clearInterval(state.tick); clearTimeout(state.poll); clearTimeout(state.fallback); clearInterval(state.gisWait);
+    clearInterval(state.tick); clearTimeout(state.poll);
     state.controllers.forEach(function (controller) { controller.abort(); }); state.controllers = [];
     state.generation++;
-    cancelGIS(); clearHandoff();
   }
-  function resetForm() {
-    stopWork(); state.phase = 'form'; state.synced = false; state.pickerPrompted = false; state.statusKey = ''; state.errorKey = ''; state.rejectedEmail = '';
-    ['actProgress','actErr','actSpin','actPickSpin','actPickerStage','actOpenPlay','actSwitch','actDelayedWa','actRetry'].forEach(function (id) { hide(id, true); });
-    hide('actFormStage', false); hide('actWarn', false); hide('actProgSpin', false);
-    $('actGo').disabled = false; $('actStatus').textContent = '';
+  function clearCredential() { state.idToken = ''; state.email = ''; $('actChosenEmail').textContent = ''; }
+  function resetStages() {
+    ['actPickerStage', 'actConfirmStage', 'actProgress', 'actErr', 'actOpenPlay', 'actSwitch', 'actDelayedWa', 'actRetry'].forEach(function (id) { hide(id, true); });
+    $('actOpenPlay').removeAttribute('href');
+    state.statusKey = ''; state.errorKey = ''; state.synced = false;
   }
-  function manual() {
-    if (state.phase !== 'form') return;
-    // Reveal the typed field but leave Google's account chooser running: on
-    // Chrome/Edge it is a native FedCM sheet that can take longer than the
-    // fallback delay, and cancelling it here meant visitors never saw it.
-    clearTimeout(state.fallback); clearInterval(state.gisWait);
-    hide('actPickerStage', true); hide('actFormStage', false);
-    // A focused field pops the phone keyboard over the account chooser.
-    if (!state.pickerPrompted) $('actEmail').focus();
-  }
-  function webview() { return /FBAN|FBAV|FB_IAB|Instagram|Line\/|Twitter|WhatsApp|; wv\)/i.test(navigator.userAgent || ''); }
-  function gisReady() { return !!(window.google && window.google.accounts && window.google.accounts.id); }
-  function tryPicker() {
-    if (state.phase !== 'form' || !gisReady() || webview()) return false;
-    var generation = state.generation;
+  function receiveCredential(response) {
+    // Button state identifies the exact attempt, including after closing/reopening.
+    if (state.phase !== 'picking' || response.state !== String(state.pickerAttempt)) return;
     try {
+      var token = response.credential;
+      var encoded = token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/');
+      var bytes = Uint8Array.from(atob(encoded), function (c) { return c.charCodeAt(0); });
+      var claims = JSON.parse(new TextDecoder().decode(bytes));
+      // Decode only to display the account. The backend verifies the signed token.
+      if (typeof claims.email !== 'string' || !claims.email || !claims.exp || claims.exp * 1000 <= Date.now()) throw new Error('credential');
+      mark('accountChosen'); stopWork(); resetStages(); state.phase = 'confirm';
+      state.idToken = token; state.email = claims.email; $('actChosenEmail').textContent = claims.email;
+      hide('actConfirmStage', false); $('actConfirm').focus();
+    } catch (_) {
+      state.phase = 'picker'; clearCredential(); error('accountError'); hide('actRetry', false);
+    }
+  }
+  function gisReady() { return !!(window.google && window.google.accounts && window.google.accounts.id); }
+  function ensureGIS() {
+    if (gisReady()) return Promise.resolve();
+    if (gisLoading) return gisLoading;
+    // Loading never opens a popup: the visitor must tap the rendered Google button.
+    gisLoading = new Promise(function (resolve, reject) {
+      var script = document.querySelector('script[src^="https://accounts.google.com/gsi/client"]');
+      if (script) script.remove();
+      script = document.createElement('script'); script.src = 'https://accounts.google.com/gsi/client'; script.async = true;
+      var timer = setTimeout(function () { finish(false); }, CONFIG.REQUEST_TIMEOUT_MS);
+      function finish(ok) {
+        clearTimeout(timer); script.onload = script.onerror = null;
+        if (ok && gisReady()) resolve(); else reject(new Error('gis'));
+      }
+      script.onload = function () { finish(true); }; script.onerror = function () { finish(false); };
+      document.head.appendChild(script);
+    }).finally(function () { gisLoading = null; });
+    return gisLoading;
+  }
+  function renderGoogleButton() {
+    if (!gisInitialized) {
       window.google.accounts.id.initialize({
-        client_id: CONFIG.GOOGLE_CLIENT_ID, auto_select: true, cancel_on_tap_outside: false,
-        use_fedcm_for_prompt: true,
-        callback: function (response) {
-          if (generation !== state.generation || state.phase !== 'form' || !response.credential) return;
-          enrollAll(null, response.credential);
-        }
+        client_id: CONFIG.GOOGLE_CLIENT_ID, callback: receiveCredential,
+        ux_mode: 'popup', auto_select: false, button_auto_select: false, use_fedcm_for_button: true
       });
-      // No renderButton: the fallback must never navigate to Google's sign-in page.
-      window.google.accounts.id.prompt();
-      state.pickerPrompted = true;
-      return true;
-    } catch (_) { return false; }
+      gisInitialized = true;
+    }
+    var attempt = ++state.pickerAttempt;
+    window.google.accounts.id.disableAutoSelect(); $('actGsiBtn').replaceChildren();
+    // GIS has no custom-button popup API. This visible button owns the real user
+    // gesture; do not synthesize clicks or substitute OAuth access tokens.
+    window.google.accounts.id.renderButton($('actGsiBtn'), {
+      type: 'standard', theme: 'outline', size: 'large', text: 'continue_with',
+      width: Math.min(360, $('actGsiBtn').clientWidth), locale: document.documentElement.lang, state: String(attempt),
+      click_listener: function () {
+        if (attempt !== state.pickerAttempt || (state.phase !== 'picker' && state.phase !== 'picking')) return;
+        state.phase = 'picking'; state.pickerDeadline = Date.now() + 60000;
+        state.errorKey = ''; hide('actErr', true);
+        // GIS has no popup-close callback. Keep retry visible even during choice.
+        hide('actRetry', false); clearInterval(state.tick); state.tick = setInterval(render, 250);
+      }
+    });
+  }
+  function showPicker() {
+    stopWork(); clearCredential(); resetStages(); state.phase = 'picker'; state.pickerAttempt++;
+    if (state.timings) ['accountChosen', 'confirmClicked', 'enrollResponse', 'synced', 'playRedirect'].forEach(function (key) { delete state.timings[key]; });
+    state.timingLogged = false;
+    hide('actPickerStage', false); hide('actRetry', false); $('actGsiBtn').replaceChildren();
+    var generation = state.generation;
+    function loaded() {
+      if (generation !== state.generation || state.phase !== 'picker') return;
+      try { renderGoogleButton(); } catch (_) { error('gisError'); }
+    }
+    if (!CONFIG.GOOGLE_CLIENT_ID) { error('gisError'); return; }
+    if (gisReady()) loaded();
+    else {
+      error('gisLoading');
+      ensureGIS().then(function () {
+        if (generation !== state.generation) return;
+        state.errorKey = ''; hide('actErr', true); loaded();
+      }).catch(function () { if (generation === state.generation) error('gisError'); });
+    }
   }
   function openModal(opener) {
-    state.opener = opener;
-    resetForm(); $('actForm').reset(); $('actExtra').replaceChildren(); $('actAddMore').disabled = false;
+    state.opener = opener; state.timings = { buttonClick: performance.now() };
     hide('actOverlay', false); document.body.style.overflow = 'hidden';
     state.inertElements = Array.from(document.body.children).filter(function (el) { return el !== $('actOverlay') && !el.inert && !/SCRIPT|STYLE/.test(el.tagName); });
     state.inertElements.forEach(function (el) { el.inert = true; });
-    $('actClose').focus();
-    if (webview() || !CONFIG.GOOGLE_CLIENT_ID) { manual(); return; }
-    hide('actFormStage', true); hide('actPickerStage', false);
-    state.manualDeadline = Date.now() + 2500;
-    state.fallback = setTimeout(manual, 2500);
-    if (!tryPicker()) state.gisWait = setInterval(function () {
-      if (state.phase !== 'form' || Date.now() >= state.manualDeadline) { clearInterval(state.gisWait); manual(); return; }
-      if (tryPicker()) clearInterval(state.gisWait);
-    }, 250);
+    showPicker(); $('actClose').focus();
   }
   function closeModal() {
-    stopWork(); state.phase = 'closed'; state.emails = [];
-    hide('actOverlay', true); document.body.style.overflow = '';
+    stopWork(); state.phase = 'closed'; state.pickerAttempt++; clearCredential();
+    $('actGsiBtn').replaceChildren(); hide('actOverlay', true); document.body.style.overflow = '';
     state.inertElements.forEach(function (el) { el.inert = false; }); state.inertElements = [];
-    $('actForm').reset(); $('actExtra').replaceChildren();
     if (state.opener) state.opener.focus();
-  }
-  function addExtra() {
-    var host = $('actExtra');
-    if (host.querySelectorAll('input').length >= CONFIG.MAX_EXTRA_EMAILS) return;
-    var row = document.createElement('div'); row.className = 'act-extra-row';
-    var input = document.createElement('input'); input.className = 'act-input'; input.type = 'email'; input.inputMode = 'email'; input.dir = 'ltr'; input.autocomplete = 'email'; input.placeholder = 'another@gmail.com'; input.setAttribute('aria-label', t('extra'));
-    var remove = document.createElement('button'); remove.type = 'button'; remove.textContent = '×'; remove.setAttribute('aria-label', t('remove'));
-    remove.addEventListener('click', function () { row.remove(); $('actAddMore').disabled = false; $('actAddMore').focus(); });
-    row.append(input, remove); host.appendChild(row); input.focus();
-    $('actAddMore').disabled = host.querySelectorAll('input').length >= CONFIG.MAX_EXTRA_EMAILS;
-  }
-  function collectEmails() {
-    var inputs = [$('actEmail')].concat(Array.from($('actExtra').querySelectorAll('input')));
-    var emails = [];
-    for (var i = 0; i < inputs.length; i++) {
-      var email = inputs[i].value.trim().toLowerCase();
-      if (!email && i > 0) continue;
-      if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email)) { inputs[i].focus(); return null; }
-      if (emails.indexOf(email) === -1) emails.push(email);
-    }
-    return emails;
   }
   async function request(path, options, generation) {
     var controller = new AbortController(); state.controllers.push(controller);
@@ -170,133 +140,105 @@
       clearTimeout(timer); state.controllers = state.controllers.filter(function (item) { return item !== controller; });
     }
   }
-  function rejected(email) {
-    resetForm(); error('rejected', email); $('actEmail').focus();
+  function synced() {
+    mark('synced'); state.synced = true; state.deadline = Date.now() + CONFIG.POST_SYNC_SECONDS * 1000;
+    status('propagating'); hide('actDelayedWa', true);
   }
   function ready() {
     stopWork(); state.phase = 'ready'; hide('actProgSpin', true); hide('actWarn', true);
-    hide('actDelayedWa', true); hide('actRetry', true); status(CONFIG.TEST_OPTIN_URL ? 'readyOptin' : 'ready');
-    // While the app is on internal testing, Play hides its listing until the
-    // tester accepts the test invite, so the button opens the join page.
-    $('actOpenPlay').href = CONFIG.TEST_OPTIN_URL || storeUrl(); hide('actOpenPlay', false); hide('actSwitch', false);
-    // Never launch on a timer, on Android OR desktop. A fresh user tap owns handoff.
+    hide('actDelayedWa', true); hide('actRetry', true); status('readyOptin');
+    // Closed testers must opt in before following Google's link to the listing.
+    $('actOpenPlay').href = CONFIG.TEST_OPTIN_URL; hide('actOpenPlay', false); hide('actSwitch', false);
   }
   function showDelayed() { status('delayed'); hide('actWarn', true); support(); }
   function render() {
-    if (state.phase !== 'enrolling' && state.phase !== 'waiting') return;
     var now = Date.now();
+    if (state.phase === 'picking' && now >= state.pickerDeadline) {
+      stopWork(); state.phase = 'picker'; state.pickerAttempt++; error('pickerRetry');
+      $('actGsiBtn').replaceChildren(); hide('actRetry', false); return;
+    }
+    if (state.phase !== 'enrolling' && state.phase !== 'waiting') return;
     if (state.synced && now >= state.deadline) { ready(); return; }
-    // Check the cap BEFORE the activation estimate. 90 seconds must not mask 75.
     if (now >= state.holdDeadline) {
-      hide('actProgSpin', true); hide('actWarn', true); support();
-      if (state.synced) { status('propagating'); return; } // Finish the full 10-second propagation without a spinner.
-      stopWork(); state.phase = 'delayed'; status('holdlong'); hide('actRetry', false);
+      hide('actProgSpin', true); hide('actWarn', true);
+      if (state.synced) { status('propagating'); return; }
+      stopWork(); state.phase = 'delayed'; clearCredential(); support(); status('holdlong'); hide('actRetry', false);
     }
   }
-  async function enrollAll(emails, idToken) {
-    if (state.phase !== 'form') return;
+  async function enroll() {
+    if (state.phase !== 'confirm' || !state.idToken) return;
+    mark('confirmClicked'); var token = state.idToken;
     stopWork(); var generation = state.generation;
-    state.phase = 'enrolling'; state.synced = false; state.emails = []; state.errorKey = '';
+    resetStages(); state.phase = 'enrolling'; state.idToken = '';
     state.holdDeadline = Date.now() + CONFIG.MAX_HOLD_SECONDS * 1000;
-    state.deadline = Date.now() + CONFIG.ACTIVATION_SECONDS * 1000;
-    hide('actErr', true); hide('actFormStage', true); hide('actPickerStage', true); hide('actProgress', false);
-    hide('actProgSpin', false); hide('actWarn', false); status('working');
-    $('actGo').disabled = true; state.tick = setInterval(render, 250);
-    var allSynced = true, delayed = false, alreadyEnrolled = true;
-    var payloads = idToken ? [{ idToken: idToken }] : emails.map(function (email) { return { email: email }; });
+    hide('actProgress', false); hide('actProgSpin', false); hide('actWarn', false); status('working');
+    state.tick = setInterval(render, 250);
     try {
-      for (var i = 0; i < payloads.length; i++) {
-        if (generation !== state.generation) return;
-        var body = Object.assign({}, payloads[i], { source: CONFIG.SOURCE });
-        var result = await request('/api/beta/enroll', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }, generation);
-        if (generation !== state.generation) return;
-        var email = result.email || payloads[i].email;
-        if (result.rejected) { rejected(email || ''); return; }
-        if (!email) throw new Error('missingEmail');
-        state.emails.push(email); allSynced = allSynced && result.playSynced === true;
-        alreadyEnrolled = alreadyEnrolled && result.alreadyEnrolled === true;
-        delayed = delayed || result.delayed === true;
-        if (result.delayed && !result.playSynced) showDelayed();
-      }
+      var result = await request('/api/beta/enroll', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ idToken: token, source: CONFIG.SOURCE, app: 'captain' })
+      }, generation);
       if (generation !== state.generation) return;
+      mark('enrollResponse'); render(); if (generation !== state.generation) return;
+      if (result.rejected) { showPicker(); error('rejected'); return; }
+      // The response carries no email; the backend verified the token, so poll with the decoded one.
       state.phase = 'waiting';
-      if (allSynced) {
-        state.synced = true; state.deadline = Date.now() + CONFIG.POST_SYNC_SECONDS * 1000; status('propagating');
-      } else {
-        state.deadline = Date.now() + (alreadyEnrolled ? CONFIG.RESYNCED_SECONDS : CONFIG.ACTIVATION_SECONDS) * 1000;
-        if (delayed) showDelayed();
+      if (result.playSynced === true) synced();
+      else {
+        if (result.delayed) showDelayed();
         state.poll = setTimeout(function () { poll(generation); }, CONFIG.POLL_MS);
       }
       render();
     } catch (err) {
       if (generation !== state.generation) return;
-      resetForm(); error(err.message === 'missingEmail' ? 'missingEmail' : 'network'); $('actEmail').focus();
+      showPicker(); error(err.message === 'account' ? 'accountError' : 'network');
     }
   }
   async function poll(generation) {
     if (generation !== state.generation || state.phase !== 'waiting') return;
-    var results = await Promise.all(state.emails.map(function (email) {
-      return request('/api/beta/enroll/status?email=' + encodeURIComponent(email), {}, generation).catch(function () { return null; });
-    }));
+    var result = await request('/api/beta/enroll/status?email=' + encodeURIComponent(state.email) + '&app=captain', {}, generation).catch(function () { return null; });
     if (generation !== state.generation) return;
-    for (var i = 0; i < results.length; i++) {
-      if (results[i] && results[i].rejected) { rejected(state.emails[i]); return; }
-    }
-    if (results.length && results.every(function (r) { return r && r.synced === true; })) {
-      state.synced = true;
-      // Always ten full seconds from confirmation, even after a throttled interval.
-      state.deadline = Date.now() + CONFIG.POST_SYNC_SECONDS * 1000;
-      status('propagating'); hide('actDelayedWa', true);
-    } else {
-      if (results.some(function (r) { return r && r.delayed; })) showDelayed();
+    render(); if (generation !== state.generation) return;
+    if (result && result.rejected) { showPicker(); error('rejected'); return; }
+    if (result && result.synced === true) synced();
+    else {
+      if (result && result.delayed) showDelayed();
       state.poll = setTimeout(function () { poll(generation); }, CONFIG.POLL_MS);
     }
     render();
   }
-  function storeUrl() { return 'https://play.google.com/store/apps/details?id=' + CONFIG.PACKAGE; }
-  function openStore(event) {
-    if (!/Android/i.test(navigator.userAgent || '')) return; // Desktop link remains a user-initiated normal URL.
-    if (CONFIG.TEST_OPTIN_URL) return; // The join page is a normal https link; Play opens from there.
-    event.preventDefault(); clearHandoff();
-    var handedOff = false;
-    state.handoffListener = function () { if (document.hidden) handedOff = true; };
-    document.addEventListener('visibilitychange', state.handoffListener);
-    function go(url) { if (handedOff || document.hidden) return; try { window.location.href = url; } catch (_) {} }
-    go('intent://details?id=' + CONFIG.PACKAGE + '#Intent;scheme=market;package=com.android.vending;end');
-    state.handoffTimers.push(setTimeout(function () { go('market://details?id=' + CONFIG.PACKAGE); }, 2500));
-    state.handoffTimers.push(setTimeout(function () {
-      if (!handedOff && !document.hidden && state.phase === 'ready') status('handoff');
-      clearHandoff();
-    }, 6000));
+  function openPlay(event) {
+    if (state.phase !== 'ready') { event.preventDefault(); return; }
+    if (state.timingLogged) return;
+    mark('playRedirect'); state.timingLogged = true;
+    var start = state.timings.buttonClick;
+    console.info('[vgo-activate] timings ms: ' + Object.keys(state.timings).map(function (key) {
+      return key + '=' + Math.round(state.timings[key] - start);
+    }).join(', '));
+    // Normal user-tapped HTTPS navigation on Android and desktop. No API-supplied URL.
   }
   document.querySelectorAll('.js-play-activate').forEach(function (button) {
     button.addEventListener('click', function (event) { event.preventDefault(); openModal(button); });
   });
   $('actClose').addEventListener('click', closeModal);
   $('actOverlay').addEventListener('click', function (event) { if (event.target === $('actOverlay')) closeModal(); });
-  $('actAddMore').addEventListener('click', addExtra);
-  $('actManualLink').addEventListener('click', manual);
-  $('actOpenPlay').addEventListener('click', openStore);
-  $('actRetry').addEventListener('click', function () { resetForm(); $('actEmail').focus(); });
-  $('actForm').addEventListener('submit', function (event) { event.preventDefault(); var emails = collectEmails(); if (!emails) { error('badEmail'); return; } enrollAll(emails, null); });
-  document.addEventListener('visibilitychange', function () {
-    if (document.hidden) return;
-    if (state.phase === 'form' && !$('actPickerStage').hidden && Date.now() >= state.manualDeadline) manual();
-    render();
-  });
+  $('actConfirm').addEventListener('click', enroll);
+  $('actChooseAnother').addEventListener('click', showPicker);
+  $('actRetry').addEventListener('click', showPicker);
+  $('actOpenPlay').addEventListener('click', openPlay);
+  document.addEventListener('visibilitychange', function () { if (!document.hidden) render(); });
   document.addEventListener('keydown', function (event) {
     if ($('actOverlay').hidden) return;
     if (event.key === 'Escape') { closeModal(); return; }
     if (event.key !== 'Tab') return;
-    var focusable = Array.from($('actOverlay').querySelectorAll('button:not([disabled]),a[href],input')).filter(function (el) { return el.getClientRects().length > 0; });
+    var focusable = Array.from($('actOverlay').querySelectorAll('button:not([disabled]),a[href],iframe,[tabindex="0"]')).filter(function (el) { return el.getClientRects().length > 0; });
     var first = focusable[0], last = focusable[focusable.length - 1];
     if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
     else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
   });
   document.addEventListener('vgo:language', function () {
     if (state.statusKey) status(state.statusKey);
-    if (state.errorKey) error(state.errorKey, state.rejectedEmail);
-    $('actExtra').querySelectorAll('input').forEach(function (el) { el.setAttribute('aria-label', t('extra')); });
-    $('actExtra').querySelectorAll('button').forEach(function (el) { el.setAttribute('aria-label', t('remove')); });
+    if (state.errorKey) error(state.errorKey);
+    if (state.phase === 'picker' && gisReady()) renderGoogleButton();
   });
 })();
