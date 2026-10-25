@@ -65,6 +65,9 @@ namespace Masafet_Elseka.Infrastructure.Data
             });
             builder.Entity<ApplicationUser>().HasIndex(u => u.VerificationStatus);
 
+            builder.Entity<PhoneOtp>().HasIndex(o => new { o.Phone, o.CreatedAt });
+            builder.Entity<SmsOutbox>().HasIndex(o => new { o.Status, o.CreatedAt });
+
             // Wallet collection.
             builder.Entity<CollectionWallet>(entity =>
             {
@@ -154,6 +157,8 @@ namespace Masafet_Elseka.Infrastructure.Data
         public DbSet<PromotionGrant> PromotionGrants { get; set; }
         public DbSet<BetaTester> BetaTesters { get; set; }
         public DbSet<AppSetting> AppSettings { get; set; }
+        public DbSet<PhoneOtp> PhoneOtps { get; set; }
+        public DbSet<SmsOutbox> SmsOutbox { get; set; }
 
     }
 }

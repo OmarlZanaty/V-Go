@@ -1,13 +1,13 @@
 namespace Masafet_Elseka.Application.DTOs.AuthDTOs
 {
     /// <summary>
-    /// Resets a phone account's password. Phone ownership is proven by a Firebase
-    /// Phone-Auth OTP (the only place OTP is still used after the move to
-    /// phone + password sign-in).
+    /// Resets a phone account's password using a Collector OTP reset token or a
+    /// legacy Firebase Phone-Auth ID token.
     /// </summary>
     public class PhoneResetPasswordDTO
     {
-        public string IdToken { get; set; }
+        public string? IdToken { get; set; }
+        public string? ResetToken { get; set; }
         public string NewPassword { get; set; }
     }
 }

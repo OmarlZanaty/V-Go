@@ -72,7 +72,9 @@ class ServerFailure extends Failure {
       case 422:
         return ServerFailure(backendMsg ?? 'تعذّر معالجة البيانات المُدخلة.');
       case 429:
-        return ServerFailure('عدد محاولات كثيرة، يرجى الانتظار قليلًا ثم المحاولة.');
+        return ServerFailure(
+          backendMsg ?? 'عدد محاولات كثيرة، يرجى الانتظار قليلًا ثم المحاولة.',
+        );
       case 500:
         return ServerFailure('خطأ في الخادم، يرجى المحاولة لاحقًا.');
       case 502:

@@ -10,6 +10,7 @@ using Masafet_Elseka.Application.ExternalInterfaces;
 using Masafet_Elseka.Application.ExternalInterfaces.ICachService;
 using Masafet_Elseka.Application.ExternalInterfaces.ICloudinaryService;
 using Masafet_Elseka.Application.Interfaces.IAuthService;
+using Masafet_Elseka.Application.Interfaces;
 using Masafet_Elseka.Application.Interfaces.IPromotionService;
 using Masafet_Elseka.Application.Interfaces.INotificationService;
 using Masafet_Elseka.Application.Response;
@@ -52,6 +53,7 @@ namespace Masafet_Elseka.Infrastructure.Services.AuthService
         private readonly OnlineTrackerService.OnlineTrackerService _onlineTrackerService;
         private readonly IConfiguration _config;
         private readonly IPromotionService _promotionService;
+        private readonly IPhoneOtpService _phoneOtpService;
 
         // Cross-app sign-in guards — friendly Arabic messages shown to the user.
         private const string CaptainOnRiderMessage =
@@ -60,7 +62,7 @@ namespace Masafet_Elseka.Infrastructure.Services.AuthService
             "عذرًا، هذا الحساب مُسجَّل كحساب راكب 🧍\nلا يمكنك الدخول من تطبيق الكباتن، يُرجى استخدام تطبيق الركاب.";
 
         public AuthService(UserManager<ApplicationUser> userManager, RoleManager<IdentityRole> roleManager, OTP oTP, IJWTService jWTService,
-            ICacheService cacheService, ICloudinaryService cloudinaryService, IUnitOfWork unitOfWork, Context context, IUserCleanupService userCleanup, IHttpContextAccessor httpContextAccessor, INotificationService notificationService, OnlineTrackerService.OnlineTrackerService onlineTrackerService, IConfiguration config, IPromotionService promotionService)
+            ICacheService cacheService, ICloudinaryService cloudinaryService, IUnitOfWork unitOfWork, Context context, IUserCleanupService userCleanup, IHttpContextAccessor httpContextAccessor, INotificationService notificationService, OnlineTrackerService.OnlineTrackerService onlineTrackerService, IConfiguration config, IPromotionService promotionService, IPhoneOtpService phoneOtpService)
         {
             _userManager = userManager;
             _roleManager = roleManager;
@@ -76,6 +78,7 @@ namespace Masafet_Elseka.Infrastructure.Services.AuthService
             _onlineTrackerService = onlineTrackerService;
             _config = config;
             _promotionService = promotionService;
+            _phoneOtpService = phoneOtpService;
         }
 
         public async Task<Response<string>> Register(RegisterDTO model)
@@ -608,13 +611,14 @@ namespace Masafet_Elseka.Infrastructure.Services.AuthService
             }
         }
 
-        // Forgot-password for phone accounts: the app verifies ownership with a
-        // Firebase Phone-Auth OTP (the only remaining OTP use), then we set the new
-        // password. Works whether or not the account already had a password.
+        // Collector reset tokens take precedence; older apps retain the Firebase path.
         public async Task<Response<string>> ResetPhonePasswordAsync(PhoneResetPasswordDTO model)
         {
             try
             {
+                if (model?.ResetToken != null)
+                    return await _phoneOtpService.ResetPasswordAsync(model.ResetToken, model.NewPassword);
+
                 if (string.IsNullOrWhiteSpace(model?.IdToken))
                     return Response<string>.Failure("رمز التحقق مفقود", 400);
                 if (string.IsNullOrWhiteSpace(model.NewPassword))
@@ -1333,7 +1337,7 @@ namespace Masafet_Elseka.Infrastructure.Services.AuthService
             }
         }
 
-        private static string NormalizePhone(string phone)
+        internal static string NormalizePhone(string phone)
         {
             var p = phone.Trim().Replace(" ", "").Replace("-", "");
             if (p.StartsWith("+")) return p;

@@ -90,6 +90,9 @@ namespace Masafet_Elseka.Application.DTOs.Collection
         public int? Battery { get; set; }
         public bool? Charging { get; set; }
         public bool? SmsPermission { get; set; }
+        public bool? SendSmsPermission { get; set; }
+        public bool? OtpEnabled { get; set; }
+        public int? OtpSentTotal { get; set; }
         public bool? NotificationAccess { get; set; } // InstaPay notifications
         public int? Pending { get; set; }       // messages queued on the phone, not yet uploaded
         public long? LastInboxId { get; set; }

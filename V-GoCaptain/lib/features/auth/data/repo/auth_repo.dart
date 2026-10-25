@@ -35,9 +35,18 @@ abstract class AuthRepo {
     required String deviceType,
   });
 
-  /// Forgot password: phone ownership proven by a Firebase OTP id token.
+  /// Requests a password-reset SMS and returns the resend cooldown in seconds.
+  Future<int> phoneResetRequest({required String phone});
+
+  /// Verifies the SMS code and returns the token used to reset the password.
+  Future<String> phoneResetVerify({
+    required String phone,
+    required String code,
+  });
+
+  /// Forgot password: phone ownership proven by the backend reset token.
   Future<void> phoneResetPassword({
-    required String idToken,
+    required String resetToken,
     required String newPassword,
   });
 

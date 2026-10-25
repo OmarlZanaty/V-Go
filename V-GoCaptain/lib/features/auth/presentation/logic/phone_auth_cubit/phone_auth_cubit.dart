@@ -1,7 +1,7 @@
 import 'dart:async';
 
+import 'package:dio/dio.dart';
 import 'package:equatable/equatable.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 
@@ -16,17 +16,14 @@ part 'phone_auth_state.dart';
 
 /// Captain auth: phone number + password (Google sign-in kept). After the phone
 /// is entered we check whether it's a registered captain (-> enter password) or
-/// new (-> set password + driver details). Firebase OTP is kept ONLY for
-/// forgot-password. Google sign-in leaves [phone] empty so the sign-up screen
+/// new (-> set password + driver details). Forgot-password uses a backend SMS
+/// OTP. Google sign-in leaves [phone] empty so the sign-up screen
 /// can tell a Google sign-up (no password) from a phone sign-up.
 class PhoneAuthCubit extends Cubit<PhoneAuthState> {
   PhoneAuthCubit(this._authRepo) : super(const PhoneAuthState());
 
   final AuthRepo _authRepo;
-  final FirebaseAuth _auth = FirebaseAuth.instance;
-  String? _verificationId;
-  int? _resendToken;
-  String? _resetIdToken;
+  String? _resetToken;
   Timer? _cooldownTimer;
 
   @override
@@ -35,7 +32,11 @@ class PhoneAuthCubit extends Cubit<PhoneAuthState> {
     return super.close();
   }
 
-  void reset() => emit(PhoneAuthState(phone: state.phone));
+  void reset() {
+    _cooldownTimer?.cancel();
+    _resetToken = null;
+    emit(PhoneAuthState(phone: state.phone));
+  }
 
   // ---------------- phone + password ----------------
 
@@ -120,10 +121,16 @@ class PhoneAuthCubit extends Cubit<PhoneAuthState> {
     }
   }
 
-  // ---------------- forgot password (Firebase OTP) ----------------
+  // ---------------- forgot password (backend SMS OTP) ----------------
 
   Future<void> sendResetCode(String rawPhone) async {
     final phone = _toE164(rawPhone);
+    if (state.status == PhoneAuthStatus.sendingCode ||
+        (state.phone == phone && state.cooldownSeconds > 0)) {
+      return;
+    }
+    _cooldownTimer?.cancel();
+    _resetToken = null;
     emit(state.copyWith(
       status: PhoneAuthStatus.sendingCode,
       phone: phone,
@@ -131,43 +138,31 @@ class PhoneAuthCubit extends Cubit<PhoneAuthState> {
       cooldownSeconds: 0,
     ));
     try {
-      await _auth.verifyPhoneNumber(
-        phoneNumber: phone,
-        forceResendingToken: _resendToken,
-        timeout: const Duration(seconds: 60),
-        verificationCompleted: (credential) async {
-          await _captureResetToken(credential);
-        },
-        verificationFailed: (e) {
-          if (isClosed) return;
-          emit(state.copyWith(
-            status: PhoneAuthStatus.failure,
-            errorMessage: _firebaseMsg(e),
-          ));
-        },
-        codeSent: (verificationId, resendToken) {
-          _verificationId = verificationId;
-          _resendToken = resendToken;
-          if (isClosed) return;
-          emit(state.copyWith(status: PhoneAuthStatus.codeSent));
-          _startCooldown();
-        },
-        codeAutoRetrievalTimeout: (verificationId) {
-          _verificationId = verificationId;
-        },
-      );
+      final seconds = await _authRepo.phoneResetRequest(phone: phone);
+      if (isClosed) return;
+      emit(state.copyWith(status: PhoneAuthStatus.codeSent));
+      _startCooldown(seconds);
     } catch (e) {
       if (isClosed) return;
+      if (e is DioException && e.response?.statusCode == 429) {
+        final response = e.response?.data;
+        if (response is Map && response['code'] == 'COOLDOWN') {
+          final data = response['data'];
+          final seconds = data is Map ? data['cooldownSeconds'] : null;
+          _startCooldown(
+            seconds is num && seconds >= 0 ? seconds.toInt() : 60,
+          );
+        }
+      }
       emit(state.copyWith(
         status: PhoneAuthStatus.failure,
-        errorMessage: _firebaseMsg(e),
+        errorMessage: ServerFailure.fromError(e).errMessage,
       ));
     }
   }
 
   Future<void> verifyResetCode(String code) async {
-    final vid = _verificationId;
-    if (vid == null) {
+    if (state.phone.isEmpty) {
       emit(state.copyWith(
         status: PhoneAuthStatus.failure,
         errorMessage: 'لم يتم إرسال رمز التحقق بعد.',
@@ -176,39 +171,25 @@ class PhoneAuthCubit extends Cubit<PhoneAuthState> {
     }
     emit(state.copyWith(status: PhoneAuthStatus.verifyingCode, clearError: true));
     try {
-      final credential = PhoneAuthProvider.credential(
-        verificationId: vid,
-        smsCode: code,
+      final resetToken = await _authRepo.phoneResetVerify(
+        phone: state.phone,
+        code: code,
       );
-      await _captureResetToken(credential);
+      if (isClosed) return;
+      _resetToken = resetToken;
+      emit(state.copyWith(status: PhoneAuthStatus.codeVerified));
     } catch (e) {
       if (isClosed) return;
       emit(state.copyWith(
         status: PhoneAuthStatus.failure,
-        errorMessage: _firebaseMsg(e),
+        errorMessage: ServerFailure.fromError(e).errMessage,
       ));
     }
-  }
-
-  Future<void> _captureResetToken(PhoneAuthCredential credential) async {
-    final userCred = await _auth.signInWithCredential(credential);
-    final idToken = await userCred.user?.getIdToken();
-    if (idToken == null) {
-      if (isClosed) return;
-      emit(state.copyWith(
-        status: PhoneAuthStatus.failure,
-        errorMessage: 'فشل الحصول على رمز التحقق.',
-      ));
-      return;
-    }
-    _resetIdToken = idToken;
-    if (isClosed) return;
-    emit(state.copyWith(status: PhoneAuthStatus.codeVerified));
   }
 
   Future<void> submitNewPassword(String newPassword) async {
-    final idToken = _resetIdToken;
-    if (idToken == null) {
+    final resetToken = _resetToken;
+    if (resetToken == null) {
       emit(state.copyWith(
         status: PhoneAuthStatus.failure,
         errorMessage: 'انتهت الجلسة، أعد المحاولة.',
@@ -218,11 +199,16 @@ class PhoneAuthCubit extends Cubit<PhoneAuthState> {
     emit(state.copyWith(status: PhoneAuthStatus.resetting, clearError: true));
     try {
       await _authRepo.phoneResetPassword(
-        idToken: idToken,
+        resetToken: resetToken,
         newPassword: newPassword,
       );
       if (isClosed) return;
-      emit(state.copyWith(status: PhoneAuthStatus.resetSuccess));
+      _resetToken = null;
+      _cooldownTimer?.cancel();
+      emit(state.copyWith(
+        status: PhoneAuthStatus.resetSuccess,
+        cooldownSeconds: 0,
+      ));
     } catch (e) {
       if (isClosed) return;
       emit(state.copyWith(
@@ -330,9 +316,10 @@ class PhoneAuthCubit extends Cubit<PhoneAuthState> {
 
   // ---------------- helpers ----------------
 
-  void _startCooldown([int seconds = 30]) {
+  void _startCooldown(int seconds) {
     _cooldownTimer?.cancel();
     emit(state.copyWith(cooldownSeconds: seconds));
+    if (seconds <= 0) return;
     _cooldownTimer = Timer.periodic(const Duration(seconds: 1), (t) {
       if (isClosed) {
         t.cancel();
@@ -375,23 +362,5 @@ class PhoneAuthCubit extends Cubit<PhoneAuthState> {
     if (p.startsWith('00')) return '+${p.substring(2)}';
     if (p.startsWith('0')) p = p.substring(1);
     return '+20$p';
-  }
-
-  String _firebaseMsg(Object e) {
-    if (e is FirebaseAuthException) {
-      switch (e.code) {
-        case 'invalid-phone-number':
-          return 'رقم الهاتف غير صحيح.';
-        case 'invalid-verification-code':
-          return 'رمز التحقق غير صحيح.';
-        case 'too-many-requests':
-          return 'محاولات كثيرة، يرجى المحاولة لاحقًا.';
-        case 'session-expired':
-          return 'انتهت صلاحية الرمز، اطلب رمزًا جديدًا.';
-        default:
-          return e.message ?? 'حدث خطأ، يرجى المحاولة لاحقًا.';
-      }
-    }
-    return ServerFailure.fromError(e).errMessage;
   }
 }

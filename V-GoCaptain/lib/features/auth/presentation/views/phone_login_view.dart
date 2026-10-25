@@ -75,6 +75,8 @@ class _PhoneLoginViewState extends State<PhoneLoginView> {
       appBar: customAppBar(title: 'تسجيل الدخول'),
       body: SafeArea(
         child: BlocConsumer<PhoneAuthCubit, PhoneAuthState>(
+          // Cooldown ticks rebuild the countdown without repeating toasts/navigation.
+          listenWhen: (previous, current) => previous.status != current.status,
           listener: (context, state) {
             switch (state.status) {
               case PhoneAuthStatus.loginSuccess:

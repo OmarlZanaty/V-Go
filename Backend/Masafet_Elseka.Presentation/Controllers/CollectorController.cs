@@ -1,5 +1,6 @@
 using Masafet_Elseka.Application.DTOs.Collection;
 using Masafet_Elseka.Application.Interfaces.ICollectionService;
+using Masafet_Elseka.Application.Interfaces;
 using Masafet_Elseka.Domain.Entities;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -16,8 +17,13 @@ namespace Masafet_Elseka.Presentation.Controllers
     {
         private const string KeyHeader = "X-Device-Key";
         private readonly ICollectionService _collection;
+        private readonly IPhoneOtpService _phoneOtp;
 
-        public CollectorController(ICollectionService collection) => _collection = collection;
+        public CollectorController(ICollectionService collection, IPhoneOtpService phoneOtp)
+        {
+            _collection = collection;
+            _phoneOtp = phoneOtp;
+        }
 
         // Lets the app tell "this is a V-Go server" apart from a wrong address (404).
         [HttpGet("ping")]
@@ -49,6 +55,23 @@ namespace Masafet_Elseka.Presentation.Controllers
             var device = await DeviceAsync();
             if (device == null) return Unpaired();
             return Ok(new { isSuccess = true, data = await _collection.HeartbeatAsync(device, dto) });
+        }
+
+        [HttpGet("outbox")]
+        public async Task<IActionResult> Outbox([FromQuery] int max = 5)
+        {
+            var device = await DeviceAsync();
+            if (device == null) return Unpaired();
+            return Ok(new { isSuccess = true, data = await _phoneOtp.ClaimOutboxAsync(device.Id, max) });
+        }
+
+        [HttpPost("outbox/{id:guid}/result")]
+        public async Task<IActionResult> OutboxResult(Guid id, [FromBody] SmsOutboxResultDTO dto)
+        {
+            var device = await DeviceAsync();
+            if (device == null) return Unpaired();
+            var result = await _phoneOtp.ReportOutboxAsync(device.Id, id, dto);
+            return StatusCode(result.StatusCode, new { isSuccess = result.IsSuccess, message = result.Message });
         }
 
         [HttpPost("sms")]

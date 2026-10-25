@@ -9,7 +9,7 @@ enum PhoneAuthStatus {
   authenticating, // login / register / google in flight
   loginSuccess,
   failure,
-  // forgot password (Firebase OTP) flow
+  // forgot password (backend SMS OTP) flow
   sendingCode,
   codeSent,
   verifyingCode,

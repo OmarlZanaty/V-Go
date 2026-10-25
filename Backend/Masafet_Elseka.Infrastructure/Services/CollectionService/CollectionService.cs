@@ -811,6 +811,7 @@ namespace Masafet_Elseka.Infrastructure.Services.CollectionService
             var status = JsonSerializer.Serialize(new
             {
                 dto.Battery, dto.Charging, dto.SmsPermission, dto.NotificationAccess, dto.Pending, dto.LastInboxId,
+                dto.SendSmsPermission, dto.OtpEnabled, dto.OtpSentTotal,
                 LastError = dto.LastError?[..Math.Min(300, dto.LastError.Length)],
             });
             device.LastSeenAt = Now;

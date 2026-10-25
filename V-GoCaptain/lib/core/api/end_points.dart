@@ -13,6 +13,8 @@ abstract class EndPoint {
       'Auth/phone-register-driver'; // phone + password
   static const String phoneExists =
       'Auth/phone-exists'; // new-vs-returning check
+  static const String phoneResetRequest = 'Auth/phone-reset/request';
+  static const String phoneResetVerify = 'Auth/phone-reset/verify';
   static const String phoneResetPassword =
       'Auth/phone-reset-password'; // forgot password (OTP)
   static const String register = 'Auth/register';

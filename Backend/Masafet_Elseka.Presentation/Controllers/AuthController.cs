@@ -3,6 +3,7 @@ using Masafet_Elseka.Application.DTOs.AuthDTOs;
 using Masafet_Elseka.Application.ExternalInterfaces;
 using Masafet_Elseka.Application.ExternalInterfaces.ICachService;
 using Masafet_Elseka.Application.Interfaces.IAuthService;
+using Masafet_Elseka.Application.Interfaces;
 using Masafet_Elseka.Domain.Entities;
 using Masafet_Elseka.Domain.Enums;
 using Masafet_Elseka.Infrastructure.ExternalService.GoogleAuth.AuthState;
@@ -27,6 +28,7 @@ namespace Masafet_Elseka.Presentation.Controllers
     public class AuthController : ControllerBase
     {
         private readonly IAuthService _authService;
+        private readonly IPhoneOtpService _phoneOtpService;
         private readonly IJWTService _jWTService;
         private readonly ICacheService _cacheService;
         private readonly IConfiguration _configuration;
@@ -35,9 +37,10 @@ namespace Masafet_Elseka.Presentation.Controllers
         private readonly IHtmlResponseService _htmlResponseService;
         private readonly UserManager<ApplicationUser> _userManager;
         private readonly RoleManager<IdentityRole> _roleManager;
-        public AuthController(IAuthService authService, IJWTService jWTService, ICacheService cacheService,IGoogleAuthService googleAuthService,IConfiguration configuration, IGoogleAuthManager googleAuthManager, IHtmlResponseService htmlResponseService, UserManager<ApplicationUser> userManager, RoleManager<IdentityRole> roleManager)
+        public AuthController(IAuthService authService, IJWTService jWTService, ICacheService cacheService,IGoogleAuthService googleAuthService,IConfiguration configuration, IGoogleAuthManager googleAuthManager, IHtmlResponseService htmlResponseService, UserManager<ApplicationUser> userManager, RoleManager<IdentityRole> roleManager, IPhoneOtpService phoneOtpService)
         {
             _authService = authService;
+            _phoneOtpService = phoneOtpService;
             _jWTService = jWTService;
             _cacheService = cacheService;
             _googleAuthService = googleAuthService;
@@ -187,6 +190,24 @@ namespace Masafet_Elseka.Presentation.Controllers
             return StatusCode(result.StatusCode, result.Message);
         }
 
+        [AllowAnonymous]
+        [EnableRateLimiting("auth")]
+        [HttpPost("phone-reset/request")]
+        public async Task<IActionResult> RequestPhoneReset([FromBody] PhoneOtpRequestDTO model)
+        {
+            var result = await _phoneOtpService.RequestAsync(model.Phone);
+            return StatusCode(result.StatusCode, new { isSuccess = result.IsSuccess, message = result.Message, code = result.Code, data = result.Data });
+        }
+
+        [AllowAnonymous]
+        [EnableRateLimiting("auth")]
+        [HttpPost("phone-reset/verify")]
+        public async Task<IActionResult> VerifyPhoneReset([FromBody] PhoneOtpVerifyDTO model)
+        {
+            var result = await _phoneOtpService.VerifyAsync(model.Phone, model.Code);
+            return StatusCode(result.StatusCode, new { isSuccess = result.IsSuccess, message = result.Message, code = result.Code, data = result.Data });
+        }
+
         // Forgot password for phone accounts (OTP kept only for this path).
         [HttpPost("phone-reset-password")]
         public async Task<IActionResult> PhoneResetPassword([FromBody] PhoneResetPasswordDTO model)
@@ -197,6 +218,8 @@ namespace Masafet_Elseka.Presentation.Controllers
             }
 
             var result = await _authService.ResetPhonePasswordAsync(model);
+            if (model.ResetToken != null)
+                return StatusCode(result.StatusCode, new { isSuccess = result.IsSuccess, message = result.Message, code = result.Code });
             if (result.IsSuccess)
             {
                 return StatusCode(result.StatusCode, new { message = result.Message });

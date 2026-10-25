@@ -93,14 +93,42 @@ class AuthRepoImpl implements AuthRepo {
   }
 
   @override
+  Future<int> phoneResetRequest({required String phone}) async {
+    final response = await _apiServices.post(
+      EndPoint.phoneResetRequest,
+      data: {'phone': phone},
+    );
+    final data = response['data'];
+    final seconds = data is Map ? data['cooldownSeconds'] : null;
+    return seconds is num && seconds >= 0 ? seconds.toInt() : 60;
+  }
+
+  @override
+  Future<String> phoneResetVerify({
+    required String phone,
+    required String code,
+  }) async {
+    final response = await _apiServices.post(
+      EndPoint.phoneResetVerify,
+      data: {'phone': phone, 'code': code},
+    );
+    final data = response['data'];
+    final resetToken = data is Map ? data['resetToken'] : null;
+    if (resetToken is! String || resetToken.trim().isEmpty) {
+      throw 'فشل الحصول على رمز إعادة تعيين كلمة المرور، أعد المحاولة.';
+    }
+    return resetToken;
+  }
+
+  @override
   Future<void> phoneResetPassword({
-    required String idToken,
+    required String resetToken,
     required String newPassword,
   }) async {
     await _apiServices.post(
       EndPoint.phoneResetPassword,
       data: {
-        'idToken': idToken,
+        'resetToken': resetToken,
         'newPassword': newPassword,
       },
     );

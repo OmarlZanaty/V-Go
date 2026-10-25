@@ -229,6 +229,7 @@ builder.Services.AddHostedService<CollectionCycleService>();
 
 builder.Services.AddScoped<IUnitOfWork, UnitOfWork>();
 builder.Services.AddScoped<IAuthService, AuthService>();
+builder.Services.AddScoped<Masafet_Elseka.Application.Interfaces.IPhoneOtpService, Masafet_Elseka.Infrastructure.Services.PhoneOtpService>();
 builder.Services.AddScoped<IJWTService, JWTService>();
 builder.Services.AddScoped<ICacheService, CacheService>();
 builder.Services.AddScoped<IDriverService, DriverService>();

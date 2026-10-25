@@ -13,6 +13,7 @@ namespace Masafet_Elseka.Application.Response
         public string Message { get; private set; }
         public int StatusCode { get; private set; }
         public List<string> Errors { get; private set; }
+        public string? Code { get; private set; }
 
         private Response(bool isSuccess, T data, string message, int statusCode, List<string> errors)
         {
@@ -26,10 +27,10 @@ namespace Masafet_Elseka.Application.Response
         public static Response<T> Success(T data, string message = "", int statusCode = 200)
             => new Response<T>(true, data, message, statusCode,null);
 
-        public static Response<T> Failure(string message, int statusCode = 400, List<string> errors = null)
-             => new Response<T>(false, default, message, statusCode, errors);
+        public static Response<T> Failure(string message, int statusCode = 400, List<string> errors = null, string? code = null)
+             => new Response<T>(false, default, message, statusCode, errors) { Code = code };
 
-        public static Response<T> Failure(T data, string message, int statusCode = 400, List<string> errors = null)
-           => new Response<T>(false, data, message, statusCode, errors);
+        public static Response<T> Failure(T data, string message, int statusCode = 400, List<string> errors = null, string? code = null)
+           => new Response<T>(false, data, message, statusCode, errors) { Code = code };
     }
 }
