@@ -4,7 +4,7 @@ Static Arabic-first pages with an English toggle. No build step. Runtime externa
 
 ## Serving
 
-Caddy serves this directory as the static root of https://vgo-eg.com. Route /api/* to the backend before the static file handler. Captain activation calls POST /api/beta/enroll and GET /api/beta/enroll/status on the same origin. Do not return index.html for missing API paths.
+Caddy serves this directory as the static root of https://vgo-eg.com. Route /api/* to the backend before the static file handler. Captain activation calls POST /api/beta/enroll and GET /api/beta/enroll/status on the same origin. Do not return index.html for missing API paths. Serve HTML, JavaScript and CSS with `Cache-Control: no-cache` so phones revalidate updates; the current asset cache key is `20261025d`.
 
 | App | Google Play | App Store |
 | --- | --- | --- |
@@ -27,7 +27,7 @@ Edit index.html, privacy.html, delete-account.html and assets/js/i18n.js directl
 | CONTACT_EMAIL | '' — TODO: V.Go privacy contact email |
 | POST_SYNC_SECONDS | 10 |
 | POLL_MS | 2000 |
-| MAX_HOLD_SECONDS | 75 |
+| MAX_HOLD_SECONDS | 300 |
 | REQUEST_TIMEOUT_MS | 15000 |
 
 WhatsApp takes international digits without +. While empty, its link stays hidden without a wa.me/ href. While CONTACT_EMAIL is empty, the privacy page offers the in-app Support section and hides the email link.
@@ -36,13 +36,14 @@ Before serving, confirm https://vgo-eg.com is an authorized JavaScript origin on
 
 ## Activation contract
 
-- Captain Play opens the modal. The visitor taps the visible Google-rendered button to open account selection directly from that user gesture. GIS uses popup UX and FedCM button UX where supported; auto_select and button_auto_select are false.
+- Captain Play opens the modal. The visitor taps the visible Google-rendered button to open account selection directly from that user gesture. GIS uses classic popup UX with use_fedcm_for_button=false; auto_select and button_auto_select are false.
 - There is an intentional extra Google-button tap: [Google does not support programmatically starting its ID-token button flow from a custom button](https://developers.google.com/identity/gsi/web/guides/offerings). Do not simulate clicks on hidden Google controls. Choosing another account and retrying return to that visible Google button.
-- The selected email is displayed prominently with a bilingual reminder to match the phone's Google Play account. Only “Yes, activate” submits enrollment. No account text fields or extra-account controls exist.
-- POST /api/beta/enroll carries exactly {idToken, source: "site-captain", app: "captain"}. The browser decodes the token only to show the chosen account; the backend must verify its signature, audience and expiry and return the resolved email.
+- The selected email is displayed prominently with a bilingual reminder to match the phone's Google Play account. Choosing the account submits enrollment immediately. No confirmation screen, account text fields or extra-account controls exist.
+- POST /api/beta/enroll carries exactly {idToken, source: "site-captain", app: "captain"}. The browser decodes the token to display the chosen account and poll its status; the backend verifies the token. The enrollment response has no email field.
 - GET /api/beta/enroll/status?email=...&app=captain polls every two seconds after the preceding request completes. Only playSynced=true from enrollment or synced=true from status advances to the propagation wait. A rejected account returns to account selection.
-- Picking the account is the go-ahead: enrollment starts at once, with no confirmation screen. Ten seconds after sync (including returning accounts) the page opens the Play Store app by itself: intent:, then market: after 1.5 s; never the Play website on Android (a closed-test app has no web page). Chrome can refuse an app launch no fresh tap started; if the page is still visible after 3 s, the "Open Google Play" button appears and its tap opens the store app. Desktop goes to the web listing.
-- The 75-second cap starts before enrollment. Unsynced visitors see retry and optional support. Sync near the cap stops the spinner at 75 seconds while the full ten-second propagation wait finishes.
+- Ten seconds after sync (including returning accounts), Android gets one intent: launch targeting the Play Store app, with no market: retry or web fallback. Chrome may show its own "Continue to Google Play Store?" bar because the timer has no fresh user gesture. Our "Open Google Play" button stays hidden for eight seconds and appears only if the page remains visible without a hand-off; its tap retries the intent. Desktop goes to the web listing. [Chrome documents the user-gesture restriction](https://developer.chrome.com/docs/android/intents); there is no reliable zero-tap timer launch.
+- During working, propagation and opening, #actStatus is hidden and the large #actWarn.act-stay message is visible. Delayed/holdlong and manual-fallback statuses remain visible; errors use #actErr. Recovery from a delayed response restores the main message. The manual fallback hides it.
+- The 300-second cap starts before enrollment. Unsynced visitors see retry and optional support. Sync near the cap stops the spinner at 300 seconds while the main message and full ten-second propagation wait remain.
 - API responses never control download navigation. Delayed responses do not promise email delivery.
 - Requests time out after 15 seconds. Generation guards and cancellation prevent stale requests from changing a closed/reopened modal. GIS button state also rejects credentials from older chooser attempts.
 - GIS loading failures show retry. GIS has no button-popup cancellation callback, so retry remains visible throughout account selection; after 60 seconds without a credential, the chooser attempt expires with a retry message. In-app browsers are directed to Chrome.
@@ -72,8 +73,10 @@ node website/qa/check-i18n.cjs
 node website/qa/check-activation.cjs
 ```
 
-Static checks require Pillow and run without network when no server URL is supplied. They check local assets (including cache query keys), image decoding, translation coverage, store links, confirmation markup and retired-flow removal. An optional local server URL also checks HTTP assets. The language check exercises all three pages. The activation check runs the real script with a fake DOM, clock, GIS and enrollment service; it covers confirmation, payloads, account switching, propagation, deadlines, retries, stale work and timing privacy without contacting Google or the backend.
+Static checks require Pillow and run without network when no server URL is supplied. They check local assets (including cache query keys), image decoding, translation coverage, store links, the large stay-message class and generator parity. An optional local server URL also checks HTTP assets. The language check exercises all three pages. The activation check runs the real script with a fake DOM, clock, GIS and enrollment service; it covers immediate enrollment, payloads, quiet statuses, delayed recovery, propagation, the exact eight-second fallback, visibility hand-off, deadlines, retries, stale work and timing privacy without contacting Google or the backend.
 
-qa/check.cjs contains browser layout and interaction checks with mocked GIS/enrollment. Use an existing puppeteer-core through PUPPETEER_MODULE and Chrome through CHROME_PATH. It writes local screenshots and qa/results.json. This update passed syntax, static, language-runtime and offline activation checks. Browser checks could not start because puppeteer-core is not installed in this workspace.
+qa/check.cjs contains browser layout and interaction checks with mocked GIS/enrollment. Use an existing puppeteer-core through PUPPETEER_MODULE and Chrome through CHROME_PATH. It writes local screenshots and qa/results.json. Offline checks do not verify Chrome's native app-launch prompt.
 
 Live GIS account selection, authorized-origin settings, backend enrollment, rendered mobile/desktop layout and the closed-testing Play handoff remain unverified. Check the production origin on Android Chrome and desktop with real tester accounts.
+
+For architecture, daemon operation and reuse in another project, see [Play beta activation system](../docs/PLAY_BETA_ACTIVATION_SYSTEM.md).

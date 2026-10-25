@@ -1,4 +1,4 @@
-/* Captain: Google account -> enroll -> sync -> Play Store app, with no extra taps. */
+/* Captain: Google account -> enroll -> sync -> Play Store app hand-off. */
 (function () {
   'use strict';
   var CONFIG = window.VGO_CONFIG;
@@ -14,9 +14,13 @@
   };
   var gisInitialized = false, gisLoading = null;
   function mark(key) { if (state.timings) state.timings[key] = performance.now(); }
+  // While things are on track the big "stay here" line says it all; the status
+  // line only speaks up when something needs the captain's attention.
+  var QUIET_STATUS = { working: true, propagating: true, opening: true };
   function status(key) {
     state.statusKey = key;
     $('actStatus').textContent = t(key) + ((key === 'delayed' || key === 'holdlong') && CONFIG.WHATSAPP ? ' ' + t('support') : '');
+    hide('actStatus', !!QUIET_STATUS[key]);
   }
   function error(key) { state.errorKey = key; $('actErr').textContent = t(key); hide('actErr', false); }
   function support() {
@@ -57,21 +61,22 @@
   function isAndroid() { return /Android/i.test(navigator.userAgent || ''); }
   function playWebUrl() { return 'https://play.google.com/store/apps/details?id=' + CONFIG.PACKAGE; }
   // A closed-test app has no page on the Play website, so Android goes to the
-  // Play Store app (intent:, then market:) and never falls back to the web.
-  // Chrome may refuse an app launch that no fresh tap started; onRefused then
-  // offers our own button, whose tap Chrome does honour.
+  // Play Store app via intent: and never falls back to the web.
+  // Chrome launches another app without asking only off a fresh tap; a launch
+  // started by our timer gets its own "Continue to Google Play Store?" prompt.
+  // That prompt is the one tap, so there is no second (market:) try that would
+  // prompt again; our button appears only if the store still hasn't opened.
+  var STORE_FALLBACK_MS = 8000;
   function openStore(onRefused) {
     if (!isAndroid()) { window.location.href = playWebUrl(); return; }
     var handedOff = false;
     function onHide() { if (document.hidden) handedOff = true; }
-    function go(url) { if (!handedOff && !document.hidden) { try { window.location.href = url; } catch (_) { /* scheme refused */ } } }
     document.addEventListener('visibilitychange', onHide);
-    go('intent://details?id=' + CONFIG.PACKAGE + '#Intent;scheme=market;package=com.android.vending;end');
-    setTimeout(function () { go('market://details?id=' + CONFIG.PACKAGE); }, 1500);
+    try { window.location.href = 'intent://details?id=' + CONFIG.PACKAGE + '#Intent;scheme=market;package=com.android.vending;end'; } catch (_) { /* scheme refused */ }
     setTimeout(function () {
       document.removeEventListener('visibilitychange', onHide);
       if (!handedOff && !document.hidden && onRefused) onRefused();
-    }, 3000);
+    }, STORE_FALLBACK_MS);
   }
   function gisReady() { return !!(window.google && window.google.accounts && window.google.accounts.id); }
   function ensureGIS() {
@@ -163,7 +168,7 @@
   }
   function synced() {
     mark('synced'); state.synced = true; state.deadline = Date.now() + CONFIG.POST_SYNC_SECONDS * 1000;
-    status('propagating'); hide('actDelayedWa', true);
+    status('propagating'); hide('actWarn', false); hide('actDelayedWa', true);
   }
   function logTimings() {
     if (state.timingLogged || !state.timings) return;
@@ -174,14 +179,14 @@
     }).join(', '));
   }
   function ready() {
-    stopWork(); state.phase = 'ready'; hide('actWarn', true);
-    hide('actDelayedWa', true); hide('actRetry', true); status('opening');
+    stopWork(); state.phase = 'ready';
+    hide('actDelayedWa', true); hide('actRetry', true); hide('actWarn', false); status('opening');
     $('actOpenPlay').href = playWebUrl();
     logTimings();
     var generation = state.generation;
     openStore(function () {
       if (generation !== state.generation || state.phase !== 'ready') return;
-      hide('actProgSpin', true); status('openFallback'); hide('actOpenPlay', false); hide('actSwitch', false);
+      hide('actProgSpin', true); hide('actWarn', true); status('openFallback'); hide('actOpenPlay', false); hide('actSwitch', false);
     });
   }
   function showDelayed() { status('delayed'); hide('actWarn', true); support(); }
@@ -194,8 +199,9 @@
     if (state.phase !== 'enrolling' && state.phase !== 'waiting') return;
     if (state.synced && now >= state.deadline) { ready(); return; }
     if (now >= state.holdDeadline) {
-      hide('actProgSpin', true); hide('actWarn', true);
+      hide('actProgSpin', true);
       if (state.synced) { status('propagating'); return; }
+      hide('actWarn', true);
       stopWork(); state.phase = 'delayed'; clearCredential(); support(); status('holdlong'); hide('actRetry', false);
     }
   }
