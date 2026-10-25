@@ -9,7 +9,7 @@ Caddy serves this directory as the static root of https://vgo-eg.com. Route /api
 | App | Google Play | App Store |
 | --- | --- | --- |
 | V.Go (rider) | https://play.google.com/store/apps/details?id=com.scooterapp.vgo | https://apps.apple.com/app/id6820955516 |
-| V.Go Captain | Activation, then https://play.google.com/apps/testing/com.scooterapp.vgo.v_go_captain | https://apps.apple.com/app/id6820956040 |
+| V.Go Captain | Activation, then the Play Store app (intent://details?id=com.scooterapp.vgo.v_go_captain) | https://apps.apple.com/app/id6820956040 |
 
 Rider Play links are plain anchors. Captain Play buttons keep class js-play-activate and data-app="captain". CONFIG applies only to captain activation. Both apps have store cards in the hero and final section. Direct store links work without JavaScript; captain Play activation requires JavaScript.
 
@@ -23,7 +23,6 @@ Edit index.html, privacy.html, delete-account.html and assets/js/i18n.js directl
 | PACKAGE | com.scooterapp.vgo.v_go_captain |
 | GOOGLE_CLIENT_ID | 792221536894-fmupld3v24c6q6d3pv029kk4nhv0lb78.apps.googleusercontent.com |
 | SOURCE | site-captain |
-| TEST_OPTIN_URL | https://play.google.com/apps/testing/com.scooterapp.vgo.v_go_captain |
 | WHATSAPP | '' — TODO: V.Go support WhatsApp |
 | CONTACT_EMAIL | '' — TODO: V.Go privacy contact email |
 | POST_SYNC_SECONDS | 10 |
@@ -40,15 +39,15 @@ Before serving, confirm https://vgo-eg.com is an authorized JavaScript origin on
 - Captain Play opens the modal. The visitor taps the visible Google-rendered button to open account selection directly from that user gesture. GIS uses popup UX and FedCM button UX where supported; auto_select and button_auto_select are false.
 - There is an intentional extra Google-button tap: [Google does not support programmatically starting its ID-token button flow from a custom button](https://developers.google.com/identity/gsi/web/guides/offerings). Do not simulate clicks on hidden Google controls. Choosing another account and retrying return to that visible Google button.
 - The selected email is displayed prominently with a bilingual reminder to match the phone's Google Play account. Only “Yes, activate” submits enrollment. No account text fields or extra-account controls exist.
-- POST /api/beta/enroll carries exactly {idToken, source: "site-captain", app: "captain"}. The browser decodes the token only for confirmation display; the backend must verify its signature, audience and expiry and return the resolved email.
+- POST /api/beta/enroll carries exactly {idToken, source: "site-captain", app: "captain"}. The browser decodes the token only to show the chosen account; the backend must verify its signature, audience and expiry and return the resolved email.
 - GET /api/beta/enroll/status?email=...&app=captain polls every two seconds after the preceding request completes. Only playSynced=true from enrollment or synced=true from status advances to the propagation wait. A rejected account returns to account selection.
-- Wait ten full seconds after sync, including returning accounts. The final user-tapped link always opens TEST_OPTIN_URL on Android and desktop. The tester taps “Become a tester”, then “Download it on Google Play”. The captain listing alone is insufficient before opt-in.
+- Picking the account is the go-ahead: enrollment starts at once, with no confirmation screen. Ten seconds after sync (including returning accounts) the page opens the Play Store app by itself: intent:, then market: after 1.5 s; never the Play website on Android (a closed-test app has no web page). Chrome can refuse an app launch no fresh tap started; if the page is still visible after 3 s, the "Open Google Play" button appears and its tap opens the store app. Desktop goes to the web listing.
 - The 75-second cap starts before enrollment. Unsynced visitors see retry and optional support. Sync near the cap stops the spinner at 75 seconds while the full ten-second propagation wait finishes.
 - API responses never control download navigation. Delayed responses do not promise email delivery.
 - Requests time out after 15 seconds. Generation guards and cancellation prevent stale requests from changing a closed/reopened modal. GIS button state also rejects credentials from older chooser attempts.
 - GIS loading failures show retry. GIS has no button-popup cancellation callback, so retry remains visible throughout account selection; after 60 seconds without a credential, the chooser attempt expires with a retry message. In-app browsers are directed to Chrome.
 - Escape, focus containment and focus restoration are supported. Credentials are held only in memory and discarded after submission or dismissal.
-- performance.now() records buttonClick, accountChosen, confirmClicked, enrollResponse, synced and playRedirect. The first Play handoff logs one “[vgo-activate] timings ms: ...” line with elapsed milliseconds since the original Play click. Logs contain no account or token data.
+- performance.now() records buttonClick, accountChosen, enrollResponse, synced and playRedirect. The automatic Play hand-off logs one “[vgo-activate] timings ms: ...” line with elapsed milliseconds since the original Play click. Logs contain no account or token data.
 
 ## Source-grounded content
 

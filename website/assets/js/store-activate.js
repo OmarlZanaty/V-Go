@@ -1,4 +1,4 @@
-/* Captain: Google account -> explicit confirmation -> enroll -> sync -> closed-test opt-in. */
+/* Captain: Google account -> enroll -> sync -> Play Store app, with no extra taps. */
 (function () {
   'use strict';
   var CONFIG = window.VGO_CONFIG;
@@ -31,7 +31,7 @@
   }
   function clearCredential() { state.idToken = ''; state.email = ''; $('actChosenEmail').textContent = ''; }
   function resetStages() {
-    ['actPickerStage', 'actConfirmStage', 'actProgress', 'actErr', 'actOpenPlay', 'actSwitch', 'actDelayedWa', 'actRetry'].forEach(function (id) { hide(id, true); });
+    ['actPickerStage', 'actProgress', 'actErr', 'actOpenPlay', 'actSwitch', 'actDelayedWa', 'actRetry'].forEach(function (id) { hide(id, true); });
     $('actOpenPlay').removeAttribute('href');
     state.statusKey = ''; state.errorKey = ''; state.synced = false;
   }
@@ -47,10 +47,31 @@
       if (typeof claims.email !== 'string' || !claims.email || !claims.exp || claims.exp * 1000 <= Date.now()) throw new Error('credential');
       mark('accountChosen'); stopWork(); resetStages(); state.phase = 'confirm';
       state.idToken = token; state.email = claims.email; $('actChosenEmail').textContent = claims.email;
-      hide('actConfirmStage', false); $('actConfirm').focus();
     } catch (_) {
       state.phase = 'picker'; clearCredential(); error('accountError'); hide('actRetry', false);
+      return;
     }
+    // Picking the account is the go-ahead: no confirmation screen.
+    enroll();
+  }
+  function isAndroid() { return /Android/i.test(navigator.userAgent || ''); }
+  function playWebUrl() { return 'https://play.google.com/store/apps/details?id=' + CONFIG.PACKAGE; }
+  // A closed-test app has no page on the Play website, so Android goes to the
+  // Play Store app (intent:, then market:) and never falls back to the web.
+  // Chrome may refuse an app launch that no fresh tap started; onRefused then
+  // offers our own button, whose tap Chrome does honour.
+  function openStore(onRefused) {
+    if (!isAndroid()) { window.location.href = playWebUrl(); return; }
+    var handedOff = false;
+    function onHide() { if (document.hidden) handedOff = true; }
+    function go(url) { if (!handedOff && !document.hidden) { try { window.location.href = url; } catch (_) { /* scheme refused */ } } }
+    document.addEventListener('visibilitychange', onHide);
+    go('intent://details?id=' + CONFIG.PACKAGE + '#Intent;scheme=market;package=com.android.vending;end');
+    setTimeout(function () { go('market://details?id=' + CONFIG.PACKAGE); }, 1500);
+    setTimeout(function () {
+      document.removeEventListener('visibilitychange', onHide);
+      if (!handedOff && !document.hidden && onRefused) onRefused();
+    }, 3000);
   }
   function gisReady() { return !!(window.google && window.google.accounts && window.google.accounts.id); }
   function ensureGIS() {
@@ -97,7 +118,7 @@
   }
   function showPicker() {
     stopWork(); clearCredential(); resetStages(); state.phase = 'picker'; state.pickerAttempt++;
-    if (state.timings) ['accountChosen', 'confirmClicked', 'enrollResponse', 'synced', 'playRedirect'].forEach(function (key) { delete state.timings[key]; });
+    if (state.timings) ['accountChosen', 'enrollResponse', 'synced', 'playRedirect'].forEach(function (key) { delete state.timings[key]; });
     state.timingLogged = false;
     hide('actPickerStage', false); hide('actRetry', false); $('actGsiBtn').replaceChildren();
     var generation = state.generation;
@@ -144,11 +165,24 @@
     mark('synced'); state.synced = true; state.deadline = Date.now() + CONFIG.POST_SYNC_SECONDS * 1000;
     status('propagating'); hide('actDelayedWa', true);
   }
+  function logTimings() {
+    if (state.timingLogged || !state.timings) return;
+    mark('playRedirect'); state.timingLogged = true;
+    var start = state.timings.buttonClick;
+    console.info('[vgo-activate] timings ms: ' + Object.keys(state.timings).map(function (key) {
+      return key + '=' + Math.round(state.timings[key] - start);
+    }).join(', '));
+  }
   function ready() {
-    stopWork(); state.phase = 'ready'; hide('actProgSpin', true); hide('actWarn', true);
-    hide('actDelayedWa', true); hide('actRetry', true); status('readyOptin');
-    // Closed testers must opt in before following Google's link to the listing.
-    $('actOpenPlay').href = CONFIG.TEST_OPTIN_URL; hide('actOpenPlay', false); hide('actSwitch', false);
+    stopWork(); state.phase = 'ready'; hide('actWarn', true);
+    hide('actDelayedWa', true); hide('actRetry', true); status('opening');
+    $('actOpenPlay').href = playWebUrl();
+    logTimings();
+    var generation = state.generation;
+    openStore(function () {
+      if (generation !== state.generation || state.phase !== 'ready') return;
+      hide('actProgSpin', true); status('openFallback'); hide('actOpenPlay', false); hide('actSwitch', false);
+    });
   }
   function showDelayed() { status('delayed'); hide('actWarn', true); support(); }
   function render() {
@@ -167,7 +201,7 @@
   }
   async function enroll() {
     if (state.phase !== 'confirm' || !state.idToken) return;
-    mark('confirmClicked'); var token = state.idToken;
+    var token = state.idToken;
     stopWork(); var generation = state.generation;
     resetStages(); state.phase = 'enrolling'; state.idToken = '';
     state.holdDeadline = Date.now() + CONFIG.MAX_HOLD_SECONDS * 1000;
@@ -209,21 +243,15 @@
   }
   function openPlay(event) {
     if (state.phase !== 'ready') { event.preventDefault(); return; }
-    if (state.timingLogged) return;
-    mark('playRedirect'); state.timingLogged = true;
-    var start = state.timings.buttonClick;
-    console.info('[vgo-activate] timings ms: ' + Object.keys(state.timings).map(function (key) {
-      return key + '=' + Math.round(state.timings[key] - start);
-    }).join(', '));
-    // Normal user-tapped HTTPS navigation on Android and desktop. No API-supplied URL.
+    // The href stays the web listing (long-press, no-JS); a real tap on Android
+    // gives Chrome the activation it needs to open the Play Store app.
+    if (isAndroid()) { event.preventDefault(); openStore(); }
   }
   document.querySelectorAll('.js-play-activate').forEach(function (button) {
     button.addEventListener('click', function (event) { event.preventDefault(); openModal(button); });
   });
   $('actClose').addEventListener('click', closeModal);
   $('actOverlay').addEventListener('click', function (event) { if (event.target === $('actOverlay')) closeModal(); });
-  $('actConfirm').addEventListener('click', enroll);
-  $('actChooseAnother').addEventListener('click', showPicker);
   $('actRetry').addEventListener('click', showPicker);
   $('actOpenPlay').addEventListener('click', openPlay);
   document.addEventListener('visibilitychange', function () { if (!document.hidden) render(); });
