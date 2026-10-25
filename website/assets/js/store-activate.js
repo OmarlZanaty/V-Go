@@ -75,7 +75,7 @@
     if (!gisInitialized) {
       window.google.accounts.id.initialize({
         client_id: CONFIG.GOOGLE_CLIENT_ID, callback: receiveCredential,
-        ux_mode: 'popup', auto_select: false, button_auto_select: false, use_fedcm_for_button: true
+        ux_mode: 'popup', auto_select: false, button_auto_select: false, use_fedcm_for_button: false
       });
       gisInitialized = true;
     }
