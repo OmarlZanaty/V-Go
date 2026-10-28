@@ -23,7 +23,7 @@ class DioFactory {
       dio = Dio();
       dio!
         ..options.baseUrl = EndPoint.baseUrl
-        ..options.connectTimeout = const Duration(seconds: 90)
+        ..options.connectTimeout = const Duration(seconds: 30)
         ..options.receiveTimeout = const Duration(minutes: 5);
       _addHeaders();
       _addInterceptors();

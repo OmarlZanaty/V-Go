@@ -2,6 +2,7 @@ import 'dart:developer';
 
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart';
 
 import '../../firebase_options.dart';
@@ -9,6 +10,7 @@ import '../cache/cache_helper.dart';
 import '../helpers/navigation_handler.dart';
 import '../routing/routes.dart';
 import '../utils/app_constants.dart';
+import 'in_app_notification_banner.dart';
 import 'local_notification_service.dart';
 
 /// Handles Firebase Cloud Messaging for the captain app: permission, token
@@ -22,14 +24,26 @@ class FirebaseNotificationService {
   final FirebaseMessaging _messaging = FirebaseMessaging.instance;
 
   Future<void> initialize() async {
+    FirebaseMessaging.onMessage.listen(_onForegroundMessage);
+    FirebaseMessaging.onMessageOpenedApp.listen(_onMessageOpened);
+
+    try {
+      await _messaging.setForegroundNotificationPresentationOptions(
+        alert: false,
+        badge: true,
+        sound: true,
+      );
+    } catch (e) {
+      log('FCM foreground presentation setup failed: $e');
+    }
+
     try {
       await _messaging.requestPermission();
+    } catch (e) {
+      log('FCM permission request failed: $e');
+    }
 
-      // Show a heads-up notification for foreground messages.
-      FirebaseMessaging.onMessage.listen(_onForegroundMessage);
-      // Handle taps that bring the app from background to foreground.
-      FirebaseMessaging.onMessageOpenedApp.listen(_onMessageOpened);
-
+    try {
       // Register the device token (the existing login flow sends it to the
       // backend; it's stored in secure storage where the login reads it).
       final token = await _messaging.getToken();
@@ -52,10 +66,16 @@ class FirebaseNotificationService {
   void _onForegroundMessage(RemoteMessage message) {
     final n = message.notification;
     if (n != null) {
-      LocalNotificationService().showNotification(
+      final shown = InAppNotificationBanner.show(
         title: n.title ?? 'رحلة جديدة',
         body: n.body ?? '',
       );
+      if (defaultTargetPlatform == TargetPlatform.android || !shown) {
+        LocalNotificationService().showNotification(
+          title: n.title ?? 'رحلة جديدة',
+          body: n.body ?? '',
+        );
+      }
     }
   }
 

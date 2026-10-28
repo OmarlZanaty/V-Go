@@ -30,8 +30,16 @@ class FinanceCubit extends Cubit<FinanceState> {
       ),
     );
     try {
-      final summary = await _repo.getSummary();
-      final page = await _repo.getLedger(pageNumber: 1);
+      late FinanceSummary summary;
+      late FinanceLedgerPage page;
+      await Future.wait<void>([
+        _repo.getSummary().then((value) {
+          summary = value;
+        }),
+        _repo.getLedger(pageNumber: 1).then((value) {
+          page = value;
+        }),
+      ]);
       emit(
         state.copyWith(
           summaryStatus: FinanceStatus.loaded,
@@ -56,8 +64,16 @@ class FinanceCubit extends Cubit<FinanceState> {
   Future<void> refresh() async {
     emit(state.copyWith(isRefreshing: true, clearError: true));
     try {
-      final summary = await _repo.getSummary();
-      final page = await _repo.getLedger(pageNumber: 1);
+      late FinanceSummary summary;
+      late FinanceLedgerPage page;
+      await Future.wait<void>([
+        _repo.getSummary().then((value) {
+          summary = value;
+        }),
+        _repo.getLedger(pageNumber: 1).then((value) {
+          page = value;
+        }),
+      ]);
       emit(
         state.copyWith(
           summaryStatus: FinanceStatus.loaded,

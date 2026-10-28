@@ -59,6 +59,11 @@ class LocalNotificationService {
     );
 
     // Show the notification
-    await _notificationsPlugin.show(0, title, body, notificationDetails);
+    await _notificationsPlugin.show(
+      DateTime.now().millisecondsSinceEpoch ~/ 1000,
+      title,
+      body,
+      notificationDetails,
+    );
   }
 }

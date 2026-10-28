@@ -31,14 +31,22 @@ class CaptainShellView extends StatefulWidget {
 
 class _CaptainShellViewState extends State<CaptainShellView> {
   int _index = 0;
+  final Set<int> _visitedTabs = {0};
 
-  static const _tabs = [
-    CaptainHomeView(),
-    TripsView(),
-    FinanceView(),
-    NotificationsView(),
-    ProfileView(),
-  ];
+  Widget _tab(int index) => switch (index) {
+    0 => const CaptainHomeView(),
+    1 => const TripsView(),
+    2 => const FinanceView(),
+    3 => const NotificationsView(),
+    _ => const ProfileView(),
+  };
+
+  void _selectTab(int index) {
+    setState(() {
+      _index = index;
+      _visitedTabs.add(index);
+    });
+  }
 
   @override
   void initState() {
@@ -92,10 +100,16 @@ class _CaptainShellViewState extends State<CaptainShellView> {
           current.onlineBlock != null,
       listener: (context, state) => _showOnlineBlockSheet(context, state),
       child: Scaffold(
-        body: IndexedStack(index: _index, children: _tabs),
+        body: IndexedStack(
+          index: _index,
+          children: List.generate(
+            5,
+            (i) => _visitedTabs.contains(i) ? _tab(i) : const SizedBox.shrink(),
+          ),
+        ),
         bottomNavigationBar: BottomNavigationBar(
           currentIndex: _index,
-          onTap: (i) => setState(() => _index = i),
+          onTap: _selectTab,
           type: BottomNavigationBarType.fixed,
           backgroundColor: AppColors.darkGrey,
           selectedItemColor: AppColors.primary,
@@ -165,7 +179,7 @@ class _CaptainShellViewState extends State<CaptainShellView> {
               onPressed: () {
                 Navigator.of(context).pop();
                 if (code == 'CASH_LIMIT') {
-                  setState(() => _index = 2);
+                  _selectTab(2);
                 } else if (code == 'COLLECTION_OVERDUE') {
                   Navigator.of(context).pushNamed(Routes.collectionViewRoute);
                 } else if (code == 'KYC_PENDING' ||

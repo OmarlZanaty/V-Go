@@ -3,6 +3,7 @@ import 'dart:developer';
 
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart';
 
 import '../cache/cache_helper.dart';
@@ -10,6 +11,7 @@ import '../helpers/navigation_handler.dart';
 import '../routing/routes.dart';
 import '../utils/app_constants.dart';
 import 'flutter_local_notification_service.dart';
+import 'in_app_notification_banner.dart';
 import '../../firebase_options.dart';
 
 /// A service for handling Firebase Cloud Messaging (FCM) notifications.
@@ -64,10 +66,24 @@ class FirebaseNotificationService {
 
   /// Initialize Firebase Messaging.
   Future<void> _initializeFirebaseMessaging() async {
-    await _firebaseMessaging.requestPermission();
-
     FirebaseMessaging.onMessage.listen(_handleForegroundMessage);
     FirebaseMessaging.onMessageOpenedApp.listen(_handleBackgroundMessage);
+
+    try {
+      await _firebaseMessaging.setForegroundNotificationPresentationOptions(
+        alert: false,
+        badge: true,
+        sound: true,
+      );
+    } catch (e) {
+      log('Error setting foreground notification presentation: $e');
+    }
+
+    try {
+      await _firebaseMessaging.requestPermission();
+    } catch (e) {
+      log('Error requesting notification permission: $e');
+    }
   }
 
   /// Fires on every push while the app is alive. Trip pushes (accepted,
@@ -83,10 +99,17 @@ class FirebaseNotificationService {
 
     if (message.notification?.title != null &&
         message.notification?.title != 'رسالة جديدة') {
-      LocalNotificationService().showNotification(
+      final shown = InAppNotificationBanner.show(
         title: message.notification?.title ?? '',
         body: message.notification?.body ?? '',
       );
+      // Keep Android sound/tray notifications without duplicating iOS banners.
+      if (defaultTargetPlatform == TargetPlatform.android || !shown) {
+        LocalNotificationService().showNotification(
+          title: message.notification?.title ?? '',
+          body: message.notification?.body ?? '',
+        );
+      }
     }
   }
 
