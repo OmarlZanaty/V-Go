@@ -2,12 +2,15 @@
 using Masafet_Elseka.Application.DTOs.Payment.PayMob;
 using Masafet_Elseka.Application.Interfaces.IPaymentService;
 using Masafet_Elseka.Application.Response;
+using Masafet_Elseka.Domain.Enums;
+using Masafet_Elseka.Infrastructure.Data;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.WebUtilities;
+using Microsoft.EntityFrameworkCore;
 using System.Linq;
 using System.Security.Claims;
 using System.Text.Json;
@@ -20,10 +23,12 @@ namespace Masafet_Elseka.Presentation.Controllers
     public class PaymentController : ControllerBase
     {
         private readonly IPaymentService _paymentService;
+        private readonly Context _context;
 
-        public PaymentController(IPaymentService paymentService)
+        public PaymentController(IPaymentService paymentService, Context context)
         {
             _paymentService = paymentService;
+            _context = context;
         }
 
         [HttpPost("createIntent")]
@@ -56,6 +61,22 @@ namespace Masafet_Elseka.Presentation.Controllers
         [HttpPost("capture/{tripId}")]
         public async Task<IActionResult> Capture(string tripId)
         {
+            if (!User.IsInRole("Admin"))
+            {
+                var trip = await _context.Trips.AsNoTracking()
+                    .Include(t => t.UserTrips).FirstOrDefaultAsync(t => t.Id == tripId);
+                if (trip == null)
+                    return NotFound("الرحلة غير موجودة");
+
+                var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+                if (string.IsNullOrEmpty(userId) || !trip.UserTrips.Any(ut =>
+                    ut.UserId == userId && ut.Role == UserTripRole.Driver))
+                    return StatusCode(StatusCodes.Status403Forbidden, "غير مسموح لك بتحصيل هذه الرحلة");
+
+                if (trip.Status != TripStatus.Completed)
+                    return BadRequest("يجب اكتمال الرحلة قبل التحصيل");
+            }
+
             var response = await _paymentService.CaptureRidePaymentAsync(tripId);
             return StatusCode(response.StatusCode, response.IsSuccess ? (object)response.Data : response.Message);
         }
@@ -65,6 +86,22 @@ namespace Masafet_Elseka.Presentation.Controllers
         [HttpPost("void/{tripId}")]
         public async Task<IActionResult> Void(string tripId)
         {
+            if (!User.IsInRole("Admin"))
+            {
+                var trip = await _context.Trips.AsNoTracking()
+                    .Include(t => t.UserTrips).FirstOrDefaultAsync(t => t.Id == tripId);
+                if (trip == null)
+                    return NotFound("الرحلة غير موجودة");
+
+                var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+                if (string.IsNullOrEmpty(userId) || !trip.UserTrips.Any(ut =>
+                    ut.UserId == userId && ut.Role == UserTripRole.Client))
+                    return StatusCode(StatusCodes.Status403Forbidden, "غير مسموح لك بإلغاء حجز مبلغ هذه الرحلة");
+
+                if (trip.Status != TripStatus.Canceled && trip.Status != TripStatus.Rejected)
+                    return BadRequest("يجب إلغاء الرحلة أو رفضها أولاً");
+            }
+
             var response = await _paymentService.VoidRidePaymentAsync(tripId);
             return StatusCode(response.StatusCode, response.IsSuccess ? (object)response.Data : response.Message);
         }
