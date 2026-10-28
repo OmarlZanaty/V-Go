@@ -6,6 +6,8 @@ plugins {
     // START: FlutterFire Configuration
     id("com.google.gms.google-services")
     // END: FlutterFire Configuration
+    // Crash reports (uploads the R8 mapping so stack traces are readable).
+    id("com.google.firebase.crashlytics")
     id("kotlin-android")
     // The Flutter Gradle Plugin must be applied after the Android and Kotlin Gradle plugins.
     id("dev.flutter.flutter-gradle-plugin")
@@ -67,8 +69,8 @@ android {
                 signingConfigs.getByName("release")
             else
                 signingConfigs.getByName("debug")
-            isMinifyEnabled = false
-            isShrinkResources = false
+            isMinifyEnabled = true
+            isShrinkResources = true
         }
     }
 

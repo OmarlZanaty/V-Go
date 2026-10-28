@@ -1,4 +1,6 @@
 import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_crashlytics/firebase_crashlytics.dart';
+import 'package:flutter/foundation.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -32,6 +34,7 @@ void main() async {
         options: DefaultFirebaseOptions.currentPlatform,
       );
     }
+    _initCrashReporting();
   } catch (e) {
     debugPrint("Firebase initialization failed: $e");
   }
@@ -54,6 +57,20 @@ void main() async {
   DeviceTokenSync.start();
 
   runApp(const MyApp());
+}
+
+/// Send uncaught Flutter and async errors to Crashlytics (release builds only).
+void _initCrashReporting() {
+  try {
+    FirebaseCrashlytics.instance.setCrashlyticsCollectionEnabled(!kDebugMode);
+    FlutterError.onError = FirebaseCrashlytics.instance.recordFlutterFatalError;
+    PlatformDispatcher.instance.onError = (error, stack) {
+      FirebaseCrashlytics.instance.recordError(error, stack, fatal: true);
+      return true;
+    };
+  } catch (e) {
+    debugPrint('Crash reporting init failed: $e');
+  }
 }
 
 Future<void> _initUserData() async {
