@@ -71,7 +71,6 @@ class FirebaseNotificationService {
 
     try {
       await _firebaseMessaging.setForegroundNotificationPresentationOptions(
-        alert: false,
         badge: true,
         sound: true,
       );
