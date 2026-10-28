@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:v_go_captain/core/maps/csb_map.dart';
 import 'package:v_go_captain/features/navigation/services/navigation_engine.dart';
 import 'package:v_go_captain/features/navigation/services/routes_api_service.dart';
 import 'package:v_go_captain/features/navigation/utils/distance_helper.dart';

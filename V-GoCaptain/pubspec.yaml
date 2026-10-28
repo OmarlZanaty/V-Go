@@ -59,7 +59,7 @@ dependencies:
 
   # Location & maps (driver core)
   geolocator: ^14.0.2
-  google_maps_flutter: ^2.12.3
+  maplibre_gl: ^0.27.1
   url_launcher: ^6.3.1          # fallback: open external maps if in-app nav fails
 
   # In-app turn-by-turn navigation (captain never leaves V-Go)
@@ -146,7 +146,7 @@ flutter:
   assets:
     - assets/images/
     - assets/sounds/
-    - assets/map_style.json
+    - assets/map/vgo-light.json
     - assets/files/
 
   # To add assets to your application, add an assets section, like this:

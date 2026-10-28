@@ -4,7 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:geolocator/geolocator.dart';
-import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:v_go_captain/core/maps/csb_map.dart';
 import 'package:toastification/toastification.dart';
 
 import '../../../../core/api/dio_factory.dart';
@@ -225,7 +225,7 @@ class _CaptainMap extends StatefulWidget {
 }
 
 class _CaptainMapState extends State<_CaptainMap> {
-  final Completer<GoogleMapController> _controller = Completer();
+  final Completer<VgoMapController> _controller = Completer();
 
   // Default center until the first GPS fix arrives.
   static const LatLng _fallback = LatLng(30.0444, 31.2357); // Cairo
@@ -493,7 +493,7 @@ class _CaptainMapState extends State<_CaptainMap> {
         _hotspots.isNotEmpty;
     return Stack(
       children: [
-        GoogleMap(
+        VgoMap(
           initialCameraPosition: CameraPosition(
             target: _latLng ?? _fallback,
             zoom: hasFix ? 15.5 : 12,

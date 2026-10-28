@@ -1,6 +1,6 @@
 import 'dart:convert';
 
-import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:v_go_captain/core/maps/csb_map.dart';
 import 'package:http/http.dart' as http;
 
 import '../../../core/config/app_config.dart';

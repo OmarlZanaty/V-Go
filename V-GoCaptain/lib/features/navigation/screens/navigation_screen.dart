@@ -5,7 +5,7 @@ import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:geolocator/geolocator.dart';
-import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:v_go_captain/core/maps/csb_map.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 
@@ -58,7 +58,7 @@ class _NavigationScreenState extends State<NavigationScreen> {
   final NavigationEngine _engine = NavigationEngine();
   final TtsService _tts = TtsService();
   final LocationService _location = LocationService();
-  final Completer<GoogleMapController> _mapController = Completer();
+  final Completer<VgoMapController> _mapController = Completer();
 
   StreamSubscription<Position>? _posSub;
   StreamSubscription<LatLng?>? _clientSub;
@@ -716,7 +716,13 @@ class _NavigationScreenState extends State<NavigationScreen> {
     final picture = recorder.endRecording();
     final image = await picture.toImage(size.toInt(), size.toInt());
     final bytes = await image.toByteData(format: ui.ImageByteFormat.png);
-    return BitmapDescriptor.bytes(bytes!.buffer.asUint8List());
+    image.dispose();
+    picture.dispose();
+    // Explicit logical width keeps the PNG consistent with the follow overlay.
+    return BitmapDescriptor.bytes(
+      bytes!.buffer.asUint8List(),
+      width: _followArrowSize,
+    );
   }
 
   Set<Marker> _markers() {
@@ -799,11 +805,6 @@ class _NavigationScreenState extends State<NavigationScreen> {
     };
   }
 
-  bool get _isNight {
-    final h = DateTime.now().hour;
-    return h >= 19 || h < 6;
-  }
-
   @override
   void dispose() {
     WakelockPlus.disable();
@@ -833,7 +834,7 @@ class _NavigationScreenState extends State<NavigationScreen> {
               onPointerDown: (_) {
                 if (_following) setState(() => _following = false);
               },
-              child: GoogleMap(
+              child: VgoMap(
                 initialCameraPosition: CameraPosition(
                   target: widget.origin,
                   zoom: _shownZoom,
@@ -852,8 +853,7 @@ class _NavigationScreenState extends State<NavigationScreen> {
                 zoomControlsEnabled: false,
                 compassEnabled: false,
                 mapToolbarEnabled: false,
-                trafficEnabled: false,
-                style: _isNight ? _darkMapStyle : null,
+                // Pilot uses bundled light styling; Google traffic is unavailable.
                 onMapCreated: (c) {
                   if (!_mapController.isCompleted) _mapController.complete(c);
                 },
@@ -1060,25 +1060,6 @@ class _NavigationScreenState extends State<NavigationScreen> {
     );
   }
 }
-
-/// Compact dark map style for night driving (Google's standard night palette).
-const String _darkMapStyle = '''
-[
-  {"elementType":"geometry","stylers":[{"color":"#212121"}]},
-  {"elementType":"labels.icon","stylers":[{"visibility":"off"}]},
-  {"elementType":"labels.text.fill","stylers":[{"color":"#757575"}]},
-  {"elementType":"labels.text.stroke","stylers":[{"color":"#212121"}]},
-  {"featureType":"administrative","elementType":"geometry","stylers":[{"color":"#757575"}]},
-  {"featureType":"poi","stylers":[{"visibility":"off"}]},
-  {"featureType":"road","elementType":"geometry.fill","stylers":[{"color":"#2c2c2c"}]},
-  {"featureType":"road","elementType":"labels.text.fill","stylers":[{"color":"#8a8a8a"}]},
-  {"featureType":"road.arterial","elementType":"geometry","stylers":[{"color":"#373737"}]},
-  {"featureType":"road.highway","elementType":"geometry","stylers":[{"color":"#3c3c3c"}]},
-  {"featureType":"transit","stylers":[{"visibility":"off"}]},
-  {"featureType":"water","elementType":"geometry","stylers":[{"color":"#000000"}]},
-  {"featureType":"water","elementType":"labels.text.fill","stylers":[{"color":"#3d3d3d"}]}
-]
-''';
 
 class _ArrowPainter extends CustomPainter {
   const _ArrowPainter();
