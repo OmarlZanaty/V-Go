@@ -121,6 +121,38 @@ class ActiveTripPanel extends StatelessWidget {
                 : Text(_buttonLabel(state), style: AppStyle.button),
           ),
         ),
+        if (state.stage == TripStage.accepted || state.stage == TripStage.arrived)
+          TextButton(
+            onPressed: state.isBusy
+                ? null
+                : () async {
+                    final confirmed = await showDialog<bool>(
+                      context: context,
+                      builder: (dialogContext) => AlertDialog(
+                        title: const Text('إلغاء الرحلة؟'),
+                        content: const Text('سيتم إعادة الطلب لكباتن آخرين'),
+                        actions: [
+                          TextButton(
+                            onPressed: () => Navigator.pop(dialogContext, false),
+                            child: const Text('رجوع'),
+                          ),
+                          TextButton(
+                            onPressed: () => Navigator.pop(dialogContext, true),
+                            child: const Text('تأكيد الإلغاء'),
+                          ),
+                        ],
+                      ),
+                    );
+                    if (confirmed == true && context.mounted &&
+                        cubit.state.activeTrip?.tripId == trip.tripId) {
+                      await cubit.cancelActiveTrip();
+                    }
+                  },
+            child: Text(
+              'إلغاء الرحلة',
+              style: AppStyle.body.copyWith(color: AppColors.danger),
+            ),
+          ),
         // Visa escape hatch: if the client never completes the card payment, the
         // captain must still be able to finish and move on. Only at the settle
         // stage, and only while still unpaid.

@@ -286,6 +286,14 @@ class RealtimeService {
     await _invokeTrip('RejectTrip', args: [tripId]);
   }
 
+  Future<void> cancelAcceptedTrip(String tripId) async {
+    await _invokeTrip(
+      'DriverCancelTrip',
+      args: [tripId],
+      checkResult: true,
+    );
+  }
+
   Future<void> arrived(String tripId) async {
     await _invokeTrip(
       'Arrived',

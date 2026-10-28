@@ -136,6 +136,7 @@ class CaptainHomeCubit extends Cubit<CaptainHomeState>
         emit(
           state.copyWith(
             connection: CaptainConnection.offline,
+            clearOffers: true,
             onlineBlock: DriverOnlineBlock(
               canGoOnline: eligibility.canGoOnline,
               code: eligibility.code,
@@ -214,6 +215,7 @@ class CaptainHomeCubit extends Cubit<CaptainHomeState>
       };
       emit(
         state.copyWith(
+          clearOffers: true,
           activeTrip: _toOffer(t),
           stage: stage,
           activeTripPaid: t.isPaid,
@@ -224,16 +226,20 @@ class CaptainHomeCubit extends Cubit<CaptainHomeState>
     }
   }
 
-  /// Pull a trip that's already waiting for a driver and surface it as an offer.
-  /// Only the first one is shown (same card as a live offer); the captain can
-  /// also pull-to-refresh implicitly by toggling online again.
   Future<void> _loadPendingOffer() async {
-    if (state.hasActiveTrip || state.offer != null) return;
+    if (state.hasActiveTrip) return;
     try {
       final pending = await _tripRepo.getPendingTrips();
       if (isClosed || !state.isOnline) return;
-      if (state.hasActiveTrip || state.offer != null || pending.isEmpty) return;
-      emit(state.copyWith(offer: _toOffer(pending.first)));
+      if (state.hasActiveTrip || pending.isEmpty) return;
+      final offers = [...state.offers];
+      final tripIds = offers.map((offer) => offer.tripId).toSet();
+      for (final offer in pending.map(_toOffer)) {
+        if (offer.tripId.isNotEmpty && tripIds.add(offer.tripId)) {
+          offers.add(offer);
+        }
+      }
+      emit(state.copyWith(offers: offers));
     } catch (_) {
       // Best-effort: a failed pending fetch must not affect going online.
     }
@@ -268,7 +274,7 @@ class CaptainHomeCubit extends Cubit<CaptainHomeState>
       await _realtime.disconnect();
     } catch (_) {}
     emit(
-      state.copyWith(connection: CaptainConnection.offline, clearOffer: true),
+      state.copyWith(connection: CaptainConnection.offline, clearOffers: true),
     );
   }
 
@@ -278,6 +284,7 @@ class CaptainHomeCubit extends Cubit<CaptainHomeState>
       _offlineAfterTripBlock = block;
       emit(
         state.copyWith(
+          clearOffers: true,
           onlineBanner:
               block.message ?? 'لازم تراجع حالة حسابك قبل استقبال رحلات جديدة.',
         ),
@@ -298,7 +305,7 @@ class CaptainHomeCubit extends Cubit<CaptainHomeState>
       emit(
         state.copyWith(
           connection: CaptainConnection.offline,
-          clearOffer: true,
+          clearOffers: true,
           onlineBlock: block,
         ),
       );
@@ -362,14 +369,18 @@ class CaptainHomeCubit extends Cubit<CaptainHomeState>
   void _handleOffer(Map<dynamic, dynamic> raw) {
     if (state.hasActiveTrip) return; // already serving a trip
     final offer = TripOfferModel.fromMap(raw);
-    if (offer.tripId.isEmpty) return;
-    emit(state.copyWith(offer: offer));
+    if (offer.tripId.isEmpty ||
+        state.offers.any((existing) => existing.tripId == offer.tripId)) return;
+    emit(state.copyWith(offers: [...state.offers, offer]));
   }
 
   void _handleTripTaken(String tripId) {
-    if (state.offer?.tripId == tripId) {
+    if (state.offers.any((offer) => offer.tripId == tripId)) {
       emit(
-        state.copyWith(clearOffer: true, error: 'تم قبول الرحلة من كابتن آخر'),
+        state.copyWith(
+          offers: state.offers.where((offer) => offer.tripId != tripId).toList(),
+          error: 'تم قبول الرحلة من كابتن آخر',
+        ),
       );
     }
   }
@@ -378,10 +389,10 @@ class CaptainHomeCubit extends Cubit<CaptainHomeState>
   // accepted, or the active ride if already accepted) so it doesn't "ghost".
   void _handleTripCancelled(String tripId) {
     if (isClosed) return;
-    if (state.offer?.tripId == tripId) {
+    if (state.offers.any((offer) => offer.tripId == tripId)) {
       emit(
         state.copyWith(
-          clearOffer: true,
+          offers: state.offers.where((offer) => offer.tripId != tripId).toList(),
           error: 'تم إلغاء الرحلة من قِبل العميل',
         ),
       );
@@ -417,9 +428,11 @@ class CaptainHomeCubit extends Cubit<CaptainHomeState>
     unawaited(recheckActivePayment());
   }
 
-  Future<void> acceptOffer() async {
-    final offer = state.offer;
-    if (offer == null || state.isBusy) return;
+  Future<void> acceptOffer(String tripId) async {
+    if (state.hasActiveTrip || state.isBusy) return;
+    final matches = state.offers.where((offer) => offer.tripId == tripId);
+    if (matches.isEmpty) return;
+    final offer = matches.first;
     emit(state.copyWith(isBusy: true, clearError: true));
     try {
       final pos = _lastPosition ?? await _location.currentPosition();
@@ -434,7 +447,7 @@ class CaptainHomeCubit extends Cubit<CaptainHomeState>
           activeTrip: offer,
           stage: TripStage.accepted,
           isBusy: false,
-          clearOffer: true,
+          clearOffers: true,
         ),
       );
       // Seed the rider's live tracking immediately. The position stream only
@@ -447,7 +460,7 @@ class CaptainHomeCubit extends Cubit<CaptainHomeState>
       emit(
         state.copyWith(
           isBusy: false,
-          clearOffer: true,
+          offers: state.offers.where((offer) => offer.tripId != tripId).toList(),
           error: 'الرحلة لم تعد متاحة — ${e.message ?? 'تم إلغاؤها'}',
         ),
       );
@@ -456,13 +469,34 @@ class CaptainHomeCubit extends Cubit<CaptainHomeState>
     }
   }
 
-  Future<void> rejectOffer() async {
-    final offer = state.offer;
-    if (offer == null) return;
-    emit(state.copyWith(clearOffer: true));
+  Future<void> rejectOffer(String tripId) async {
+    if (state.isBusy) return;
+    emit(state.copyWith(
+      offers: state.offers.where((offer) => offer.tripId != tripId).toList(),
+    ));
+  }
+
+  Future<void> cancelActiveTrip() async {
+    final trip = state.activeTrip;
+    if (trip == null || state.isBusy ||
+        (state.stage != TripStage.accepted && state.stage != TripStage.arrived)) {
+      return;
+    }
+    emit(state.copyWith(isBusy: true, clearError: true));
     try {
-      await _realtime.rejectTrip(offer.tripId);
-    } catch (_) {}
+      await _realtime.cancelAcceptedTrip(trip.tripId);
+      if (isClosed) return;
+      _finishTrip(notifyCompleted: false);
+    } on HubCallRejected catch (e) {
+      if (isClosed) return;
+      emit(state.copyWith(
+        isBusy: false,
+        error: e.message ?? 'تعذّر إلغاء الرحلة',
+      ));
+    } catch (_) {
+      if (isClosed) return;
+      emit(state.copyWith(isBusy: false, error: 'تعذّر إلغاء الرحلة'));
+    }
   }
 
   Future<void> advanceStage() async {
@@ -555,14 +589,14 @@ class CaptainHomeCubit extends Cubit<CaptainHomeState>
   }
 
   /// Clear the served trip, go available again, and refresh history/earnings.
-  void _finishTrip() {
+  void _finishTrip({bool notifyCompleted = true}) {
     if (!state.hasActiveTrip) return;
     emit(state.copyWith(isBusy: false, clearActiveTrip: true));
     final block = _offlineAfterTripBlock;
     if (block != null) {
       _offlineAfterTripBlock = null;
       unawaited(_goOfflineBecauseBlocked(block));
-      onTripCompleted?.call();
+      if (notifyCompleted) onTripCompleted?.call();
       return;
     }
     unawaited(
@@ -574,7 +608,7 @@ class CaptainHomeCubit extends Cubit<CaptainHomeState>
           )
           .catchError((_) {}),
     );
-    onTripCompleted?.call();
+    if (notifyCompleted) onTripCompleted?.call();
   }
 
   /// Backend says the active trip's payment is settled. If the ride is already

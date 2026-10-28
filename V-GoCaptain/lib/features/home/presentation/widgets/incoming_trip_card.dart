@@ -68,7 +68,7 @@ class IncomingTripCard extends StatelessWidget {
                     side: const BorderSide(color: AppColors.danger),
                     padding: EdgeInsets.symmetric(vertical: 14.h),
                   ),
-                  onPressed: isBusy ? null : cubit.rejectOffer,
+                  onPressed: isBusy ? null : () => cubit.rejectOffer(offer.tripId),
                   child: Text('رفض',
                       style: AppStyle.body.copyWith(color: AppColors.danger)),
                 ),
@@ -80,7 +80,7 @@ class IncomingTripCard extends StatelessWidget {
                     backgroundColor: AppColors.primary,
                     padding: EdgeInsets.symmetric(vertical: 14.h),
                   ),
-                  onPressed: isBusy ? null : cubit.acceptOffer,
+                  onPressed: isBusy ? null : () => cubit.acceptOffer(offer.tripId),
                   child: isBusy
                       ? SizedBox(
                           height: 20.r,

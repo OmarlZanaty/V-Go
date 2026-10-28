@@ -543,40 +543,137 @@ namespace Masafet_Elseka.Infrastructure.Hubs
             }
         }
 
+        public async Task<Response<string>> DriverCancelTrip(string tripId)
+        {
+            try
+            {
+                var driverId = Context.User?.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+                if (string.IsNullOrEmpty(driverId))
+                    return Response<string>.Failure("غير مصرح", 401);
+
+                var trip = await _context.Trips.Include(t => t.UserTrips)
+                    .FirstOrDefaultAsync(t => t.Id == tripId);
+                if (trip == null)
+                    return Response<string>.Failure("الرحلة غير موجودة", 404);
+
+                var driverInTrip = trip.UserTrips.FirstOrDefault(ut =>
+                    ut.Role == UserTripRole.Driver && ut.UserId == driverId);
+                if (driverInTrip == null)
+                    return Response<string>.Failure("أنت لست السائق المعين لهذه الرحلة", 403);
+                if (trip.Status != TripStatus.Accepted && trip.Status != TripStatus.Arrived)
+                    return Response<string>.Failure("يمكن الانسحاب فقط من رحلة مقبولة أو تم الوصول إليها", 400);
+
+                var clientInTrip = trip.UserTrips.FirstOrDefault(ut => ut.Role == UserTripRole.Client);
+                if (clientInTrip == null)
+                    return Response<string>.Failure("لم يتم العثور على العميل في الرحلة", 404);
+                var userResult = await _userService.GetByIdAsync(clientInTrip.UserId);
+                if (!userResult.IsSuccess || userResult.Data == null)
+                    return Response<string>.Failure("المستخدم غير موجود", 404);
+                var client = userResult.Data;
+                client.Rate ??= 0;
+
+                _context.UserTrips.Remove(driverInTrip);
+                trip.Status = TripStatus.Pending;
+                clientInTrip.IsApproved = false;
+                // One atomic save checks Trip.RowVersion and removes the old assignment.
+                await _context.SaveChangesAsync();
+                _clientPickupDriver.TryRemove(clientInTrip.UserId, out _);
+
+                var request = new TripRequest
+                {
+                    UserId = clientInTrip.UserId,
+                    StartLat = trip.StartLat,
+                    StartLng = trip.StartLng,
+                    EndLat = trip.EndLat,
+                    EndLng = trip.EndLng,
+                    StartAddress = trip.StartAddress,
+                    EndAddress = trip.EndAddress,
+                    Distance = trip.DistanceInKm,
+                    PaymentMethod = trip.PaymentMethod
+                };
+                var tripResponse = new TripResponseDTO
+                {
+                    Id = trip.Id,
+                    Price = trip.Price,
+                    StartLat = trip.StartLat,
+                    StartLng = trip.StartLng,
+                    EndLat = trip.EndLat,
+                    EndLng = trip.EndLng,
+                    StartAddress = trip.StartAddress,
+                    EndAddress = trip.EndAddress,
+                    DistanceInKm = trip.DistanceInKm,
+                    CreatedAt = trip.CreatedAt,
+                    Status = TripStatus.Pending,
+                    PaymentMethod = trip.PaymentMethod,
+                    IsFreeRide = trip.IsFreeRide,
+                    DiscountAmount = trip.DiscountAmount,
+                    RiderPrice = trip.Price - trip.DiscountAmount,
+                    ClientId = client.Id,
+                    ClientName = client.Name,
+                    ClientGender = client.Gender,
+                    ClientPhone = client.PhoneNumber,
+                    ClientProfilePicture = client.ProfilePicture,
+                    ClientRating = (double)(client.Rate ?? 0)
+                };
+
+                var availability = await _driverService.UpdateAvailability(driverId, true);
+                if (!availability.IsSuccess)
+                    _logger.LogWarning("Unable to restore availability for driver {DriverId}: {Message}", driverId, availability.Message);
+                else
+                    await _driverService.SetDriverStatusToCache(new DriverStatusDTO
+                    {
+                        DriverId = driverId,
+                        IsAvailable = true
+                    });
+                await _tripService.SetTripToCache(tripResponse);
+
+                try
+                {
+                    await SendCurrentTripInScope(clientInTrip.UserId, UserTripRole.Client);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Error sending current trip after driver cancellation for trip {TripId}", tripId);
+                }
+                try
+                {
+                    await NotifyAvailableDrivers(request, tripResponse, client, driverId);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Error redispatching trip {TripId} after driver cancellation", tripId);
+                }
+
+                _logger.LogInformation("Driver {DriverId} cancelled assignment for trip {TripId}; trip returned to Pending", driverId, tripId);
+                return Response<string>.Success("تم الانسحاب من الرحلة وإعادة البحث عن سائق", "تم الانسحاب من الرحلة وإعادة البحث عن سائق", 200);
+            }
+            catch (DbUpdateConcurrencyException ex)
+            {
+                _logger.LogWarning(ex, "Trip {TripId} changed during driver cancellation", tripId);
+                return Response<string>.Failure("تغيرت حالة الرحلة، يرجى المحاولة مرة أخرى", 409);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error in DriverCancelTrip for trip {TripId}", tripId);
+                return Response<string>.Failure("حدث خطأ أثناء الانسحاب من الرحلة", 500);
+            }
+        }
+
         public async Task<Response<string>> RejectTrip(string tripId)
         {
             try
             {
                 var trip = await _unitOfWork.Trips.GetByIdAsync(tripId);
-                if (trip == null)
-                {
+                if (trip == null || trip.Status != TripStatus.Pending)
                     return Response<string>.Failure("الرحلة غير موجودة أو ليست في حالة انتظار", 404);
-                }
-                trip.Status = TripStatus.Rejected;
-                // May be null if the trip is rejected moments after creation, before the
-                // client UserTrip link is persisted — guard against a NullReferenceException.
-                var userTrip = await _context.UserTrips
-                    .FirstOrDefaultAsync(t => t.TripId == tripId && t.Role == UserTripRole.Client);
-                if (userTrip != null)
-                {
-                    userTrip.IsApproved = false;
-                }
-                await _unitOfWork.SaveAsync();
-                if (userTrip != null)
-                {
-                    await Clients.Group($"User_{userTrip.UserId}").SendAsync("TripRejected", new
-                    {
-                        TripId = trip.Id,
-                        UserId = userTrip.UserId,
-                        Status = trip.Status,
-                        UpdatedAt = DateTime.Now.ToEgyptTime()
-                    });
-                }
-                await _tripService.UpdateTripStateInCache(trip.Id, TripStatus.Rejected);
+
+                _logger.LogInformation("Driver {DriverId} declined pending trip {TripId}",
+                    Context.User?.FindFirst(ClaimTypes.NameIdentifier)?.Value, tripId);
                 return Response<string>.Success("تم رفض الرحلة بنجاح", "تم رفض الرحلة بنجاح", 200);
             }
             catch (Exception ex)
             {
+                _logger.LogError(ex, "Error in RejectTrip for trip {TripId}", tripId);
                 return Response<string>.Failure("حدث خطأ أثناء محاولة رفض الرحلة", "حدث خطأ غير متوقع، يرجى المحاولة لاحقًا", 500);
             }
         }
@@ -712,7 +809,7 @@ namespace Masafet_Elseka.Infrastructure.Hubs
         #region Helpers
 
         #region Notify Avilable Drivers Event
-        private async Task NotifyAvailableDrivers(TripRequest request, TripResponseDTO trip, UserDTO client)
+        private async Task NotifyAvailableDrivers(TripRequest request, TripResponseDTO trip, UserDTO client, string? excludeDriverId = null)
         {
             // Notify ALL available nearby drivers regardless of gender — gender
             // matching previously hid new-ride offers from opposite-gender captains.
@@ -725,6 +822,9 @@ namespace Masafet_Elseka.Infrastructure.Hubs
             _logger?.LogInformation("Drivers fetched from cache: {Count}", drivers.Data?.Count ?? 0);
             foreach (var d in drivers.Data)
             {
+                if (d.DriverId == excludeDriverId)
+                    continue;
+
                 // Driver has no cached GPS fix yet (just went online): include them
                 // rather than dropping. Computing distance from (0,0) would push them
                 // ~4500km out, past the threshold, so they'd silently get no offers.

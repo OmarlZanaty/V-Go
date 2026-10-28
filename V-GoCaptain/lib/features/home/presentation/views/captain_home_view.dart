@@ -113,8 +113,23 @@ class _Foreground extends StatelessWidget {
       children
         ..add(const Spacer())
         ..add(
-          state.offer != null
-              ? IncomingTripCard(offer: state.offer!, isBusy: state.isBusy)
+          state.hasOffers
+              ? ConstrainedBox(
+                  constraints: BoxConstraints(
+                    maxHeight: MediaQuery.sizeOf(context).height * 0.6,
+                  ),
+                  child: ListView.separated(
+                    shrinkWrap: true,
+                    padding: EdgeInsets.zero,
+                    itemCount: state.offers.length,
+                    separatorBuilder: (_, _) => SizedBox(height: 12.h),
+                    itemBuilder: (context, index) => IncomingTripCard(
+                      key: ValueKey(state.offers[index].tripId),
+                      offer: state.offers[index],
+                      isBusy: state.isBusy,
+                    ),
+                  ),
+                )
               : _IdleHint(state: state),
         );
     }

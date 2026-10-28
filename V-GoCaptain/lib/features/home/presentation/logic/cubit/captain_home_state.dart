@@ -6,8 +6,7 @@ class CaptainHomeState extends Equatable {
   /// Connection / availability status.
   final CaptainConnection connection;
 
-  /// A pending offer awaiting accept/reject (null when none).
-  final TripOfferModel? offer;
+  final List<TripOfferModel> offers;
 
   /// The trip currently being served (null when idle).
   final TripOfferModel? activeTrip;
@@ -42,7 +41,7 @@ class CaptainHomeState extends Equatable {
 
   const CaptainHomeState({
     this.connection = CaptainConnection.offline,
-    this.offer,
+    this.offers = const [],
     this.activeTrip,
     this.stage = TripStage.accepted,
     this.isBusy = false,
@@ -57,12 +56,13 @@ class CaptainHomeState extends Equatable {
 
   bool get isOnline => connection == CaptainConnection.online;
   bool get hasActiveTrip => activeTrip != null;
+  bool get hasOffers => offers.isNotEmpty;
   bool get hasClientLocation => clientLat != null && clientLng != null;
 
   CaptainHomeState copyWith({
     CaptainConnection? connection,
-    TripOfferModel? offer,
-    bool clearOffer = false,
+    List<TripOfferModel>? offers,
+    bool clearOffers = false,
     TripOfferModel? activeTrip,
     bool clearActiveTrip = false,
     TripStage? stage,
@@ -83,7 +83,7 @@ class CaptainHomeState extends Equatable {
     final dropClient = clearClientLocation || clearActiveTrip;
     return CaptainHomeState(
       connection: connection ?? this.connection,
-      offer: clearOffer ? null : (offer ?? this.offer),
+      offers: clearOffers ? const [] : (offers ?? this.offers),
       activeTrip: clearActiveTrip ? null : (activeTrip ?? this.activeTrip),
       stage: stage ?? this.stage,
       isBusy: isBusy ?? this.isBusy,
@@ -102,7 +102,7 @@ class CaptainHomeState extends Equatable {
   @override
   List<Object?> get props => [
     connection,
-    offer?.tripId,
+    offers.map((offer) => offer.tripId).toList(),
     activeTrip?.tripId,
     stage,
     isBusy,

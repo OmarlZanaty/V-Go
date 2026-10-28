@@ -1014,6 +1014,7 @@ class _ClientMapViewState extends State<ClientMapView> {
   }
 
   Positioned clientMapBottomSheet(MapState state, int status) {
+    var captainUnassigned = false;
     return Positioned(
       bottom: 0,
       right: 0,
@@ -1021,9 +1022,14 @@ class _ClientMapViewState extends State<ClientMapView> {
       child: Padding(
         padding: const EdgeInsets.all(12),
         child: BlocConsumer<RealTimeTripCubit, RealTimeTripState>(
-          listenWhen: (previous, current) =>
-              previous.tripStatus != current.tripStatus ||
-              _buildAndLsitenWhen(current),
+          listenWhen: (previous, current) {
+            captainUnassigned =
+                (previous.tripStatus == 'Accepted' ||
+                    previous.tripStatus == 'Arrived') &&
+                current.tripStatus == 'Pending';
+            return previous.tripStatus != current.tripStatus ||
+                _buildAndLsitenWhen(current);
+          },
           buildWhen: (previous, current) =>
               previous.tripStatus != current.tripStatus ||
               _buildAndLsitenWhen(current),
@@ -1088,7 +1094,8 @@ class _ClientMapViewState extends State<ClientMapView> {
 
             // لما الرحلة انتهت أو اتلغت، نوقف التتبع
             if (tripState.tripStatus == 'Completed' ||
-                tripState.tripStatus == 'Canceled') {
+                tripState.tripStatus == 'Canceled' ||
+                captainUnassigned) {
               mapBloc.stopEtaTracking();
               mapBloc.add(ClearDriverLocation());
               _resetCaptainGlide();
