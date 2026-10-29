@@ -18,6 +18,7 @@ namespace Masafet_Elseka.Domain.Entities
         // InstaPay: the bank behind the address, shown to the captain.
         [MaxLength(100)]
         public string? BankName { get; set; }
+        public DateTime? DeletedAt { get; set; }
         public bool IsActive { get; set; } = true;
         public int SortOrder { get; set; }
         // The collector phone holding this SIM (null = not assigned yet).

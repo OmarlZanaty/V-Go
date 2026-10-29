@@ -71,7 +71,7 @@ namespace Masafet_Elseka.Infrastructure.Data
             // Wallet collection.
             builder.Entity<CollectionWallet>(entity =>
             {
-                entity.HasIndex(w => new { w.Provider, w.PhoneNumber }).IsUnique();
+                entity.HasIndex(w => new { w.Provider, w.PhoneNumber }).IsUnique().HasFilter("[DeletedAt] IS NULL");
                 entity.HasOne(w => w.Device).WithMany().HasForeignKey(w => w.DeviceId)
                     .OnDelete(DeleteBehavior.SetNull);
             });

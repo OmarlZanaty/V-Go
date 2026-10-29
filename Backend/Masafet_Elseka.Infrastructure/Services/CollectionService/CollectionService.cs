@@ -229,7 +229,7 @@ namespace Masafet_Elseka.Infrastructure.Services.CollectionService
             if (sms.Provider == WalletProvider.InstaPay) return null;
             if (sms.WalletId == null)
                 return "الرسالة مش مربوطة بمحفظة (اربط المحفظة بموبايل التحصيل والشريحة) فمش هنقدر نراجع الرصيد";
-            var paused = await _context.CollectionWallets.AsNoTracking()
+            var paused = await _context.CollectionWallets.Where(w => w.DeletedAt == null).AsNoTracking()
                 .AnyAsync(w => w.Id == sms.WalletId && w.PausedReason != null);
             return BalanceChain.Blocks(sms.Provider, sms.ChainStatus, paused);
         }
@@ -539,7 +539,7 @@ namespace Masafet_Elseka.Infrastructure.Services.CollectionService
             var onlineSince = Now - DeviceOnlineWindow;
             // A wallet paused by the balance chain isn't offered: its receipts can't be
             // confirmed automatically until an admin checks it.
-            var wallets = await _context.CollectionWallets.AsNoTracking()
+            var wallets = await _context.CollectionWallets.Where(w => w.DeletedAt == null).AsNoTracking()
                 .Where(w => w.IsActive && w.PausedReason == null)
                 .OrderBy(w => w.SortOrder).ThenBy(w => w.Id)
                 .Select(w => new CollectionWalletDTO
@@ -613,7 +613,7 @@ namespace Masafet_Elseka.Infrastructure.Services.CollectionService
             if (!rule.CollectionEnabled)
                 return Response<CollectionRequestDTO>.Failure("التحصيل عن طريق المحفظة مش مفعّل حالياً", 400);
 
-            var wallet = await _context.CollectionWallets.AsNoTracking().FirstOrDefaultAsync(w => w.Id == dto.WalletId && w.IsActive);
+            var wallet = await _context.CollectionWallets.Where(w => w.DeletedAt == null).AsNoTracking().FirstOrDefaultAsync(w => w.Id == dto.WalletId && w.IsActive);
             if (wallet == null)
                 return Response<CollectionRequestDTO>.Failure("اختار المحفظة اللي حوّلت عليها", 400);
             if (wallet.PausedReason != null)
@@ -777,7 +777,7 @@ namespace Masafet_Elseka.Infrastructure.Services.CollectionService
             var oldDeviceIds = otherDevices
                 .Where(d => string.Equals(d.Name.Trim(), device.Name.Trim(), StringComparison.OrdinalIgnoreCase))
                 .Select(d => d.Id).ToList();
-            var wallets = await _context.CollectionWallets
+            var wallets = await _context.CollectionWallets.Where(w => w.DeletedAt == null)
                 .Where(w => w.DeviceId != null && oldDeviceIds.Contains(w.DeviceId.Value)).ToListAsync();
             await MoveDeviceWalletsAsync(wallets, device);
             await _context.SaveChangesAsync();
@@ -808,7 +808,7 @@ namespace Masafet_Elseka.Infrastructure.Services.CollectionService
             SenderHints = WalletSmsParser.SenderHints.ToList(),
             InstaPayKeywords = WalletSmsParser.InstaPayKeywords.ToList(),
             NotificationPackages = WalletSmsParser.NotificationPackages.ToList(),
-            Wallets = await _context.CollectionWallets.AsNoTracking()
+            Wallets = await _context.CollectionWallets.Where(w => w.DeletedAt == null).AsNoTracking()
                 .Where(w => w.DeviceId == device.Id)
                 .Select(w => new CollectorWalletDTO { Id = w.Id, Provider = w.Provider.ToString(), PhoneNumber = w.PhoneNumber })
                 .ToListAsync(),
@@ -835,7 +835,7 @@ namespace Masafet_Elseka.Infrastructure.Services.CollectionService
         public async Task<List<CollectorSmsResultDTO>> IngestSmsAsync(CollectorDevice device, CollectorSmsBatchDTO batch)
         {
             var results = new List<CollectorSmsResultDTO>();
-            var wallets = await _context.CollectionWallets.AsNoTracking().ToListAsync();
+            var wallets = await _context.CollectionWallets.Where(w => w.DeletedAt == null).AsNoTracking().ToListAsync();
             var ownNumbers = wallets.Select(w => w.PhoneNumber).ToList();
             var deviceId = device.Id;
             var now = Now;
@@ -943,7 +943,7 @@ namespace Masafet_Elseka.Infrastructure.Services.CollectionService
                 }
 
                 if (sms.WalletId != null)
-                    await _context.CollectionWallets.Where(w => w.Id == sms.WalletId)
+                    await _context.CollectionWallets.Where(w => w.DeletedAt == null).Where(w => w.Id == sms.WalletId)
                         .ExecuteUpdateAsync(s => s.SetProperty(w => w.LastSmsAt, receivedAt));
                 if (stored == StoreOutcome.StoredAndPaused)
                     await NotifyAdminsAsync("محفظة التحصيل اتوقفت ⚠",
@@ -1018,7 +1018,7 @@ namespace Masafet_Elseka.Infrastructure.Services.CollectionService
 
             var paused = false;
             var wallet = sms.WalletId == null ? null
-                : await _context.CollectionWallets.FirstOrDefaultAsync(w => w.Id == sms.WalletId);
+                : await _context.CollectionWallets.Where(w => w.DeletedAt == null).FirstOrDefaultAsync(w => w.Id == sms.WalletId);
             if (wallet != null && wallet.Provider != WalletProvider.InstaPay && sms.Provider != WalletProvider.InstaPay)
             {
                 if (sms.BalanceAfter != null && wallet.LastChainAt != null && sms.ReceivedAt < wallet.LastChainAt)
@@ -1114,8 +1114,8 @@ namespace Masafet_Elseka.Infrastructure.Services.CollectionService
                 MustPayDrivers = owing.Count,
                 TotalDueAboveTolerance = owing.Values.Sum(),
                 OnlineDevices = await _context.CollectorDevices.Where(d => d.DeletedAt == null).CountAsync(d => d.IsActive && d.LastSeenAt >= onlineSince),
-                ActiveWallets = await _context.CollectionWallets.CountAsync(w => w.IsActive),
-                PausedWallets = await _context.CollectionWallets.CountAsync(w => w.IsActive && w.PausedReason != null),
+                ActiveWallets = await _context.CollectionWallets.Where(w => w.DeletedAt == null).CountAsync(w => w.IsActive),
+                PausedWallets = await _context.CollectionWallets.Where(w => w.DeletedAt == null).CountAsync(w => w.IsActive && w.PausedReason != null),
                 RecentCycles = cycles,
             }, "", 200);
         }
@@ -1359,7 +1359,7 @@ namespace Masafet_Elseka.Infrastructure.Services.CollectionService
         private async Task<List<AdminWalletDTO>> WalletDtosAsync(int? id = null)
         {
             var onlineSince = Now - DeviceOnlineWindow;
-            var rows = await _context.CollectionWallets.AsNoTracking()
+            var rows = await _context.CollectionWallets.Where(w => w.DeletedAt == null).AsNoTracking()
                 .Where(w => id == null || w.Id == id)
                 .OrderBy(w => w.SortOrder).ThenBy(w => w.Id)
                 .Select(w => new AdminWalletDTO
@@ -1406,12 +1406,12 @@ namespace Masafet_Elseka.Infrastructure.Services.CollectionService
             var bank = Clip(dto.BankName, 100);
             if (dto.DeviceId != null && !await _context.CollectorDevices.Where(d => d.DeletedAt == null).AnyAsync(d => d.Id == dto.DeviceId))
                 return Response<AdminWalletDTO>.Failure("موبايل التحصيل مش موجود", 400);
-            if (await _context.CollectionWallets.AnyAsync(w => w.Provider == provider && w.PhoneNumber == phone && w.Id != walletId))
+            if (await _context.CollectionWallets.Where(w => w.DeletedAt == null).AnyAsync(w => w.Provider == provider && w.PhoneNumber == phone && w.Id != walletId))
                 return Response<AdminWalletDTO>.Failure("المحفظة دي متسجلة بالفعل", 400);
             if (dto.SimSlot is not (null or 1 or 2))
                 return Response<AdminWalletDTO>.Failure("الشريحة لازم تكون 1 أو 2", 400);
             if (dto.DeviceId != null && dto.SimSlot != null
-                && await _context.CollectionWallets.AnyAsync(w => w.DeviceId == dto.DeviceId && w.Provider == provider
+                && await _context.CollectionWallets.Where(w => w.DeletedAt == null).AnyAsync(w => w.DeviceId == dto.DeviceId && w.Provider == provider
                                                               && w.SimSlot == dto.SimSlot && w.Id != walletId))
                 return Response<AdminWalletDTO>.Failure("فيه محفظة تانية من نفس النوع على نفس الشريحة في الموبايل ده", 400);
 
@@ -1423,7 +1423,7 @@ namespace Masafet_Elseka.Infrastructure.Services.CollectionService
             }
             else
             {
-                wallet = await _context.CollectionWallets.FirstOrDefaultAsync(w => w.Id == walletId);
+                wallet = await _context.CollectionWallets.Where(w => w.DeletedAt == null).FirstOrDefaultAsync(w => w.Id == walletId);
                 if (wallet == null) return Response<AdminWalletDTO>.Failure("المحفظة مش موجودة", 404);
             }
             wallet.Provider = provider;
@@ -1441,6 +1441,31 @@ namespace Masafet_Elseka.Infrastructure.Services.CollectionService
             return Response<AdminWalletDTO>.Success((await WalletDtosAsync(wallet.Id)).First(), "تم حفظ المحفظة", walletId == null ? 201 : 200);
         }
 
+        public async Task<Response<bool>> DeleteWalletAsync(int walletId, string actorUserId)
+        {
+            await using var transaction = await _context.Database.BeginTransactionAsync();
+            var wallet = await _context.CollectionWallets.FirstOrDefaultAsync(w => w.DeletedAt == null && w.Id == walletId);
+            if (wallet == null) return Response<bool>.Failure("المحفظة مش موجودة", 404);
+            if (await _context.CollectionRequests.AnyAsync(r => r.WalletId == walletId
+                && (r.Status == CollectionRequestStatus.Pending || r.Status == CollectionRequestStatus.NeedsReview)))
+                return Response<bool>.Failure("المحفظة عليها طلبات تحويل مفتوحة، خلّصها الأول", 400);
+            if (await _context.WalletSms.AnyAsync(s => s.WalletId == walletId)
+                || await _context.CollectionRequests.AnyAsync(r => r.WalletId == walletId))
+            {
+                wallet.DeletedAt = Now;
+                wallet.IsActive = false;
+                wallet.DeviceId = null;
+                wallet.SimSlot = null;
+            }
+            else
+                _context.CollectionWallets.Remove(wallet);
+            await _context.SaveChangesAsync();
+            await _finance.WriteAuditAsync(actorUserId, "CollectionWalletDeleted", null,
+                $"{ProviderLabel(wallet.Provider)} {wallet.PhoneNumber}");
+            await transaction.CommitAsync();
+            return Response<bool>.Success(true, "اتمسحت المحفظة", 200);
+        }
+
         // Un-pauses a wallet the balance chain stopped (or anchors a new one before go-live)
         // at the balance it really shows now. The next receipt is checked against it.
         public async Task<Response<AdminWalletDTO>> SetWalletBalanceAsync(int walletId, WalletBalanceDTO dto, string actorUserId)
@@ -1450,7 +1475,7 @@ namespace Masafet_Elseka.Infrastructure.Services.CollectionService
             var balance = Money(dto.ExpectedBalance);
             await InMatchLockAsync(async _ =>
             {
-                var wallet = await _context.CollectionWallets.FirstOrDefaultAsync(w => w.Id == walletId);
+                var wallet = await _context.CollectionWallets.Where(w => w.DeletedAt == null).FirstOrDefaultAsync(w => w.Id == walletId);
                 if (wallet == null) return;
                 var wasPaused = wallet.PausedReason;
                 wallet.ExpectedBalance = balance;
@@ -1475,7 +1500,7 @@ namespace Masafet_Elseka.Infrastructure.Services.CollectionService
             var devices = await _context.CollectorDevices.AsNoTracking().Where(d => d.DeletedAt == null)
                 .Where(d => id == null || d.Id == id)
                 .OrderBy(d => d.CreatedAt).ToListAsync();
-            var wallets = await _context.CollectionWallets.AsNoTracking().Where(w => w.DeviceId != null).ToListAsync();
+            var wallets = await _context.CollectionWallets.Where(w => w.DeletedAt == null).AsNoTracking().Where(w => w.DeviceId != null).ToListAsync();
             return devices.Select(d => new CollectorDeviceDTO
             {
                 Id = d.Id,
@@ -1529,7 +1554,7 @@ namespace Masafet_Elseka.Infrastructure.Services.CollectionService
 
         private async Task MoveDeviceWalletsAsync(List<CollectionWallet> wallets, CollectorDevice? replacement)
         {
-            var assigned = replacement == null ? new List<CollectionWallet>() : await _context.CollectionWallets
+            var assigned = replacement == null ? new List<CollectionWallet>() : await _context.CollectionWallets.Where(w => w.DeletedAt == null)
                 .Where(w => w.DeviceId == replacement.Id).ToListAsync();
             foreach (var wallet in wallets)
             {
@@ -1550,7 +1575,7 @@ namespace Masafet_Elseka.Infrastructure.Services.CollectionService
                 .OrderByDescending(d => d.PairedAt).ToListAsync();
             var replacement = candidates.FirstOrDefault(d =>
                 string.Equals(d.Name.Trim(), device.Name.Trim(), StringComparison.OrdinalIgnoreCase));
-            var wallets = await _context.CollectionWallets.Where(w => w.DeviceId == deviceId).ToListAsync();
+            var wallets = await _context.CollectionWallets.Where(w => w.DeletedAt == null).Where(w => w.DeviceId == deviceId).ToListAsync();
             await MoveDeviceWalletsAsync(wallets, replacement);
             await _context.SmsOutbox.Where(s => s.Status == "Claimed" && s.ClaimedByDeviceId == deviceId)
                 .ExecuteUpdateAsync(s => s.SetProperty(o => o.Status, "Pending")

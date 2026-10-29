@@ -519,6 +519,9 @@ namespace Masafet_Elseka.Infrastructure.Migrations
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("datetime2");
 
+                    b.Property<DateTime?>("DeletedAt")
+                        .HasColumnType("datetime2");
+
                     b.Property<Guid?>("DeviceId")
                         .HasColumnType("uniqueidentifier");
 
@@ -568,7 +571,8 @@ namespace Masafet_Elseka.Infrastructure.Migrations
                     b.HasIndex("DeviceId");
 
                     b.HasIndex("Provider", "PhoneNumber")
-                        .IsUnique();
+                        .IsUnique()
+                        .HasFilter("[DeletedAt] IS NULL");
 
                     b.ToTable("CollectionWallets");
                 });

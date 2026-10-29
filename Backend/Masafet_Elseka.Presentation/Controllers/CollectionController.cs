@@ -97,6 +97,11 @@ namespace Masafet_Elseka.Presentation.Controllers
         public async Task<IActionResult> UpdateWallet(int walletId, [FromBody] WalletUpsertDTO dto)
             => Reply(await _collection.SaveWalletAsync(walletId, dto, UserId));
 
+        [Authorize(Roles = FinanceAdmins)]
+        [HttpDelete("admin/wallets/{walletId:int}")]
+        public async Task<IActionResult> DeleteWallet(int walletId)
+            => Reply(await _collection.DeleteWalletAsync(walletId, UserId));
+
         // Resume a wallet the balance chain paused, or anchor its balance before go-live.
         [Authorize(Roles = FinanceAdmins)]
         [HttpPost("admin/wallets/{walletId:int}/balance")]
