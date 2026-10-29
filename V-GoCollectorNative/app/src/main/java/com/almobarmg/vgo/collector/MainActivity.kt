@@ -17,6 +17,7 @@ import android.os.Looper
 import android.os.PowerManager
 import android.provider.Settings
 import android.telephony.SubscriptionManager
+import android.text.InputFilter
 import android.text.InputType
 import android.view.Gravity
 import android.view.View
@@ -45,9 +46,10 @@ class MainActivity : Activity() {
     private val io = Executors.newSingleThreadExecutor()
     private val main = Handler(Looper.getMainLooper())
     private lateinit var root: LinearLayout
+    private var pairingScreenShown = false
     private val tick = object : Runnable {
         override fun run() {
-            render()
+            if (Prefs(this@MainActivity).paired) render()
             main.postDelayed(this, 5000)
         }
     }
@@ -79,7 +81,8 @@ class MainActivity : Activity() {
 
     override fun onResume() {
         super.onResume()
-        main.post(tick)
+        if (Prefs(this).paired || !pairingScreenShown) render()
+        main.postDelayed(tick, 5000)
     }
 
     override fun onPause() {
@@ -91,6 +94,7 @@ class MainActivity : Activity() {
 
     private fun render() {
         val p = Prefs(this)
+        pairingScreenShown = !p.paired
         root.removeAllViews()
         if (p.paired) renderStatus(p) else renderPair(p)
     }
@@ -100,7 +104,8 @@ class MainActivity : Activity() {
         root.addView(text("من لوحة التحكم ← التحصيل اليومي ← المحافظ وموبايل التحصيل ← إضافة موبايل، هيظهر كود. اكتبه هنا.", grey))
 
         val url = edit(p.baseUrl, "عنوان السيرفر", InputType.TYPE_TEXT_VARIATION_URI)
-        val code = edit("", "كود الربط", InputType.TYPE_CLASS_TEXT).apply {
+        val code = edit("", "كود الربط", InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_CAP_CHARACTERS).apply {
+            filters = arrayOf(InputFilter.AllCaps())
             gravity = Gravity.CENTER; textSize = 22f
         }
         root.addView(label("عنوان السيرفر")); root.addView(url)
