@@ -4,7 +4,7 @@ import 'dart:developer';
 import 'dart:math' hide log;
 
 import 'package:flutter_bloc/flutter_bloc.dart';
-import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:scooter_app/core/maps/csb_map.dart';
 import 'package:rxdart/rxdart.dart';
 
 import '../../../../../core/helpers/geo_utils.dart';

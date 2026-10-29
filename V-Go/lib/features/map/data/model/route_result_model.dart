@@ -1,4 +1,4 @@
-import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:scooter_app/core/maps/csb_map.dart';
 
 class RouteResultModel {
   final List<LatLng> points;

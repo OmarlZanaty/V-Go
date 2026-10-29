@@ -1,7 +1,7 @@
 import 'dart:developer';
 
 import 'package:dio/dio.dart';
-import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:scooter_app/core/maps/csb_map.dart';
 
 import '../../features/map/data/model/place_suggestion_model.dart';
 import '../../features/map/data/model/route_result_model.dart';

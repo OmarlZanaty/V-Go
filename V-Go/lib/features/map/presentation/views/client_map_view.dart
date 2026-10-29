@@ -5,13 +5,12 @@ import 'dart:io' show Platform;
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
-import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:scooter_app/core/maps/csb_map.dart';
 import 'package:hugeicons/hugeicons.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../../../core/helpers/extensions.dart';
 import '../../../../core/helpers/geo_utils.dart';
-import '../../../../core/helpers/set_map_style.dart';
 import '../../../../core/helpers/spacing.dart';
 import '../../../../core/routing/routes.dart';
 import '../../../../core/theming/app_colors.dart';
@@ -169,8 +168,8 @@ class _ClientMapViewState extends State<ClientMapView> {
     northeast: const LatLng(31.7, 36.9), // شمال شرق مصر
   );
 
-  final Completer<GoogleMapController> completer = Completer();
-  GoogleMapController? controller;
+  final Completer<VgoMapController> completer = Completer();
+  VgoMapController? controller;
   int status = 0;
   double rating = 0.0;
   // Payment method chosen on the confirm screen, before searching: 'Cash'/'Visa'.
@@ -806,7 +805,7 @@ class _ClientMapViewState extends State<ClientMapView> {
                           ),
                           ValueListenableBuilder<LatLng?>(
                             valueListenable: _captainShown,
-                            builder: (context, _, __) => GoogleMap(
+                            builder: (context, _, __) => VgoMap(
                               cameraTargetBounds: CameraTargetBounds(
                                 egyptBounds,
                               ),
@@ -866,7 +865,6 @@ class _ClientMapViewState extends State<ClientMapView> {
                                 if (!completer.isCompleted)
                                   completer.complete(map);
                                 controller = map;
-                                setMapStyle(context, controller!);
                                 if (context
                                         .read<MapBloc>()
                                         .state
@@ -2391,7 +2389,7 @@ class _ClientMapViewState extends State<ClientMapView> {
 /// Returns true when the rider asked to pin the destination on the map instead.
 Future<bool> goWhere(
   BuildContext context,
-  GoogleMapController? controller, {
+  VgoMapController? controller, {
   GlobalKey? bottomSheetKey,
   double extraPadding = 24.0,
 }) async {
@@ -2530,7 +2528,7 @@ Future<bool> goWhere(
 /// Returns true when the rider asked to pin the pickup on the map instead.
 Future<bool> changePickup(
   BuildContext context,
-  GoogleMapController controller,
+  VgoMapController controller,
 ) async {
   // افتح صفحة البحث
   final result = await context.pushNamed(

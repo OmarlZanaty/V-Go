@@ -9,11 +9,10 @@ import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_compass/flutter_compass.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
-import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:scooter_app/core/maps/csb_map.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 
 import '../../../../core/helpers/extensions.dart';
-import '../../../../core/helpers/set_map_style.dart';
 import '../../../../core/helpers/spacing.dart';
 import '../../../../core/theming/app_colors.dart';
 import '../../../../core/theming/app_style.dart';
@@ -43,8 +42,8 @@ class DriverMapView extends StatefulWidget {
 }
 
 class _DriverMapViewState extends State<DriverMapView> {
-  final Completer<GoogleMapController> _controller = Completer();
-  GoogleMapController? mapController;
+  final Completer<VgoMapController> _controller = Completer();
+  VgoMapController? mapController;
 
   late CameraPosition initPos;
 
@@ -324,7 +323,7 @@ class _DriverMapViewState extends State<DriverMapView> {
         ],
         child: BlocConsumer<MapBloc, MapState>(
           listener: (context, state) async {
-            GoogleMapController controller;
+            VgoMapController controller;
             try {
               controller = await _controller.future;
             } catch (_) {
@@ -452,7 +451,7 @@ class _DriverMapViewState extends State<DriverMapView> {
 
                 return Stack(
                   children: [
-                    GoogleMap(
+                    VgoMap(
                       trafficEnabled: false,
                       myLocationEnabled: true,
                       myLocationButtonEnabled: false,
@@ -474,7 +473,6 @@ class _DriverMapViewState extends State<DriverMapView> {
                           _controller.complete(controller);
                         }
                         mapController = controller;
-                        setMapStyle(context, mapController!);
                       },
                     ),
 

@@ -1,5 +1,5 @@
 import 'package:equatable/equatable.dart';
-import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:scooter_app/core/maps/csb_map.dart';
 
 import '../../../../../core/utils/app_constants.dart';
 import '../../../../../core/utils/model/location_model.dart';
