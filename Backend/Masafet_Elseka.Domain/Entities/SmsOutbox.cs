@@ -17,6 +17,9 @@ namespace Masafet_Elseka.Domain.Entities
         public Guid? ClaimedByDeviceId { get; set; }
         public DateTime? ClaimedAt { get; set; }
         public DateTime? SentAt { get; set; }
+        [MaxLength(24)]
+        public string? DeliveryStatus { get; set; }
+        public DateTime? DeliveryReportAt { get; set; }
         [MaxLength(300)]
         public string? Error { get; set; }
         public DateTime CreatedAt { get; set; }

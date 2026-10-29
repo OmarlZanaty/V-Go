@@ -1,3 +1,4 @@
+using Masafet_Elseka.Application.Interfaces;
 using Masafet_Elseka.Application.Common.Pagination;
 using Masafet_Elseka.Application.DTOs.Collection;
 using Masafet_Elseka.Application.Interfaces.ICollectionService;
@@ -20,7 +21,18 @@ namespace Masafet_Elseka.Presentation.Controllers
         private const string FinanceAdmins = "Admin, Accountant";
         private readonly ICollectionService _collection;
 
-        public CollectionController(ICollectionService collection) => _collection = collection;
+        private readonly IPhoneOtpService _phoneOtp;
+
+        public CollectionController(ICollectionService collection, IPhoneOtpService phoneOtp)
+        {
+            _collection = collection;
+            _phoneOtp = phoneOtp;
+        }
+
+        [Authorize(Roles = FinanceAdmins)]
+        [HttpGet("admin/sms-outbox")]
+        public async Task<IActionResult> SmsOutbox([FromQuery] int take = 50)
+            => Ok(new { isSuccess = true, data = await _phoneOtp.GetOutboxAsync(take) });
 
         private string UserId => User.FindFirstValue(ClaimTypes.NameIdentifier)!;
 

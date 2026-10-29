@@ -55,6 +55,8 @@
             </intent-filter>
         </service>
 
+        <receiver android:name=".OtpDeliveryReceiver" android:exported="false" />
+
         <receiver
             android:name=".SmsReceiver"
             android:exported="true"

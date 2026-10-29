@@ -115,6 +115,13 @@ namespace Masafet_Elseka.Infrastructure.Migrations
                     b.Property<DateTime?>("SentAt")
                         .HasColumnType("datetime2");
 
+                    b.Property<string>("DeliveryStatus")
+                        .HasMaxLength(24)
+                        .HasColumnType("nvarchar(24)");
+
+                    b.Property<DateTime?>("DeliveryReportAt")
+                        .HasColumnType("datetime2");
+
                     b.Property<string>("Error")
                         .HasMaxLength(300)
                         .HasColumnType("nvarchar(300)");

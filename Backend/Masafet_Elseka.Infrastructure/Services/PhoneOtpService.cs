@@ -191,6 +191,38 @@ namespace Masafet_Elseka.Infrastructure.Services
             return messages.Select(s => new SmsOutboxMessageDTO { Id = s.Id, To = s.To, Body = s.Body }).ToList();
         }
 
+        public async Task<List<SmsOutboxAdminDTO>> GetOutboxAsync(int take) =>
+            await (from s in _context.SmsOutbox.AsNoTracking()
+                   join d in _context.CollectorDevices.IgnoreQueryFilters() on s.ClaimedByDeviceId equals (Guid?)d.Id into devices
+                   from d in devices.DefaultIfEmpty()
+                   orderby s.CreatedAt descending, s.Id descending
+                   select new SmsOutboxAdminDTO
+                   {
+                       Id = s.Id, To = s.To, Purpose = s.Purpose, Status = s.Status,
+                       Attempts = s.Attempts, CreatedAt = s.CreatedAt, ClaimedAt = s.ClaimedAt,
+                       SentAt = s.SentAt, DeliveryStatus = s.DeliveryStatus,
+                       DeliveryReportAt = s.DeliveryReportAt, Error = s.Error,
+                       DeviceName = d == null ? null : d.Name,
+                   }).Take(Math.Clamp(take, 1, 200)).ToListAsync();
+
+        public async Task<Response<string>> ReportDeliveryAsync(Guid deviceId, Guid id, SmsDeliveryDTO dto)
+        {
+            if (!await _context.CollectorDevices.AnyAsync(d => d.Id == deviceId && d.DeletedAt == null && d.IsActive && d.KeyHash != null))
+                return Response<string>.Failure("الموبايل مش موجود", 401);
+            var status = dto.Delivered ? "Delivered" : dto.Status == "pending" ? "Pending" : "Failed";
+            var error = dto.Status == null ? null : dto.Status[..Math.Min(300, dto.Status.Length)];
+            var now = Now;
+            var rows = _context.SmsOutbox.Where(s => s.Id == id && s.ClaimedByDeviceId == deviceId && s.Status == "Sent");
+            // A retry preserves the original report timestamp.
+            await rows.Where(s => s.DeliveryStatus != status || (status == "Failed" && s.Error != error))
+                .ExecuteUpdateAsync(s => s.SetProperty(o => o.DeliveryStatus, status)
+                    .SetProperty(o => o.DeliveryReportAt, now)
+                    .SetProperty(o => o.Error, o => status == "Failed" ? error : o.Error));
+            if (!await rows.AnyAsync())
+                return Response<string>.Failure("الرسالة غير محجوزة لهذا الجهاز", 409);
+            return Response<string>.Success(string.Empty);
+        }
+
         public async Task<Response<string>> ReportOutboxAsync(Guid deviceId, Guid id, SmsOutboxResultDTO result)
         {
             if (!await _context.CollectorDevices.AnyAsync(d => d.Id == deviceId && d.DeletedAt == null && d.IsActive && d.KeyHash != null))

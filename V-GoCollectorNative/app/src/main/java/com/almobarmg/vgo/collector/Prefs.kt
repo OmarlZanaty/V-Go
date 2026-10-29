@@ -42,6 +42,61 @@ class Prefs(context: Context) {
         get() = sp.getInt("otpSentTotal", 0)
         set(v) = sp.edit().putInt("otpSentTotal", v).apply()
 
+    val otpDeliveredTotal: Int get() = sp.getInt("otpDeliveredTotal", 0)
+
+    // Receiver and worker share this lock; commits keep progress and results atomic.
+    fun beginDelivery(id: String, attempt: String, count: Int, device: String, server: String) = synchronized(deliveryLock) {
+        val progress = JSONObject(sp.getString("otpDeliveryProgress", "{}") ?: "{}")
+        progress.put(id, JSONObject().put("attempt", attempt).put("count", count)
+            .put("device", device).put("server", server).put("parts", JSONObject()))
+        sp.edit().putString("otpDeliveryProgress", progress.toString()).commit()
+    }
+
+    fun recordDelivery(id: String, attempt: String, part: Int, count: Int, status: Int) = synchronized(deliveryLock) {
+        val progress = JSONObject(sp.getString("otpDeliveryProgress", "{}") ?: "{}")
+        val entry = progress.optJSONObject(id) ?: return@synchronized
+        if (entry.optString("attempt") != attempt || entry.optInt("count") != count || part !in 0 until count) return@synchronized
+        if (entry.optString("device") != deviceKey?.substringBefore('.') || entry.optString("server") != baseUrl) return@synchronized
+        if (entry.optString("result") in listOf("delivered", "failed")) return@synchronized
+        val parts = entry.getJSONObject("parts")
+        val previous = parts.optInt(part.toString(), -1)
+        if (previous == 0 || previous >= 64) return@synchronized
+        parts.put(part.toString(), status)
+        val delivered = (0 until count).all { parts.optInt(it.toString(), -1) == 0 }
+        val failed = (0 until count).map { parts.optInt(it.toString(), -1) }.firstOrNull { it >= 64 }
+        val result = when {
+            failed != null -> "failed"
+            delivered -> "delivered"
+            status in 32..63 && parts.length() == 1 -> "pending"
+            else -> null
+        }
+        val editor = sp.edit()
+        if (result != null && entry.optString("result") != result) {
+            entry.put("result", result)
+            val queue = JSONArray(sp.getString("otpDeliveryResults", "[]") ?: "[]")
+            queue.put(JSONObject().put("token", java.util.UUID.randomUUID().toString())
+                .put("id", id).put("device", entry.getString("device")).put("server", entry.getString("server"))
+                .put("delivered", delivered).put("status", if (failed != null) "DELIVERY_FAILED_$failed" else result))
+            editor.putString("otpDeliveryResults", queue.toString())
+            if (delivered) editor.putInt("otpDeliveredTotal", otpDeliveredTotal + 1)
+        }
+        editor.putString("otpDeliveryProgress", progress.toString()).commit()
+    }
+
+    fun deliveryResults(): JSONArray = synchronized(deliveryLock) {
+        JSONArray(sp.getString("otpDeliveryResults", "[]") ?: "[]")
+    }
+
+    fun removeDeliveryResult(token: String) = synchronized(deliveryLock) {
+        val queue = deliveryResults()
+        val remaining = JSONArray()
+        for (i in 0 until queue.length()) {
+            val item = queue.getJSONObject(i)
+            if (item.getString("token") != token) remaining.put(item)
+        }
+        sp.edit().putString("otpDeliveryResults", remaining.toString()).commit()
+    }
+
     var otpLastError: String?
         get() = sp.getString("otpLastError", null)
         set(v) = sp.edit().putString("otpLastError", v).apply()
@@ -128,6 +183,7 @@ class Prefs(context: Context) {
     }
 
     companion object {
+        private val deliveryLock = Any()
         const val DEFAULT_URL = "https://vgo.almobarmg.com"
         val DEFAULT_HINTS = listOf("vfcash", "vodafone", "vf", "etisalat", "e&", "eand", "emoney", "etmoney", "etisalatcash", "instapay")
         val DEFAULT_INSTAPAY = listOf("instapay", "insta pay", "انستاباي", "إنستاباي", "انستا باي", "إنستا باي")

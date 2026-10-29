@@ -6,6 +6,7 @@ import android.content.Intent
 import android.app.job.JobParameters
 import android.app.job.JobService
 import android.util.Log
+import android.telephony.SmsMessage
 
 /**
  * A new SMS arrived: upload it right away instead of waiting for the next sweep.
@@ -56,4 +57,25 @@ class RelayJob : JobService() {
     }
 
     override fun onStopJob(params: JobParameters): Boolean = true
+}
+
+/** Delivery callbacks can wake a fresh process long after the send worker finished. */
+class OtpDeliveryReceiver : BroadcastReceiver() {
+    override fun onReceive(context: Context, intent: Intent) {
+        val pdu = intent.getByteArrayExtra("pdu") ?: return
+        val format = intent.getStringExtra("format") ?: return
+        val status = runCatching { SmsMessage.createFromPdu(pdu, format)?.status }.getOrNull() ?: return
+        if (status != 0 && status !in 32..63 && status < 64) return
+        val id = intent.getStringExtra("id") ?: return
+        val attempt = intent.getStringExtra("attempt") ?: return
+        val pending = goAsync()
+        Thread {
+            try {
+                Prefs(context).recordDelivery(id, attempt, intent.getIntExtra("part", -1),
+                    intent.getIntExtra("count", 0), status)
+            } finally {
+                pending.finish()
+            }
+        }.start()
+    }
 }

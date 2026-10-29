@@ -74,6 +74,15 @@ namespace Masafet_Elseka.Presentation.Controllers
             return StatusCode(result.StatusCode, new { isSuccess = result.IsSuccess, message = result.Message });
         }
 
+        [HttpPost("outbox/{id:guid}/delivery")]
+        public async Task<IActionResult> OutboxDelivery(Guid id, [FromBody] SmsDeliveryDTO dto)
+        {
+            var device = await DeviceAsync();
+            if (device == null) return Unpaired();
+            var result = await _phoneOtp.ReportDeliveryAsync(device.Id, id, dto);
+            return StatusCode(result.StatusCode, new { isSuccess = result.IsSuccess, message = result.Message });
+        }
+
         [HttpPost("sms")]
         [RequestSizeLimit(512 * 1024)]
         public async Task<IActionResult> Sms([FromBody] CollectorSmsBatchDTO batch)

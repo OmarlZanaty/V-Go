@@ -36,6 +36,7 @@ object OtpSender {
         try {
             // Retry acknowledgements before fetching more work, without sending the SMS again.
             if (!reportPending(p, key)) return
+            if (!reportDeliveries(p, key)) return
             val http = Relay.request(p.baseUrl, "outbox?max=5", "GET", null, key, 5000)
             if (http.code != 200) {
                 p.otpLastError = "تعذر تحميل أكواد التحقق (HTTP ${http.code})"
@@ -49,7 +50,7 @@ object OtpSender {
                     val message = messages.getJSONObject(i)
                     val id = message.getString("id")
                     val sending = if (p.deviceKey == key && p.enabled && p.otpEnabled && hasPermission(app)) {
-                        startSend(app, p.otpSubscriptionId, message.getString("to"), message.getString("body"))
+                        startSend(app, p.otpSubscriptionId, message.getString("to"), message.getString("body"), id, key.substringBefore('.'), p.baseUrl)
                     } else Sending.completed("SENDING_DISABLED")
                     sends += id to sending
                 }
@@ -68,7 +69,7 @@ object OtpSender {
             } finally {
                 sends.forEach { it.second.close(app) }
             }
-            reportPending(p, key)
+            if (reportPending(p, key)) reportDeliveries(p, key)
         } catch (_: Exception) {
             // Exceptions from telephony/HTTP can contain message text, so never log them.
             p.otpLastError = "تعذر الاتصال بخدمة أكواد التحقق"
@@ -102,6 +103,26 @@ object OtpSender {
         return !unavailable
     }
 
+    private fun reportDeliveries(p: Prefs, key: String): Boolean {
+        val queue = p.deliveryResults()
+        for (i in 0 until queue.length()) {
+            val item = queue.getJSONObject(i)
+            val token = item.getString("token")
+            if (item.optString("device") != key.substringBefore('.') || item.optString("server") != p.baseUrl) {
+                p.removeDeliveryResult(token)
+                continue
+            }
+            val code = try {
+                Relay.request(p.baseUrl, "outbox/${item.getString("id")}/delivery", "POST",
+                    JSONObject().put("delivered", item.getBoolean("delivered")).put("status", item.getString("status")),
+                    key, 2000).code
+            } catch (_: Exception) { 0 }
+            if (code != 200 && code != 409) return false
+            p.removeDeliveryResult(token)
+        }
+        return true
+    }
+
     @Suppress("DEPRECATION")
     private fun manager(context: Context, subscriptionId: Int): SmsManager {
         if (subscriptionId == -1) return SmsManager.getDefault()
@@ -113,7 +134,7 @@ object OtpSender {
     }
 
     @SuppressLint("MissingPermission", "UnspecifiedRegisterReceiverFlag")
-    private fun startSend(context: Context, subscriptionId: Int, to: String, body: String): Sending {
+    private fun startSend(context: Context, subscriptionId: Int, to: String, body: String, id: String, device: String, server: String): Sending {
         var sending: Sending? = null
         return try {
             val sms = manager(context, subscriptionId)
@@ -142,7 +163,18 @@ object OtpSender {
                     Intent(action).setPackage(context.packageName).putExtra("part", i),
                     PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_ONE_SHOT)
             }
-            sms.sendMultipartTextMessage(to, null, parts, state.intents, null)
+            Prefs(context).beginDelivery(id, action, parts.size, device, server)
+            val deliveryIntents = arrayListOf<PendingIntent>()
+            for (i in parts.indices) {
+                deliveryIntents += PendingIntent.getBroadcast(context, requestCodes.getAndIncrement(),
+                    Intent(context, OtpDeliveryReceiver::class.java).setAction("$action.DELIVERY.$i")
+                        .putExtra("id", id).putExtra("attempt", action)
+                        .putExtra("part", i).putExtra("count", parts.size),
+                    // Mutable so telephony can attach delivery-report extras to the explicit, non-exported receiver.
+                    PendingIntent.FLAG_MUTABLE or PendingIntent.FLAG_ONE_SHOT)
+            }
+            // These intents must survive Sending.close() and process death.
+            sms.sendMultipartTextMessage(to, null, parts, state.intents, deliveryIntents)
             state
         } catch (_: SecurityException) {
             sending?.close(context)

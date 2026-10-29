@@ -9,6 +9,8 @@ namespace Masafet_Elseka.Application.Interfaces
         Task<Response<object>> VerifyAsync(string? phone, string? code);
         Task<Response<string>> ResetPasswordAsync(string resetToken, string? newPassword);
         Task<List<SmsOutboxMessageDTO>> ClaimOutboxAsync(Guid deviceId, int max);
+        Task<Response<string>> ReportDeliveryAsync(Guid deviceId, Guid id, SmsDeliveryDTO dto);
+        Task<List<SmsOutboxAdminDTO>> GetOutboxAsync(int take);
         Task<Response<string>> ReportOutboxAsync(Guid deviceId, Guid id, SmsOutboxResultDTO result);
     }
 }
