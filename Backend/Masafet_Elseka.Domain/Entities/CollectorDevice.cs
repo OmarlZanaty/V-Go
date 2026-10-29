@@ -23,6 +23,7 @@ namespace Masafet_Elseka.Domain.Entities
         // Last heartbeat details (battery, SMS permission, queue size...) as JSON.
         [MaxLength(1000)]
         public string? LastStatus { get; set; }
+        public DateTime? DeletedAt { get; set; }
         public DateTime CreatedAt { get; set; }
         public string? CreatedByUserId { get; set; }
     }

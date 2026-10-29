@@ -36,6 +36,7 @@ namespace Masafet_Elseka.Application.Interfaces.ICollectionService
         Task<Response<List<CollectorDeviceDTO>>> GetDevicesAsync();
         Task<Response<CollectorDeviceDTO>> CreateDeviceAsync(CreateDeviceDTO dto, string actorUserId);
         Task<Response<CollectorDeviceDTO>> NewPairingCodeAsync(Guid deviceId, string actorUserId);
+        Task<Response<bool>> DeleteDeviceAsync(Guid deviceId, string actorUserId);
         Task<Response<CollectorDeviceDTO>> SetDeviceActiveAsync(Guid deviceId, bool active, string actorUserId);
 
         // ---- background ----

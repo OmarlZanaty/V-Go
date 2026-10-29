@@ -59,7 +59,7 @@ namespace Masafet_Elseka.Infrastructure.Services
                 return Response<object>.Failure("محاولات كثيرة، حاول بعد ساعة", 429, code: "TOO_MANY");
             if (await _context.SmsOutbox.CountAsync(s => s.Purpose == "reset" && s.CreatedAt >= now.Date) >= 300)
                 return Response<object>.Failure("خدمة الرسائل مشغولة حاليًا، حاول لاحقًا أو تواصل مع الدعم", 503, code: "SMS_DAILY_LIMIT");
-            if (!await _context.CollectorDevices.AnyAsync(d => d.IsActive && d.KeyHash != null && d.LastSeenAt >= now.AddMinutes(-3)))
+            if (!await _context.CollectorDevices.AnyAsync(d => d.DeletedAt == null && d.IsActive && d.KeyHash != null && d.LastSeenAt >= now.AddMinutes(-3)))
                 return Response<object>.Failure("خدمة الرسائل غير متاحة حاليًا، حاول بعد قليل أو تواصل مع الدعم", 503, code: "SMS_OFFLINE");
 
             await requests.Where(o => o.ConsumedAt == null)
@@ -165,8 +165,9 @@ namespace Masafet_Elseka.Infrastructure.Services
             await LockAsync("VGo.SmsOutbox");
             var now = Now;
             var leaseCutoff = now.AddSeconds(-60);
-            await _context.CollectorDevices.Where(d => d.Id == deviceId)
-                .ExecuteUpdateAsync(s => s.SetProperty(d => d.LastSeenAt, now));
+            if (await _context.CollectorDevices.Where(d => d.DeletedAt == null && d.IsActive && d.KeyHash != null && d.Id == deviceId)
+                .ExecuteUpdateAsync(s => s.SetProperty(d => d.LastSeenAt, now)) == 0)
+                return new List<SmsOutboxMessageDTO>();
             await _context.SmsOutbox.Where(s => (s.Status == "Pending" || s.Status == "Claimed") &&
                 (s.ExpiresAt <= now || s.Attempts >= 3))
                 .ExecuteUpdateAsync(s => s.SetProperty(o => o.Status, "Expired"));
@@ -192,6 +193,8 @@ namespace Masafet_Elseka.Infrastructure.Services
 
         public async Task<Response<string>> ReportOutboxAsync(Guid deviceId, Guid id, SmsOutboxResultDTO result)
         {
+            if (!await _context.CollectorDevices.AnyAsync(d => d.Id == deviceId && d.DeletedAt == null && d.IsActive && d.KeyHash != null))
+                return Response<string>.Failure("الموبايل مش موجود", 401);
             var now = Now;
             var error = result.Error == null ? null : result.Error[..Math.Min(300, result.Error.Length)];
             var claimed = _context.SmsOutbox.Where(s => s.Id == id && s.Status == "Claimed" && s.ClaimedByDeviceId == deviceId);

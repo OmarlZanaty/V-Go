@@ -118,6 +118,11 @@ namespace Masafet_Elseka.Presentation.Controllers
             => Reply(await _collection.NewPairingCodeAsync(deviceId, UserId));
 
         [Authorize(Roles = FinanceAdmins)]
+        [HttpDelete("admin/devices/{deviceId:guid}")]
+        public async Task<IActionResult> DeleteDevice(Guid deviceId)
+            => Reply(await _collection.DeleteDeviceAsync(deviceId, UserId));
+
+        [Authorize(Roles = FinanceAdmins)]
         [HttpPost("admin/devices/{deviceId:guid}/active/{active:bool}")]
         public async Task<IActionResult> SetDeviceActive(Guid deviceId, bool active)
             => Reply(await _collection.SetDeviceActiveAsync(deviceId, active, UserId));

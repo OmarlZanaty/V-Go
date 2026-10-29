@@ -549,7 +549,7 @@ namespace Masafet_Elseka.Infrastructure.Services.CollectionService
                     PhoneNumber = w.PhoneNumber,
                     HolderName = w.HolderName,
                     BankName = w.BankName,
-                    IsOnline = w.Device != null && w.Device.IsActive && w.Device.LastSeenAt >= onlineSince,
+                    IsOnline = w.Device != null && w.Device.DeletedAt == null && w.Device.IsActive && w.Device.LastSeenAt >= onlineSince,
                 })
                 .ToListAsync();
             foreach (var w in wallets) w.ProviderLabel = ProviderLabel(Enum.Parse<WalletProvider>(w.Provider));
@@ -757,7 +757,7 @@ namespace Masafet_Elseka.Infrastructure.Services.CollectionService
         {
             var code = (dto.Code ?? string.Empty).Trim().Replace(" ", "").Replace("-", "").ToUpperInvariant();
             var now = Now;
-            var device = code.Length < 6 ? null : await _context.CollectorDevices
+            var device = code.Length < 6 ? null : await _context.CollectorDevices.Where(d => d.DeletedAt == null)
                 .FirstOrDefaultAsync(d => d.PairingCode == code && d.IsActive && d.PairingExpiresAt > now);
             if (device == null)
                 return Response<CollectorPairResultDTO>.Failure("كود الربط غلط أو انتهى. اطلب كود جديد من لوحة التحكم", 400);
@@ -769,6 +769,17 @@ namespace Masafet_Elseka.Infrastructure.Services.CollectionService
             device.PairedAt = now;
             device.LastSeenAt = now;
             device.AppVersion = dto.AppVersion?.Trim() is { Length: > 0 } v ? v[..Math.Min(40, v.Length)] : device.AppVersion;
+            var onlineSince = now - DeviceOnlineWindow;
+            var otherDevices = await _context.CollectorDevices.AsNoTracking()
+                .Where(d => d.DeletedAt == null && d.Id != device.Id
+                    && (!d.IsActive || d.KeyHash == null || d.LastSeenAt == null || d.LastSeenAt < onlineSince))
+                .ToListAsync();
+            var oldDeviceIds = otherDevices
+                .Where(d => string.Equals(d.Name.Trim(), device.Name.Trim(), StringComparison.OrdinalIgnoreCase))
+                .Select(d => d.Id).ToList();
+            var wallets = await _context.CollectionWallets
+                .Where(w => w.DeviceId != null && oldDeviceIds.Contains(w.DeviceId.Value)).ToListAsync();
+            await MoveDeviceWalletsAsync(wallets, device);
             await _context.SaveChangesAsync();
 
             Log.Information("Collector device {DeviceId} ({Name}) paired", device.Id, device.Name);
@@ -782,7 +793,7 @@ namespace Masafet_Elseka.Infrastructure.Services.CollectionService
             var dot = deviceKey.IndexOf('.');
             if (dot <= 0 || !Guid.TryParseExact(deviceKey[..dot], "N", out var id)) return null;
 
-            var device = await _context.CollectorDevices.FirstOrDefaultAsync(d => d.Id == id);
+            var device = await _context.CollectorDevices.Where(d => d.DeletedAt == null).FirstOrDefaultAsync(d => d.Id == id);
             if (device == null || !device.IsActive || device.KeyHash == null) return null;
 
             var expected = Encoding.ASCII.GetBytes(device.KeyHash);
@@ -829,7 +840,7 @@ namespace Masafet_Elseka.Infrastructure.Services.CollectionService
             var deviceId = device.Id;
             var now = Now;
 
-            await _context.CollectorDevices.Where(d => d.Id == deviceId)
+            await _context.CollectorDevices.Where(d => d.DeletedAt == null && d.Id == deviceId)
                 .ExecuteUpdateAsync(s => s.SetProperty(d => d.LastSeenAt, now));
 
             foreach (var m in (batch.Messages ?? new()).Take(MaxBatch))
@@ -1102,7 +1113,7 @@ namespace Masafet_Elseka.Infrastructure.Services.CollectionService
                 LockedDrivers = rule.CollectionEnabled ? lockedIds.Count(owing.ContainsKey) : 0,
                 MustPayDrivers = owing.Count,
                 TotalDueAboveTolerance = owing.Values.Sum(),
-                OnlineDevices = await _context.CollectorDevices.CountAsync(d => d.IsActive && d.LastSeenAt >= onlineSince),
+                OnlineDevices = await _context.CollectorDevices.Where(d => d.DeletedAt == null).CountAsync(d => d.IsActive && d.LastSeenAt >= onlineSince),
                 ActiveWallets = await _context.CollectionWallets.CountAsync(w => w.IsActive),
                 PausedWallets = await _context.CollectionWallets.CountAsync(w => w.IsActive && w.PausedReason != null),
                 RecentCycles = cycles,
@@ -1164,7 +1175,7 @@ namespace Masafet_Elseka.Infrastructure.Services.CollectionService
             q.Select(s => new WalletSmsDTO
             {
                 Id = s.Id,
-                DeviceName = s.Device != null ? s.Device.Name : null,
+                DeviceName = s.Device != null && s.Device.DeletedAt == null ? s.Device.Name : null,
                 Sender = s.Sender,
                 Body = s.Body,
                 ReceivedAt = s.ReceivedAt,
@@ -1358,11 +1369,11 @@ namespace Masafet_Elseka.Infrastructure.Services.CollectionService
                     PhoneNumber = w.PhoneNumber,
                     HolderName = w.HolderName,
                     BankName = w.BankName,
-                    IsOnline = w.Device != null && w.Device.IsActive && w.Device.LastSeenAt >= onlineSince,
+                    IsOnline = w.Device != null && w.Device.DeletedAt == null && w.Device.IsActive && w.Device.LastSeenAt >= onlineSince,
                     IsActive = w.IsActive,
                     SortOrder = w.SortOrder,
                     DeviceId = w.DeviceId,
-                    DeviceName = w.Device != null ? w.Device.Name : null,
+                    DeviceName = w.Device != null && w.Device.DeletedAt == null ? w.Device.Name : null,
                     LastSmsAt = w.LastSmsAt,
                     SimSlot = w.SimSlot,
                     ExpectedBalance = w.ExpectedBalance,
@@ -1393,7 +1404,7 @@ namespace Masafet_Elseka.Infrastructure.Services.CollectionService
             var holder = (dto.HolderName ?? string.Empty).Trim();
             if (holder.Length < 2 || holder.Length > 100) return Response<AdminWalletDTO>.Failure("اكتب اسم صاحب الحساب", 400);
             var bank = Clip(dto.BankName, 100);
-            if (dto.DeviceId != null && !await _context.CollectorDevices.AnyAsync(d => d.Id == dto.DeviceId))
+            if (dto.DeviceId != null && !await _context.CollectorDevices.Where(d => d.DeletedAt == null).AnyAsync(d => d.Id == dto.DeviceId))
                 return Response<AdminWalletDTO>.Failure("موبايل التحصيل مش موجود", 400);
             if (await _context.CollectionWallets.AnyAsync(w => w.Provider == provider && w.PhoneNumber == phone && w.Id != walletId))
                 return Response<AdminWalletDTO>.Failure("المحفظة دي متسجلة بالفعل", 400);
@@ -1461,7 +1472,7 @@ namespace Masafet_Elseka.Infrastructure.Services.CollectionService
         {
             var now = Now;
             var onlineSince = now - DeviceOnlineWindow;
-            var devices = await _context.CollectorDevices.AsNoTracking()
+            var devices = await _context.CollectorDevices.AsNoTracking().Where(d => d.DeletedAt == null)
                 .Where(d => id == null || d.Id == id)
                 .OrderBy(d => d.CreatedAt).ToListAsync();
             var wallets = await _context.CollectionWallets.AsNoTracking().Where(w => w.DeviceId != null).ToListAsync();
@@ -1507,7 +1518,7 @@ namespace Masafet_Elseka.Infrastructure.Services.CollectionService
 
         public async Task<Response<CollectorDeviceDTO>> NewPairingCodeAsync(Guid deviceId, string actorUserId)
         {
-            var device = await _context.CollectorDevices.FirstOrDefaultAsync(d => d.Id == deviceId);
+            var device = await _context.CollectorDevices.Where(d => d.DeletedAt == null).FirstOrDefaultAsync(d => d.Id == deviceId);
             if (device == null) return Response<CollectorDeviceDTO>.Failure("الموبايل مش موجود", 404);
             device.PairingCode = NewPairingCode();
             device.PairingExpiresAt = Now + PairingCodeLife;
@@ -1516,9 +1527,55 @@ namespace Masafet_Elseka.Infrastructure.Services.CollectionService
             return Response<CollectorDeviceDTO>.Success((await DeviceDtosAsync(device.Id)).First(), "كود ربط جديد", 200);
         }
 
+        private async Task MoveDeviceWalletsAsync(List<CollectionWallet> wallets, CollectorDevice? replacement)
+        {
+            var assigned = replacement == null ? new List<CollectionWallet>() : await _context.CollectionWallets
+                .Where(w => w.DeviceId == replacement.Id).ToListAsync();
+            foreach (var wallet in wallets)
+            {
+                if (replacement == null || assigned.Any(w => w.Provider == wallet.Provider && w.SimSlot == wallet.SimSlot))
+                    wallet.SimSlot = null;
+                wallet.DeviceId = replacement?.Id;
+                assigned.Add(wallet);
+            }
+        }
+
+        public async Task<Response<bool>> DeleteDeviceAsync(Guid deviceId, string actorUserId)
+        {
+            await using var transaction = await _context.Database.BeginTransactionAsync();
+            var device = await _context.CollectorDevices.FirstOrDefaultAsync(d => d.DeletedAt == null && d.Id == deviceId);
+            if (device == null) return Response<bool>.Failure("الموبايل مش موجود", 404);
+            var candidates = await _context.CollectorDevices
+                .Where(d => d.DeletedAt == null && d.Id != deviceId && d.IsActive && d.KeyHash != null)
+                .OrderByDescending(d => d.PairedAt).ToListAsync();
+            var replacement = candidates.FirstOrDefault(d =>
+                string.Equals(d.Name.Trim(), device.Name.Trim(), StringComparison.OrdinalIgnoreCase));
+            var wallets = await _context.CollectionWallets.Where(w => w.DeviceId == deviceId).ToListAsync();
+            await MoveDeviceWalletsAsync(wallets, replacement);
+            await _context.SmsOutbox.Where(s => s.Status == "Claimed" && s.ClaimedByDeviceId == deviceId)
+                .ExecuteUpdateAsync(s => s.SetProperty(o => o.Status, "Pending")
+                    .SetProperty(o => o.ClaimedByDeviceId, (Guid?)null));
+            if (await _context.WalletSms.AnyAsync(s => s.DeviceId == deviceId))
+            {
+                device.DeletedAt = Now;
+                device.IsActive = false;
+                device.KeyHash = null;
+                device.PairingCode = null;
+                device.PairingExpiresAt = null;
+            }
+            else
+                _context.CollectorDevices.Remove(device);
+            await _context.SaveChangesAsync();
+            await _finance.WriteAuditAsync(actorUserId, "CollectorDeviceDeleted", null, device.Name);
+            await transaction.CommitAsync();
+            var message = "اتمسح الموبايل";
+            if (replacement != null && wallets.Count > 0) message += $" واتنقلت محافظه لـ {replacement.Name}";
+            return Response<bool>.Success(true, message, 200);
+        }
+
         public async Task<Response<CollectorDeviceDTO>> SetDeviceActiveAsync(Guid deviceId, bool active, string actorUserId)
         {
-            var device = await _context.CollectorDevices.FirstOrDefaultAsync(d => d.Id == deviceId);
+            var device = await _context.CollectorDevices.Where(d => d.DeletedAt == null).FirstOrDefaultAsync(d => d.Id == deviceId);
             if (device == null) return Response<CollectorDeviceDTO>.Failure("الموبايل مش موجود", 404);
             device.IsActive = active;
             if (!active) { device.PairingCode = null; device.PairingExpiresAt = null; }
@@ -1604,7 +1661,7 @@ namespace Masafet_Elseka.Infrastructure.Services.CollectionService
                 && await _context.CollectionCycles.Where(c => c.Id == id && c.LockAppliedAt == null)
                        .ExecuteUpdateAsync(s => s.SetProperty(c => c.LockAppliedAt, now)) == 1)
             {
-                var collectorAlive = await _context.CollectorDevices
+                var collectorAlive = await _context.CollectorDevices.Where(d => d.DeletedAt == null)
                     .AnyAsync(d => d.IsActive && d.KeyHash != null && d.LastSeenAt >= now - DeviceLockGuard);
                 if (!collectorAlive)
                 {
@@ -1653,7 +1710,7 @@ namespace Masafet_Elseka.Infrastructure.Services.CollectionService
         private async Task AlertIfCollectorOfflineAsync(DateTime now)
         {
             if (now - _lastOfflineAlert < TimeSpan.FromHours(2)) return;
-            var devices = await _context.CollectorDevices.AsNoTracking()
+            var devices = await _context.CollectorDevices.AsNoTracking().Where(d => d.DeletedAt == null)
                 .Where(d => d.IsActive && d.KeyHash != null)
                 .Select(d => new { d.Name, d.LastSeenAt }).ToListAsync();
             if (devices.Count == 0 || devices.Any(d => d.LastSeenAt >= now - OfflineAlertAfter)) return;
