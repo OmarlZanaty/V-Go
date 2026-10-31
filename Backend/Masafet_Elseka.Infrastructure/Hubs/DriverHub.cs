@@ -10,6 +10,7 @@ using Masafet_Elseka.Application.Interfaces.ITripService;
 using Masafet_Elseka.Domain.Const;
 using Masafet_Elseka.Domain.Entities;
 using Masafet_Elseka.Domain.Enums;
+using Masafet_Elseka.Infrastructure.Services.DispatchSettings;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
@@ -42,10 +43,12 @@ namespace Masafet_Elseka.Infrastructure.Hubs
         private readonly IHubContext<TripHub> _tripHubContext;
         private readonly IEmergencyService _emergencyService;
         private readonly IDriverFinanceService _finance;
-        private double _distanceThresholdKm = 4.0;
+        // Radius around the pickup for pending-trip offers (admin dashboard setting).
+        private readonly IDispatchSettingsService _dispatch;
 
-        public DriverHub(IDriverService driverService, ICacheService cacheService, ITripService tripService, UserManager<ApplicationUser> userManager, IHubContext<TripHub> tripHub, IEmergencyService emergencyService, IDriverFinanceService finance)
+        public DriverHub(IDriverService driverService, ICacheService cacheService, ITripService tripService, UserManager<ApplicationUser> userManager, IHubContext<TripHub> tripHub, IEmergencyService emergencyService, IDriverFinanceService finance, IDispatchSettingsService dispatch)
         {
+            _dispatch = dispatch;
             _finance = finance;
             _driverService = driverService;
             _cacheService = cacheService;
@@ -265,6 +268,7 @@ namespace Masafet_Elseka.Infrastructure.Hubs
             if (!pendingTrips.Any())
                 return;
 
+            var radiusKm = await _dispatch.GetRadiusKmAsync();
             foreach (var trip in pendingTrips)
             {
                 if(latitude.HasValue && longitude.HasValue)
@@ -273,7 +277,7 @@ namespace Masafet_Elseka.Infrastructure.Hubs
                     // Previously this used trip.DistanceInKm (the trip's own length), which
                     // wrongly hid every trip longer than the threshold from all drivers.
                     var distance = GeoHelper.CalculateDistance(trip.StartLat, trip.StartLng, latitude.Value, longitude.Value);
-                    if (distance > _distanceThresholdKm)
+                    if (distance > radiusKm)
                     {
                         continue;
                     }

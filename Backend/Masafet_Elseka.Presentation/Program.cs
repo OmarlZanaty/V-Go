@@ -266,6 +266,8 @@ builder.Services.AddSingleton<IAuthStateService, AuthStateService>();
 builder.Services.AddScoped<IGoogleAuthService, GoogleAuthService>();
 builder.Services.AddScoped<IHomeBannerService, HomeBannerService>();
 builder.Services.AddSingleton<OnlineTrackerService>();
+builder.Services.AddSingleton<Masafet_Elseka.Infrastructure.Services.DispatchSettings.IDispatchSettingsService,
+    Masafet_Elseka.Infrastructure.Services.DispatchSettings.DispatchSettingsService>();
 builder.Services.AddScoped<Masafet_Elseka.Application.Common.OTP>();
 #endregion
 

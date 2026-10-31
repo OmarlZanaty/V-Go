@@ -19,6 +19,7 @@ using Masafet_Elseka.Domain.Entities;
 using Masafet_Elseka.Domain.Enums;
 using Masafet_Elseka.Infrastructure.Data;
 using Masafet_Elseka.Infrastructure.Hubs.HubHelper;
+using Masafet_Elseka.Infrastructure.Services.DispatchSettings;
 using Masafet_Elseka.Infrastructure.UOW;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authorization;
@@ -49,9 +50,8 @@ namespace Masafet_Elseka.Infrastructure.Hubs
         private readonly Context _context;
         private readonly IUserService _userService;
         private readonly IRatingService _ratingService;
-        // New-trip offers only reach captains within this straight-line distance
-        // of the pickup (same radius as DriverHub's pending-trip catch-up).
-        private double _distanceThresholdKm = 4.0;
+        // Radius around the pickup for new-trip offers (admin dashboard setting).
+        private readonly IDispatchSettingsService _dispatch;
         private readonly ILogger<TripHub> _logger;
         private readonly IServiceScopeFactory _scopeFactory;
         private readonly INotificationService _notificationService;
@@ -61,8 +61,9 @@ namespace Masafet_Elseka.Infrastructure.Hubs
         public TripHub(ITripService tripService, IUserTripService userTripService, IUnitOfWork unitOfWork, UserManager<ApplicationUser> userManage,
             IDriverService driverService, Context context, IUserService userService, IRatingService ratingService, ILogger<TripHub> logger,
             IServiceScopeFactory scopeFactory, INotificationService notificationService, IPaymentService paymentService,
-            IDriverFinanceService finance)
+            IDriverFinanceService finance, IDispatchSettingsService dispatch)
         {
+            _dispatch = dispatch;
             _finance = finance;
             _tripService = tripService;
             _userTripService = userTripService;
@@ -822,6 +823,7 @@ namespace Masafet_Elseka.Infrastructure.Hubs
                 return;
 
             _logger?.LogInformation("Drivers fetched from cache: {Count}", drivers.Data?.Count ?? 0);
+            var radiusKm = await _dispatch.GetRadiusKmAsync();
             foreach (var d in drivers.Data)
             {
                 if (d.DriverId == excludeDriverId)
@@ -837,7 +839,7 @@ namespace Masafet_Elseka.Infrastructure.Hubs
                 }
                 var distance = GeoHelper.CalculateDistance(
                     request.StartLat, request.StartLng, d.Latitude.Value, d.Longitude.Value);
-                if (distance <= _distanceThresholdKm)
+                if (distance <= radiusKm)
                 {
                     availableDrivers.Add(d);
                 }
