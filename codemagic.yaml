@@ -11,13 +11,52 @@
 # The App Store Connect key "ShoppingMarket ASC Key" is in the personal
 # account's Developer Portal integration.
 # Start a build: Codemagic -> V-Go -> Start new build -> pick the workflow.
+#
+# Android builds (Linux machines) produce signed .aab files to upload to Google
+# Play by hand. The upload keystores live in Code signing identities -> Android
+# keystores as "vgo_rider_upload" / "vgo_captain_upload".
 
 definitions:
   ios_env: &ios_env
     flutter: 3.41.9
     xcode: latest
     cocoapods: default
+  android_env: &android_env
+    flutter: 3.41.9
+    java: 21
   scripts:
+    - &android_keystore
+      name: Release keystore
+      script: |
+        # Without key.properties Gradle quietly signs with debug keys, which
+        # Play rejects, so stop here instead.
+        if [ -z "$CM_KEYSTORE_PATH" ] || [ ! -f "$CM_KEYSTORE_PATH" ]; then
+          echo "No Android keystore: add it in Code signing identities" >&2
+          exit 1
+        fi
+        printf 'storePassword=%s\nkeyPassword=%s\nkeyAlias=%s\nstoreFile=%s\n' \
+          "$CM_KEYSTORE_PASSWORD" "$CM_KEY_PASSWORD" "$CM_KEY_ALIAS" \
+          "$CM_KEYSTORE_PATH" > android/key.properties
+    - &android_pub_get
+      name: Flutter packages
+      script: flutter pub get
+    - &build_aab
+      name: Build .aab
+      script: |
+        # Version codes only have to grow; Play had 31 when this was added, so
+        # local builds must now go above 100 + the Codemagic run counter.
+        flutter build appbundle --release \
+          --build-name=$VERSION_NAME \
+          --build-number=$((100 + BUILD_NUMBER))
+    - &check_aab_signing
+      name: Check release signing
+      script: |
+        keytool -printcert -jarfile build/app/outputs/bundle/release/app-release.aab \
+          | tee /tmp/aab_cert.txt
+        if ! grep -q "SHA256" /tmp/aab_cert.txt || grep -q "Android Debug" /tmp/aab_cert.txt; then
+          echo "The .aab is not signed with the upload key" >&2
+          exit 1
+        fi
     - &pub_get
       name: Flutter packages
       script: |
@@ -89,3 +128,43 @@ workflows:
     artifacts:
       - build/ios/ipa/*.ipa
     publishing: *publishing
+
+  rider-android:
+    name: V-Go (rider) - Android Play Store
+    instance_type: linux_x2
+    max_build_duration: 60
+    working_directory: V-Go
+    environment:
+      <<: *android_env
+      android_signing:
+        - vgo_rider_upload
+      vars:
+        VERSION_NAME: 1.0.14
+    scripts:
+      - *android_keystore
+      - *android_pub_get
+      - *build_aab
+      - *check_aab_signing
+    artifacts:
+      - build/app/outputs/bundle/release/*.aab
+      - build/app/outputs/mapping/release/mapping.txt
+
+  captain-android:
+    name: V-Go Captain - Android Play Store
+    instance_type: linux_x2
+    max_build_duration: 60
+    working_directory: V-GoCaptain
+    environment:
+      <<: *android_env
+      android_signing:
+        - vgo_captain_upload
+      vars:
+        VERSION_NAME: 1.0.16
+    scripts:
+      - *android_keystore
+      - *android_pub_get
+      - *build_aab
+      - *check_aab_signing
+    artifacts:
+      - build/app/outputs/bundle/release/*.aab
+      - build/app/outputs/mapping/release/mapping.txt
