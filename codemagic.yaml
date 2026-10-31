@@ -12,7 +12,7 @@
 # account's Developer Portal integration.
 # Start a build: Codemagic -> V-Go -> Start new build -> pick the workflow.
 #
-# Android builds (Linux machines) produce signed .aab files to upload to Google
+# Android builds (same Mac machines; Linux is not on the free plan) produce signed .aab files to upload to Google
 # Play by hand. The upload keystores live in Code signing identities -> Android
 # keystores as "vgo_rider_upload" / "vgo_captain_upload".
 
@@ -131,7 +131,7 @@ workflows:
 
   rider-android:
     name: V-Go (rider) - Android Play Store
-    instance_type: linux_x2
+    instance_type: mac_mini_m2
     max_build_duration: 60
     working_directory: V-Go
     environment:
@@ -151,7 +151,7 @@ workflows:
 
   captain-android:
     name: V-Go Captain - Android Play Store
-    instance_type: linux_x2
+    instance_type: mac_mini_m2
     max_build_duration: 60
     working_directory: V-GoCaptain
     environment:
