@@ -49,7 +49,9 @@ namespace Masafet_Elseka.Infrastructure.Hubs
         private readonly Context _context;
         private readonly IUserService _userService;
         private readonly IRatingService _ratingService;
-        private double _distanceThresholdKm = 800.0;
+        // New-trip offers only reach captains within this straight-line distance
+        // of the pickup (same radius as DriverHub's pending-trip catch-up).
+        private double _distanceThresholdKm = 4.0;
         private readonly ILogger<TripHub> _logger;
         private readonly IServiceScopeFactory _scopeFactory;
         private readonly INotificationService _notificationService;
