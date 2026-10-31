@@ -12,9 +12,12 @@
 # account's Developer Portal integration.
 # Start a build: Codemagic -> V-Go -> Start new build -> pick the workflow.
 #
-# Android builds (same Mac machines; Linux is not on the free plan) produce signed .aab files to upload to Google
-# Play by hand. The upload keystores live in Code signing identities -> Android
-# keystores as "vgo_rider_upload" / "vgo_captain_upload".
+# Android builds (same Mac machines; Linux is not on the free plan) produce
+# signed .aab files to upload to Google Play by hand. The upload keystores live
+# in Code signing identities -> Android keystores as "vgo_rider_upload" /
+# "vgo_captain_upload". google-services.json is kept out of this public repo:
+# it is the secure variable GOOGLE_SERVICES_JSON (base64) in the app's
+# environment variable groups "vgo_rider_firebase" / "vgo_captain_firebase".
 
 definitions:
   ios_env: &ios_env
@@ -37,6 +40,14 @@ definitions:
         printf 'storePassword=%s\nkeyPassword=%s\nkeyAlias=%s\nstoreFile=%s\n' \
           "$CM_KEYSTORE_PASSWORD" "$CM_KEY_PASSWORD" "$CM_KEY_ALIAS" \
           "$CM_KEYSTORE_PATH" > android/key.properties
+    - &google_services
+      name: Firebase config
+      script: |
+        if [ -z "$GOOGLE_SERVICES_JSON" ]; then
+          echo "No GOOGLE_SERVICES_JSON: add it to the app's variable group" >&2
+          exit 1
+        fi
+        echo "$GOOGLE_SERVICES_JSON" | base64 --decode > android/app/google-services.json
     - &android_pub_get
       name: Flutter packages
       script: flutter pub get
@@ -138,10 +149,13 @@ workflows:
       <<: *android_env
       android_signing:
         - vgo_rider_upload
+      groups:
+        - vgo_rider_firebase
       vars:
         VERSION_NAME: 1.0.14
     scripts:
       - *android_keystore
+      - *google_services
       - *android_pub_get
       - *build_aab
       - *check_aab_signing
@@ -158,10 +172,13 @@ workflows:
       <<: *android_env
       android_signing:
         - vgo_captain_upload
+      groups:
+        - vgo_captain_firebase
       vars:
         VERSION_NAME: 1.0.16
     scripts:
       - *android_keystore
+      - *google_services
       - *android_pub_get
       - *build_aab
       - *check_aab_signing
