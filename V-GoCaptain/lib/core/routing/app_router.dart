@@ -55,7 +55,9 @@ class AppRouter {
   );
 
   static Route<dynamic> generateRoute(RouteSettings settings) {
-    final args = settings.arguments as Map<String, dynamic>?;
+    // Some routes pass a plain String (e.g. 'reset'), so only treat Maps as args.
+    final rawArgs = settings.arguments;
+    final args = rawArgs is Map<String, dynamic> ? rawArgs : null;
 
     switch (settings.name) {
       case Routes.loginViewRoute:

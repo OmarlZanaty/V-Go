@@ -164,7 +164,8 @@ namespace Masafet_Elseka.Infrastructure.Services
             await using var transaction = await _context.Database.BeginTransactionAsync();
             await LockAsync("VGo.SmsOutbox");
             var now = Now;
-            var leaseCutoff = now.AddSeconds(-60);
+            // Longer than the collector's 75 s wait for the SMS "sent" callback, so a slow send is not re-claimed.
+            var leaseCutoff = now.AddSeconds(-150);
             if (await _context.CollectorDevices.Where(d => d.DeletedAt == null && d.IsActive && d.KeyHash != null && d.Id == deviceId)
                 .ExecuteUpdateAsync(s => s.SetProperty(d => d.LastSeenAt, now)) == 0)
                 return new List<SmsOutboxMessageDTO>();

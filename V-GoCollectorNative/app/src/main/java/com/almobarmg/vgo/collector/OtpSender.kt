@@ -45,7 +45,7 @@ object OtpSender {
             val messages = JSONObject(http.body).getJSONArray("data")
             val sends = mutableListOf<Pair<String, Sending>>()
             try {
-                // Start the whole batch first: five sequential 30-second waits would exceed the lease.
+                // Start the whole batch first: five sequential 75-second waits would exceed the lease.
                 for (i in 0 until messages.length()) {
                     val message = messages.getJSONObject(i)
                     val id = message.getString("id")
@@ -200,7 +200,8 @@ object OtpSender {
         val received = BooleanArray(parts)
         val intents = arrayListOf<PendingIntent>()
         var receiver: BroadcastReceiver? = null
-        private val deadline = SystemClock.elapsedRealtime() + 30_000L
+        // Weak signal/carrier queues can delay the "sent" callback well past 30 s; the server lease is longer than this.
+        private val deadline = SystemClock.elapsedRealtime() + 75_000L
 
         fun awaitResult(): String? {
             try {
