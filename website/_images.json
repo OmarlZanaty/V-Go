@@ -1,0 +1,23 @@
+[
+ {"name":"hero-vgo-rider","path":"D:/Projects/V-Go/website/_src/book-and-track.png"},
+ {"name":"rider-feature-route","path":"D:/Projects/V-Go/website/_src/pick-route-request.png"},
+ {"name":"rider-feature-payment","path":"D:/Projects/V-Go/website/_src/payment-options.png"},
+ {"name":"rider-feature-offers","path":"D:/Projects/V-Go/website/_src/ride-offers.png"},
+ {"name":"rider-step-account","path":"D:/Projects/V-Go/website/_src/download-register.png"},
+ {"name":"rider-step-book","path":"D:/Projects/V-Go/website/_src/where-to-today.png"},
+ {"name":"rider-step-meet","path":"D:/Projects/V-Go/website/_src/meet-captain.png"},
+ {"name":"hero-cairo-captain","path":"D:/Projects/V-Go/website/_src/extra-v-go1.png"},
+ {"name":"feature-trip-requests","path":"D:/Projects/V-Go/website/_src/trip-requests.png"},
+ {"name":"feature-navigation","path":"D:/Projects/V-Go/website/_src/turn-by-turn-navigation.png"},
+ {"name":"feature-earnings","path":"D:/Projects/V-Go/website/_src/earnings-accounts.png"},
+ {"name":"feature-collection","path":"D:/Projects/V-Go/website/_src/trip-accounting.png"},
+ {"name":"feature-verification","path":"D:/Projects/V-Go/website/_src/sign-documents.png"},
+ {"name":"feature-notifications","path":"D:/Projects/V-Go/website/_src/notifications.png"},
+ {"name":"step-download","path":"D:/Projects/V-Go/website/_src/download-register.png"},
+ {"name":"step-verification","path":"D:/Projects/V-Go/website/_src/complete-documents.png"},
+ {"name":"step-first-trip","path":"D:/Projects/V-Go/website/_src/go-online.png"},
+ {"name":"earnings-finance","path":"D:/Projects/V-Go/website/_src/earnings-accounts.png"},
+ {"name":"cta-city-night","path":"D:/Projects/V-Go/website/_src/why-drive-vgo.png"},
+ {"name":"og-vgo","path":"D:/Projects/V-Go/website/_src/cover.png"},
+ {"name":"og-captain","path":"D:/Projects/V-Go/website/_src/cover.png"}
+]

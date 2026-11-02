@@ -56,3 +56,6 @@ secrets.json
 # ============ OS ============
 .DS_Store
 Thumbs.db
+
+# Website artwork originals (client Drive export, kept out of git for size)
+website/_src/
