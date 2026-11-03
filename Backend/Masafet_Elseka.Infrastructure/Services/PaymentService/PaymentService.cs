@@ -1218,7 +1218,9 @@ namespace Masafet_Elseka.Infrastructure.Services.PaymentService
                 }
                 if (trip.Payment.Any(p => p.Status == PaymentStatus.Paid))
                 {
-                    return Response<string>.Failure("تم دفع هذه الرحلة بالفعل", 400);
+                    // Idempotent: a second confirmation (retry, double tap) must still
+                    // succeed so the caller re-notifies a rider that missed the first one.
+                    return Response<string>.Success(clientId, "تم دفع هذه الرحلة بالفعل", 200);
                 }
                 var payment = new Payment
                 {

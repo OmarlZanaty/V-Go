@@ -4,8 +4,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:hugeicons/hugeicons.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../core/di/di.dart';
+import '../../core/utils/app_constants.dart';
 import '../../core/helpers/extensions.dart';
 import '../../core/routing/routes.dart';
 import '../../core/theming/app_colors.dart';
@@ -111,6 +113,14 @@ class SettingsView extends StatelessWidget {
                       },
                     );
                   },
+                ),
+                SettingsItem(
+                  title: 'إنستجرام',
+                  icon: HugeIcons.strokeRoundedInstagram,
+                  onTap: () => launchUrl(
+                    Uri.parse(AppConstants.kInstagramUrl),
+                    mode: LaunchMode.externalApplication,
+                  ),
                 ),
                 if (!isDriver) ...[
                   SettingsItem(

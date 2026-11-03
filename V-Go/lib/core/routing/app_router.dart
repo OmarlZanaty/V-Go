@@ -202,8 +202,17 @@ class AppRouter {
       case Routes.tripDetailsViewRoute:
         final trip = settings.arguments as TripModel;
         return MaterialPageRoute(
-          builder: (_) => BlocProvider(
-            create: (context) => RealTimeTripCubit(getIt())..connect(),
+          builder: (_) => MultiBlocProvider(
+            providers: [
+              BlocProvider(
+                create: (context) => RealTimeTripCubit(getIt())..connect(),
+              ),
+              // A finished trip can still be rated from this page.
+              BlocProvider(
+                lazy: false,
+                create: (context) => RatingCubit(getIt())..connect(),
+              ),
+            ],
             child: TripDetailsView(trip: trip),
           ),
         );

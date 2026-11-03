@@ -2,6 +2,7 @@ import 'package:app_settings/app_settings.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:package_info_plus/package_info_plus.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../../../core/api/api_service.dart';
 import '../../../../core/api/end_points.dart';
@@ -139,6 +140,14 @@ class SettingsView extends StatelessWidget {
             title: 'الدعم الفني',
             icon: Icons.support_agent_outlined,
             onTap: () => Navigator.of(context).pushNamed(Routes.supportViewRoute),
+          ),
+          SettingsItem(
+            title: 'إنستجرام',
+            icon: Icons.camera_alt_outlined,
+            onTap: () => launchUrl(
+              Uri.parse(AppConstants.kInstagramUrl),
+              mode: LaunchMode.externalApplication,
+            ),
           ),
 
           // ---------- Account ----------

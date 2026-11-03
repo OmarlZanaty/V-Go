@@ -38,8 +38,11 @@ namespace Masafet_Elseka.Application.DTOs.Trip
         public string? ScooterLicense { get; set; }
 
         public DateTime CreatedAt { get; set; }
-        public decimal? DriverRating { get; set; }   
+        public decimal? DriverRating { get; set; }
         public decimal? Userrating { get; set; }
+        // True when the caller already rated this trip, so the app can offer the
+        // rating again from the trip's own page when the live screen was missed.
+        public bool IsRatedByMe { get; set; }
         public ICollection<RatingResponseDTO> Ratings { get; set; } = new List<RatingResponseDTO>();
 
     }

@@ -8,6 +8,7 @@ import '../../../../core/utils/widgets/payment_method_badge.dart';
 import '../../../admin/presentation/widgets/driver_or_client_data_section.dart';
 import '../../data/model/trip_model.dart';
 import '../widgets/trip_item.dart';
+import '../widgets/trip_rating_section.dart';
 import '../widgets/trip_status_section.dart';
 
 class TripDetailsView extends StatelessWidget {
@@ -42,6 +43,10 @@ class TripDetailsView extends StatelessWidget {
                   DriverOrClientDataSection(trip: trip, isFromDriver: false),
                   verticalSpace(24),
                   DriverOrClientDataSection(trip: trip, isFromDriver: true),
+                  if (TripRatingSection.isAvailableFor(trip)) ...[
+                    verticalSpace(24),
+                    TripRatingSection(trip: trip),
+                  ],
                   Expanded(child: verticalSpace(30)),
                   TripStatusSection(status: trip.status, tripId: trip.tripId),
                   verticalSpace(20),

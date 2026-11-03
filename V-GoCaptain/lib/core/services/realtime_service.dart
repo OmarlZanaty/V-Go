@@ -321,13 +321,19 @@ class RealtimeService {
   /// Driver confirms they received the cash for this trip → backend marks it
   /// paid and unlocks the rider's completion screen.
   Future<void> confirmCashPayment(String tripId) async {
-    await _invokeTrip('ConfirmCashPayment', args: [tripId]);
+    // A refused confirmation must not close the trip here: the rider stays
+    // locked on "الدفع نقدًا يؤكده الكابتن" until the server records it.
+    await _invokeTrip('ConfirmCashPayment', args: [tripId], checkResult: true);
   }
 
   /// Tell the server the client refused to pay this (Visa) trip, so the
   /// rider's app is released from the payment screen too.
   Future<void> reportPaymentRefused(String tripId) async {
-    await _invokeTrip('ReportPaymentRefused', args: [tripId]);
+    await _invokeTrip(
+      'ReportPaymentRefused',
+      args: [tripId],
+      checkResult: true,
+    );
   }
 
   Future<void> disconnect() async {

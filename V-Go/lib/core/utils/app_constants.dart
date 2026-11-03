@@ -14,6 +14,9 @@ abstract class AppConstants {
   static String kToken = "";
   static String kRole = "";
   static const String locationDisclosureAccepted = "locationDisclosureAccepted";
+
+  /// The company's public Instagram page (client-supplied, 2026-11-02).
+  static const String kInstagramUrl = "https://www.instagram.com/v.go.eg";
 }
 
 /// This enum have (Extension to capitalize the first letter of a string)

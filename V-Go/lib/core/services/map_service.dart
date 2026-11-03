@@ -89,6 +89,103 @@ class MapService {
     }
   }
 
+  /// Street-level Arabic address from the OpenStreetMap providers, for when
+  /// Google answers 403 (billing off). The device geocoder, which is the only
+  /// other fallback, returns "Suez Governorate" for every point in the city.
+  Future<String?> reverseGeocodeOsm(double lat, double lng) async {
+    try {
+      final response = await dio
+          .get(
+            _photonReverseUrl,
+            queryParameters: {'lat': lat, 'lon': lng, 'limit': 1},
+          )
+          .timeout(const Duration(seconds: 6));
+      final features = (response.data['features'] as List?) ?? const [];
+      if (features.isNotEmpty) {
+        final p = (features.first['properties'] as Map).cast<String, dynamic>();
+        final label = _joinPlaceParts([
+          for (final k in ['name', 'street', 'district', 'city'])
+            if (p[k] is String) p[k] as String,
+        ]);
+        if (label != null) return label;
+      }
+    } catch (e) {
+      log('Photon reverse failed: $e');
+    }
+    try {
+      final response = await dio
+          .get(
+            _nominatimReverseUrl,
+            queryParameters: {
+              'lat': lat,
+              'lon': lng,
+              'format': 'jsonv2',
+              'accept-language': 'ar',
+              'zoom': 18, // street level
+            },
+            options: Options(
+              headers: {'User-Agent': 'VGo-Rider/1.0 (vgo.almobarmg.com)'},
+            ),
+          )
+          .timeout(const Duration(seconds: 6));
+      final address = (response.data['address'] as Map?)?.cast<String, dynamic>();
+      if (address != null) {
+        final label = _joinPlaceParts([
+          for (final k in [
+            'amenity',
+            'road',
+            'neighbourhood',
+            'quarter',
+            'suburb',
+            'city',
+            'town',
+          ])
+            if (address[k] is String) address[k] as String,
+        ]);
+        if (label != null) return label;
+      }
+    } catch (e) {
+      log('Nominatim reverse failed: $e');
+    }
+    // Offline last resort: the nearest named place or street in the Suez
+    // gazetteer. Beyond that distance a name would be misleading.
+    return _nearestGazetteerName(lat, lng);
+  }
+
+  /// The two most specific parts plus the city, dropping the names that only
+  /// say which governorate or country the point is in.
+  static String? _joinPlaceParts(List<String> parts) {
+    final cleaned = <String>[];
+    for (final part in parts) {
+      final value = part.trim();
+      if (value.isEmpty || cleaned.contains(value)) continue;
+      if (_genericPlace.hasMatch(value)) continue;
+      cleaned.add(value);
+    }
+    if (cleaned.isEmpty) return null;
+    return cleaned.take(3).join('، ');
+  }
+
+  static final RegExp _genericPlace = RegExp(
+    r'^(مصر|Egypt|محافظة\s|Suez Governorate$|.*\sGovernorate$)',
+  );
+
+  static const double _gazetteerReverseMeters = 250;
+
+  static String? _nearestGazetteerName(double lat, double lng) {
+    final point = LatLng(lat, lng);
+    String? best;
+    double bestMeters = _gazetteerReverseMeters;
+    for (final place in suezPlaces) {
+      final meters = GeoUtils.haversine(point, LatLng(place.$2, place.$3));
+      if (meters < bestMeters) {
+        bestMeters = meters;
+        best = place.$1;
+      }
+    }
+    return best;
+  }
+
   Future<List<PlaceSuggestionModel>> getPlaceSuggestions(
     String query,
     String sessionToken, {
@@ -266,8 +363,11 @@ class MapService {
   static const String _osrmUrl =
       'https://router.project-osrm.org/route/v1/driving/';
   static const String _photonUrl = 'https://photon.komoot.io/api/';
+  static const String _photonReverseUrl = 'https://photon.komoot.io/reverse';
   static const String _nominatimUrl =
       'https://nominatim.openstreetmap.org/search';
+  static const String _nominatimReverseUrl =
+      'https://nominatim.openstreetmap.org/reverse';
   static const String _egyptBbox = '25,22,34.1,31.7';
   static const String _suezPhotonBbox = '32.25,29.85,32.65,30.10';
   static const String _suezViewbox = '32.25,30.10,32.65,29.85';

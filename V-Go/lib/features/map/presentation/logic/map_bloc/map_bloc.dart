@@ -21,6 +21,8 @@ class MapBloc extends Bloc<MapEvent, MapState> {
   // simple throttle to avoid spamming Routes API
   DateTime? _lastRouteCalcAt;
   final Duration _minRouteInterval = const Duration(seconds: 3);
+  // Guards against a late answer overwriting a newer route (see _onCalculateRoute).
+  int _routeRequest = 0;
 
   // Ensures we kick off the background location load (for closest-first search)
   // at most once, instead of awaiting GPS on every keystroke (which froze search).
@@ -155,6 +157,10 @@ class MapBloc extends Bloc<MapEvent, MapState> {
             ),
             fromAddress: event.place.address,
             placeSuggestions: [],
+            // The drawn route belongs to the old pin pair.
+            routePoints: const [],
+            routePickupToDestination: const [],
+            routeDriverToPickup: const [],
           ),
         );
       } else {
@@ -166,11 +172,13 @@ class MapBloc extends Bloc<MapEvent, MapState> {
             ),
             toAddress: event.place.address,
             placeSuggestions: [],
+            routePoints: const [],
+            routePickupToDestination: const [],
           ),
         );
       }
       if (state.fromLocation != null && state.toLocation != null) {
-        await _maybeCalculateRoutes(emit);
+        await _maybeCalculateRoutes(emit, force: true);
       }
       log("FROM: ${state.fromAddress} | TO: ${state.toAddress}");
     } catch (e) {
@@ -198,6 +206,9 @@ class MapBloc extends Bloc<MapEvent, MapState> {
             fromLocation: event.location,
             fromAddress: address,
             placeSuggestions: [],
+            routePoints: const [],
+            routePickupToDestination: const [],
+            routeDriverToPickup: const [],
           ),
         );
       } else {
@@ -206,12 +217,14 @@ class MapBloc extends Bloc<MapEvent, MapState> {
             toLocation: event.location,
             toAddress: address,
             placeSuggestions: [],
+            routePoints: const [],
+            routePickupToDestination: const [],
           ),
         );
       }
       if (state.fromLocation != null && state.toLocation != null) {
         log("FROM: ${state.fromAddress} | TO: ${state.toAddress}");
-        await _maybeCalculateRoutes(emit);
+        await _maybeCalculateRoutes(emit, force: true);
       }
     } catch (e) {
       if (isClosed) return;
@@ -223,15 +236,20 @@ class MapBloc extends Bloc<MapEvent, MapState> {
     CalculateRoute event,
     Emitter<MapState> emit,
   ) async {
+    // Only the newest request may draw: a slow provider answering late used to
+    // replace the current route with the one for an earlier pair of pins.
+    final request = ++_routeRequest;
     try {
       final routeResult = await mapRepo.getRoute(
         event.fromLocation,
         event.toLocation,
       );
+      if (isClosed || request != _routeRequest) return;
 
       emit(
         state.copyWith(
           routePoints: routeResult.points,
+          routePickupToDestination: routeResult.points,
           distanceKm: routeResult.distanceKm,
           tripDuration: routeResult.duration,
         ),
@@ -536,10 +554,17 @@ class MapBloc extends Bloc<MapEvent, MapState> {
   }
 
   // decide which routes to calculate automatically
-  Future<void> _maybeCalculateRoutes(Emitter<MapState> emit) async {
-    // throttle
+  //
+  // [force] is for a pin the rider just moved: the throttle exists to stop the
+  // GPS stream from spamming the routing providers, and skipping that recalc
+  // used to leave the line drawn between the PREVIOUS two pins on screen.
+  Future<void> _maybeCalculateRoutes(
+    Emitter<MapState> emit, {
+    bool force = false,
+  }) async {
     final now = DateTime.now();
-    if (_lastRouteCalcAt != null &&
+    if (!force &&
+        _lastRouteCalcAt != null &&
         now.difference(_lastRouteCalcAt!) < _minRouteInterval) {
       return;
     }
@@ -548,12 +573,20 @@ class MapBloc extends Bloc<MapEvent, MapState> {
     final current = state.currentLocation;
     final from = state.fromLocation;
     final to = state.toLocation;
+    // A route that comes back after the rider has moved a pin — or after a
+    // newer request started — describes the old pair of points.
+    final request = ++_routeRequest;
+    bool stale() =>
+        request != _routeRequest ||
+        state.fromLocation != from ||
+        state.toLocation != to;
 
     // prefer to calculate both if possible
     try {
       if (current != null && from != null && current != from) {
         // calculate driver -> pickup
         final r1 = await mapRepo.getRoute(current, from);
+        if (isClosed || stale()) return;
         emit(
           state.copyWith(
             routeDriverToPickup: r1.points,
@@ -566,6 +599,7 @@ class MapBloc extends Bloc<MapEvent, MapState> {
       if (startPoint != null && to != null) {
         // calculate pickup -> destination
         final r2 = await mapRepo.getRoute(startPoint, to);
+        if (isClosed || stale()) return;
         emit(
           state.copyWith(
             routePickupToDestination: r2.points,

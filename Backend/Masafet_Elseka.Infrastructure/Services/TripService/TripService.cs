@@ -759,6 +759,8 @@ namespace Masafet_Elseka.Infrastructure.Services.TripService
                             .ThenInclude(ut => ut.User)
                     .Include(ut => ut.Trip)
                         .ThenInclude(t => t.Payment)
+                    .Include(ut => ut.Trip)
+                        .ThenInclude(t => t.UserRates)
                     .Where(ut => ut.UserId == userId)
                     .AsQueryable();
 
@@ -808,6 +810,7 @@ namespace Masafet_Elseka.Infrastructure.Services.TripService
                         // Was never set → every trip showed "awaiting payment" in
                         // the captain's earnings regardless of actual status.
                         IsPaid = trip.IsFreeRide || trip.Payment.Any(p => p.Status == PaymentStatus.Paid || p.Status == PaymentStatus.Captured),
+                        IsRatedByMe = trip.UserRates.Any(r => r.FromUserId == userId),
                     };
                 }).ToList();
 

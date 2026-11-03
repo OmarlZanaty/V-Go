@@ -19,6 +19,10 @@ class TripModel {
   final String paymentMethod;
   final bool isFreeRide;
 
+  /// Whether this rider already rated the trip. The live completion screen is
+  /// easy to miss, so the trip's own page offers the rating again until then.
+  final bool isRatedByMe;
+
   /// Offer discount paid by the company; the rider paid [riderPrice].
   final double discountAmount;
   double get riderPrice =>
@@ -45,6 +49,7 @@ class TripModel {
     this.paymentMethod = 'Cash',
     this.isFreeRide = false,
     this.discountAmount = 0,
+    this.isRatedByMe = false,
   });
 
   factory TripModel.fromJson(Map<String, dynamic> json) {
@@ -72,6 +77,8 @@ class TripModel {
       discountAmount:
           ((json['discountAmount'] ?? json['DiscountAmount'] ?? 0) as num)
               .toDouble(),
+      isRatedByMe:
+          (json['isRatedByMe'] ?? json['IsRatedByMe'] ?? false) == true,
     );
   }
 }

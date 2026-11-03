@@ -25,9 +25,16 @@ class MapRepo {
     double latitude,
     double longitude,
   ) async {
-    // Google first (street-level, Arabic); the device geocoder is the fallback.
-    final google = await mapService.reverseGeocode(latitude, longitude);
-    if (google != null) return google;
+    // Google first (street-level, Arabic), then OpenStreetMap. The device
+    // geocoder is the last resort: in Suez it answers "Suez Governorate" for
+    // every point, which tells the rider nothing about the pin they dropped.
+    if (!_isDown(_googleDownUntil)) {
+      final google = await mapService.reverseGeocode(latitude, longitude);
+      if (google != null) return google;
+      _googleDownUntil = DateTime.now().add(_providerCooldown);
+    }
+    final osm = await mapService.reverseGeocodeOsm(latitude, longitude);
+    if (osm != null) return osm;
     return await locationService.getAddressFromCoordinates(latitude, longitude);
   }
 
