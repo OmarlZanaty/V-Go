@@ -147,13 +147,12 @@ class MapService {
     } catch (e) {
       log('Nominatim reverse failed: $e');
     }
-    // Offline last resort: the nearest named place or street in the Suez
-    // gazetteer. Beyond that distance a name would be misleading.
+    // Offline last resort: a nearby street, place, or area in Suez.
     return _nearestGazetteerName(lat, lng);
   }
 
   /// The two most specific parts plus the city, dropping the names that only
-  /// say which governorate or country the point is in.
+  /// say which governorate or country the point is in. Reject city-only labels.
   static String? _joinPlaceParts(List<String> parts) {
     final cleaned = <String>[];
     for (final part in parts) {
@@ -163,27 +162,50 @@ class MapService {
       cleaned.add(value);
     }
     if (cleaned.isEmpty) return null;
-    return cleaned.take(3).join('، ');
+    final label = cleaned.take(3).join('، ');
+    return _isCityOnly(label) ? null : label;
   }
 
   static final RegExp _genericPlace = RegExp(
     r'^(مصر|Egypt|محافظة\s|Suez Governorate$|.*\sGovernorate$)',
   );
 
-  static const double _gazetteerReverseMeters = 250;
+  static final RegExp _genericCity = RegExp(
+    r'^(?:(?:مدينة\s+)?(?:السويس|سويس)|suez(?:\s+city)?|city\s+of\s+suez)$',
+    caseSensitive: false,
+  );
+  static final RegExp _arabicName = RegExp(r'[\u0621-\u064A]');
+
+  static bool _isCityOnly(String label) => label
+      .split(RegExp('[،,]'))
+      .every((part) => _genericCity.hasMatch(part.trim()));
 
   static String? _nearestGazetteerName(double lat, double lng) {
     final point = LatLng(lat, lng);
-    String? best;
-    double bestMeters = _gazetteerReverseMeters;
+    final best = <String, String>{};
+    final bestMeters = <String, double>{'s': 500, 'p': 250, 'a': 3000};
     for (final place in suezPlaces) {
+      final name = place.$1.trim();
+      final kind = place.$4;
+      final limit = bestMeters[kind];
+      if (limit == null || _isCityOnly(name) || !_arabicName.hasMatch(name)) {
+        continue;
+      }
       final meters = GeoUtils.haversine(point, LatLng(place.$2, place.$3));
-      if (meters < bestMeters) {
-        bestMeters = meters;
-        best = place.$1;
+      if (meters <= limit) {
+        bestMeters[kind] = meters;
+        best[kind] = name;
       }
     }
-    return best;
+    final street = best['s'];
+    final area = best['a'];
+    if (street != null) {
+      final label = street;
+      return area != null && area != street && area != label
+          ? '$label، $area'
+          : label;
+    }
+    return best['p'] ?? area;
   }
 
   Future<List<PlaceSuggestionModel>> getPlaceSuggestions(
