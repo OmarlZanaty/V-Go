@@ -1,11 +1,15 @@
 import 'dart:async';
 import 'dart:developer';
 
+import 'package:dio/dio.dart';
 import 'package:equatable/equatable.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:geolocator/geolocator.dart';
 
+import '../../../../../core/api/api_service.dart';
+import '../../../../../core/api/end_points.dart';
+import '../../../../../core/di/di.dart';
 import '../../../../../core/errors/exception.dart';
 import '../../../../../core/helpers/extensions.dart';
 import '../../../../../core/helpers/play_notification_sound.dart';
@@ -34,7 +38,7 @@ class RealTimeTripCubit extends Cubit<RealTimeTripState>
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
-      unawaited(_tripService.requestCurrentTrip());
+      unawaited(_pollCurrentTrip());
     }
   }
 
@@ -47,6 +51,7 @@ class RealTimeTripCubit extends Cubit<RealTimeTripState>
   StreamSubscription<void>? _pushSub;
   Timer? _syncTimer;
   bool _pollInFlight = false;
+  bool _syncInFlight = false;
 
   static const _syncedStatuses = {
     'Pending',
@@ -58,12 +63,12 @@ class RealTimeTripCubit extends Cubit<RealTimeTripState>
 
   void _updateSyncTimer(RealTimeTripState s) {
     final needsSync =
-        _syncedStatuses.contains(s.tripStatus) &&
+        s.tripId.isNotEmpty && _syncedStatuses.contains(s.tripStatus) &&
         !(s.tripStatus == 'Completed' &&
             s.paymentStatusModel?.paymentStatus == 'Paid');
     if (needsSync && _syncTimer == null) {
       _syncTimer = Timer.periodic(
-        const Duration(seconds: 20),
+        const Duration(seconds: 15),
         (_) => _pollCurrentTrip(),
       );
     } else if (!needsSync && _syncTimer != null) {
@@ -72,10 +77,43 @@ class RealTimeTripCubit extends Cubit<RealTimeTripState>
     }
   }
 
-  void _pollCurrentTrip() {
-    if (isClosed) return;
-    _pollInFlight = true;
-    unawaited(_tripService.requestCurrentTrip());
+  Future<void> _pollCurrentTrip() async {
+    if (isClosed || _syncInFlight) return;
+    _syncInFlight = true;
+    final tripId = state.tripId;
+    final tripStatus = state.tripStatus;
+    try {
+      final api = getIt<ApiServices>();
+      dynamic data;
+      try {
+        data = await api.get('Trip/currentTrip', queryParameters: {
+          'userId': AppConstants.kUserId,
+          'role': AppConstants.kRole == 'Driver' ? 'Driver' : 'Client',
+        });
+      } on DioException catch (e) {
+        if (e.response?.statusCode != 404 || tripId.isEmpty) rethrow;
+        // Cancelled and settled trips can disappear from currentTrip. Only an
+        // explicit terminal status for this ID may end the local ride.
+        data = await api.get(EndPoint.getTripById(tripId));
+      }
+      if (isClosed || state.tripId != tripId ||
+          state.tripStatus != tripStatus) return;
+      final payload = Map<String, dynamic>.from(data as Map);
+      if (tripId.isNotEmpty && payload['tripId'] != tripId) return;
+      final status = payload['status'] as String?;
+      if (status == 'Canceled' || status == 'Cancelled' ||
+          (status == 'Completed' && tripStatus != 'Completed')) {
+        _emitTripEndedForClient(status!);
+        return;
+      }
+      _pollInFlight = true;
+      _tripService.receiveCurrentTrip?.call([payload]);
+    } catch (_) {
+      // A failed request is not evidence that the trip ended. Retry next tick.
+    } finally {
+      _pollInFlight = false;
+      _syncInFlight = false;
+    }
   }
 
   Future<void> connect() async {
@@ -86,9 +124,8 @@ class RealTimeTripCubit extends Cubit<RealTimeTripState>
       _initTripListeners();
       // Recover trip state on every (re)connect so the UI never gets stuck on a
       // stale "searching" screen after missing a live event while disconnected.
-      _tripService.onReconnected =
-          () => unawaited(_tripService.requestCurrentTrip());
-      unawaited(_tripService.requestCurrentTrip());
+      _tripService.onReconnected = () => unawaited(_pollCurrentTrip());
+      unawaited(_pollCurrentTrip());
       if (!_lifecycleObserved) {
         WidgetsBinding.instance.addObserver(this);
         _lifecycleObserved = true;
@@ -346,6 +383,7 @@ class RealTimeTripCubit extends Cubit<RealTimeTripState>
         state.copyWith(
           status: RealTimeTripStatus.tripApprovedForClientReceived,
           tripApprovedForClient: trip,
+          tripId: trip.tripId,
           tripStatus: trip.status,
         ),
       );
@@ -463,15 +501,18 @@ class RealTimeTripCubit extends Cubit<RealTimeTripState>
     _tripService.tripEndedForClient = (data) {
       if (data.isNullOrEmpty()) return;
       final tripStatus = (data![0] as Map<String, dynamic>)['status'] as String;
-      emit(
-        state.copyWith(
-          status: RealTimeTripStatus.tripEndedForClientReceived,
-          tripStatus: tripStatus,
-          resetCurrentTrip: true,
-        ),
-      );
-      playNotificationSound(SoundType.accept);
+      _emitTripEndedForClient(tripStatus);
     };
+  }
+
+  void _emitTripEndedForClient(String tripStatus) {
+    if (isClosed || state.tripStatus == tripStatus) return;
+    emit(state.copyWith(
+      status: RealTimeTripStatus.tripEndedForClientReceived,
+      tripStatus: tripStatus,
+      resetCurrentTrip: true,
+    ));
+    playNotificationSound(SoundType.accept);
   }
 
   void _listenForTripEndedForDriver() {

@@ -1,11 +1,16 @@
 import 'dart:async';
 import 'dart:developer';
 
+import 'package:dio/dio.dart';
 import 'package:equatable/equatable.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:geolocator/geolocator.dart';
 
+import '../../../../../core/api/api_envelope.dart';
+import '../../../../../core/api/api_service.dart';
+import '../../../../../core/api/end_points.dart';
+import '../../../../../core/di/di.dart';
 import '../../../../../core/services/location_service.dart';
 import '../../../../../core/services/realtime_service.dart';
 import '../../../../../core/utils/app_constants.dart';
@@ -25,6 +30,9 @@ class CaptainHomeCubit extends Cubit<CaptainHomeState>
 
   StreamSubscription<Position>? _positionSub;
   StreamSubscription<DriverOnlineBlock>? _onlineBlockedSub;
+  Timer? _syncTimer;
+  bool _syncInFlight = false;
+  bool _closing = false;
   Position? _lastPosition;
   DriverOnlineBlock? _offlineAfterTripBlock;
 
@@ -61,10 +69,90 @@ class CaptainHomeCubit extends Cubit<CaptainHomeState>
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState lifecycle) {
-    // Coming back to the app (e.g. after the client paid by visa on their phone)
+    // Recover trip completion as well as payment when returning to the app.
     // — re-check payment in case we missed the live event while backgrounded.
     if (lifecycle == AppLifecycleState.resumed) {
-      unawaited(recheckActivePayment());
+      unawaited(_resyncActiveTrip());
+    }
+  }
+
+  @override
+  void emit(CaptainHomeState nextState) {
+    super.emit(nextState);
+    if (!_closing && nextState.hasActiveTrip) {
+      _syncTimer ??= Timer.periodic(
+        const Duration(seconds: 15),
+        (_) => unawaited(_pollCurrentTrip()),
+      );
+    } else {
+      _syncTimer?.cancel();
+      _syncTimer = null;
+    }
+  }
+
+  Future<void> _resyncActiveTrip() async {
+    await _pollCurrentTrip();
+    if (!isClosed && !_closing) await recheckActivePayment();
+  }
+
+  Future<void> _pollCurrentTrip() async {
+    final trip = state.activeTrip;
+    if (isClosed || _closing || _syncInFlight || state.isBusy || trip == null) {
+      return;
+    }
+    _syncInFlight = true;
+    final stage = state.stage;
+    try {
+      final api = getIt<ApiServices>();
+      dynamic data;
+      try {
+        data = ApiEnvelope.data(await api.get(
+          'Trip/currentTrip',
+          queryParameters: {'userId': AppConstants.kUserId, 'role': 'Driver'},
+        ));
+      } on DioException catch (e) {
+        if (e.response?.statusCode != 404) rethrow;
+        // Terminal trips can disappear from currentTrip. A 404 alone must
+        // never end the local ride; verify its status by ID instead.
+      }
+      if (data == null) {
+        data = ApiEnvelope.data(await api.get(EndPoint.getTripById(trip.tripId)));
+      }
+      if (isClosed || _closing || state.isBusy ||
+          state.activeTrip?.tripId != trip.tripId || state.stage != stage) {
+        return;
+      }
+      if (data is! Map || data['tripId'] != trip.tripId) return;
+      final status = data['status'];
+      if (status == 'Canceled' || status == 'Cancelled') {
+        _handleTripCancelled(trip.tripId);
+      } else if (status == 'Completed') {
+        _completeActiveTrip(paid: data['isPaid'] == true);
+      }
+    } catch (_) {
+      // Network errors and malformed responses are not evidence of completion.
+    } finally {
+      _syncInFlight = false;
+    }
+  }
+
+  // Shared by the end-trip action and REST recovery. Preserve the existing
+  // payment step for unpaid trips and refresh earnings as soon as the ride ends.
+  void _completeActiveTrip({bool paid = false}) {
+    final trip = state.activeTrip;
+    if (isClosed || _closing || trip == null) return;
+    final wasCompleted = state.stage == TripStage.completed;
+    final isPaid = paid || trip.isFreeRide || state.activeTripPaid;
+    emit(state.copyWith(
+      stage: TripStage.completed,
+      isBusy: false,
+      activeTripPaid: isPaid,
+      clearClientLocation: true,
+    ));
+    if (isPaid) {
+      _finishTrip();
+    } else if (!wasCompleted) {
+      onTripCompleted?.call();
     }
   }
 
@@ -82,7 +170,7 @@ class CaptainHomeCubit extends Cubit<CaptainHomeState>
       final trips = await _tripRepo.getMyTrips();
       final match = trips.where((t) => t.tripId == trip.tripId).toList();
       final paid = match.isNotEmpty && match.first.isPaid;
-      if (isClosed) return;
+      if (isClosed || _closing || state.activeTrip?.tripId != trip.tripId) return;
       if (paid) {
         if (state.stage == TripStage.completed) {
           _finishTrip();
@@ -425,7 +513,7 @@ class CaptainHomeCubit extends Cubit<CaptainHomeState>
     );
     emit(state.copyWith(connection: CaptainConnection.online));
     // We may have missed a payment event while disconnected — re-check.
-    unawaited(recheckActivePayment());
+    unawaited(_resyncActiveTrip());
   }
 
   Future<void> acceptOffer(String tripId) async {
@@ -523,16 +611,9 @@ class CaptainHomeCubit extends Cubit<CaptainHomeState>
           unawaited(_pushActiveTripLocation());
         case TripStage.inProgress:
           await _realtime.endTrip(trip.tripId);
-          // Keep the trip active at the completed stage so the captain must
-          // settle payment before moving on (cash = confirm, online = auto).
-          emit(
-            state.copyWith(
-              stage: TripStage.completed,
-              isBusy: false,
-              activeTripPaid: trip.isFreeRide || state.activeTripPaid,
-            ),
-          );
-          onTripCompleted?.call();
+          if (state.activeTrip?.tripId == trip.tripId) {
+            _completeActiveTrip();
+          }
         case TripStage.completed:
           emit(state.copyWith(isBusy: false));
       }
@@ -625,6 +706,9 @@ class CaptainHomeCubit extends Cubit<CaptainHomeState>
 
   @override
   Future<void> close() async {
+    _closing = true;
+    _syncTimer?.cancel();
+    _syncTimer = null;
     WidgetsBinding.instance.removeObserver(this);
     await _positionSub?.cancel();
     await _onlineBlockedSub?.cancel();
