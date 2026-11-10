@@ -77,7 +77,12 @@ definitions:
         # rive_native (via awesome_dialog) downloads its native libs on first use;
         # left to its Xcode build phase it runs from ios/Pods and fails to find
         # pubspec.yaml ("ARCHIVE FAILED"), so set it up here, from the app root.
-        dart run rive_native:setup --verbose --platform ios
+        # Only the rider app pulls it in, so skip it where it is absent.
+        if grep -q '"name": *"rive_native"' .dart_tool/package_config.json; then
+          dart run rive_native:setup --verbose --platform ios
+        else
+          echo "rive_native is not a dependency of this app - skipping setup"
+        fi
     - &pods
       name: CocoaPods
       script: cd ios && pod install --repo-update
@@ -94,8 +99,11 @@ definitions:
   publishing: &publishing
     app_store_connect:
       auth: integration
+      # TestFlight external review needs beta test info this account has not
+      # filled in; the App Store submission below is what we actually want.
       submit_to_testflight: false
-      submit_to_app_store: false
+      submit_to_app_store: true
+      release_type: AFTER_APPROVAL
 
 workflows:
   rider-ios:
