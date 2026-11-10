@@ -175,7 +175,7 @@ workflows:
       groups:
         - vgo_captain_firebase
       vars:
-        VERSION_NAME: 1.0.18
+        VERSION_NAME: 1.0.19
     scripts:
       - *android_keystore
       - *google_services

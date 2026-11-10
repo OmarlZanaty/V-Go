@@ -881,5 +881,9 @@ Future<Uint8List> _paintPin(double hue, double dpr) async {
 
 // ─────────────────────────── styles ───────────────────────────
 
-// Bundled Arabic-first light style; tiles, fonts and sprites use OpenFreeMap.
-const String vgoMapStyle = 'assets/map/vgo-light.json';
+// Arabic-first light style served over HTTPS by our server (same setup as
+// Cairo Shuttle, which ships on iOS): /srv/vgo-map nginx, source in
+// infra/vgo-map. Tiles, fonts and sprites go through its OpenFreeMap cache, so
+// the look can change without an app release and cached areas still draw
+// if OpenFreeMap is unreachable.
+const String vgoMapStyle = 'https://vgo.almobarmg.com/map/styles/vgo-light.json';
