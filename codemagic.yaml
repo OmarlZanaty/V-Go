@@ -152,7 +152,7 @@ workflows:
       groups:
         - vgo_rider_firebase
       vars:
-        VERSION_NAME: 1.0.16
+        VERSION_NAME: 1.0.17
     scripts:
       - *android_keystore
       - *google_services

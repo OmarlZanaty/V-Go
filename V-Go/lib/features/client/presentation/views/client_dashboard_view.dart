@@ -92,11 +92,16 @@ class ClientDashboardView extends StatelessWidget {
                             c.status.isTripCanceledReceived;
                       },
                       builder: (context, state) {
-                        if (state.currentTrip != null) {
+                        final trip = state.currentTrip;
+                        // A completed and settled trip is history, not current.
+                        final settled = trip != null &&
+                            trip.tripStatus == 'Completed' &&
+                            (trip.isPaid || trip.isFreeRide);
+                        if (trip != null && !settled) {
                           return Padding(
                             padding: const EdgeInsets.symmetric(vertical: 8),
                             child: CurrentTripItem(
-                              currentTrip: state.currentTrip!,
+                              currentTrip: trip,
                             ),
                           );
                         }

@@ -30,6 +30,11 @@ class RealTimeTripCubit extends Cubit<RealTimeTripState>
   final TripService _tripService;
   bool _lifecycleObserved = false;
 
+  /// The completed trip the rider already rated. The server keeps returning a
+  /// completed-unrated trip as "current" for a short while, so a late socket
+  /// push or poll for it must not bring the home "current trip" card back.
+  String? _dismissedTripId;
+
   RealTimeTripCubit(this._tripService) : super(const RealTimeTripState());
 
   /// When the app returns to the foreground, re-pull the current trip — covers
@@ -443,6 +448,13 @@ class RealTimeTripCubit extends Cubit<RealTimeTripState>
       );
       final wasPoll = _pollInFlight;
       _pollInFlight = false;
+      if (_dismissedTripId != null) {
+        if (currentTrip.tripId == _dismissedTripId &&
+            currentTrip.tripStatus == 'Completed') {
+          return;
+        }
+        _dismissedTripId = null;
+      }
       final unchanged =
           state.currentTrip?.tripId == currentTrip.tripId &&
           state.tripStatus == currentTrip.tripStatus &&
@@ -468,6 +480,27 @@ class RealTimeTripCubit extends Cubit<RealTimeTripState>
         ),
       );
     };
+  }
+
+  /// The rider rated the finished trip: drop it so the home screen stops
+  /// showing it as the current trip, and stop the REST resync.
+  void clearFinishedTrip() {
+    final finishedId = state.currentTrip?.tripId ?? state.tripId;
+    if (finishedId.isNotEmpty) _dismissedTripId = finishedId;
+    emit(
+      state.copyWith(
+        status: RealTimeTripStatus.initial,
+        resetCurrentTrip: true,
+        tripId: '',
+        tripStatus: 'Pending',
+        tripPrice: 0.0,
+        isFreeRide: false,
+        paymentStatusModel: PaymentStatusModel(
+          paymentMessage: '',
+          paymentStatus: 'Pending',
+        ),
+      ),
+    );
   }
 
   void _listenForTripStartedForClient() {

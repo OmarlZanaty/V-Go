@@ -2227,6 +2227,7 @@ class _ClientMapViewState extends State<ClientMapView> {
                       'عملية ناجحة',
                       'تم ارسال التقييم بنجاح',
                     );
+                    context.read<RealTimeTripCubit>().clearFinishedTrip();
                     context.pop();
                   } else if (ratingState.status.isSendRatingFailure) {
                     errorToast(context, 'حدث خطا', ratingState.errMessage);
