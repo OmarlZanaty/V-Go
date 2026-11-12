@@ -113,7 +113,6 @@ definitions:
       # by hand in ASC after the store screenshots are ready.
       submit_to_testflight: false
       submit_to_app_store: false
-      release_type: AFTER_APPROVAL
 
 workflows:
   rider-ios:
