@@ -12,19 +12,22 @@ import '../../../../core/utils/widgets/custom_button.dart';
 import '../../../../core/utils/widgets/custom_loading_widget.dart';
 import '../../../../core/utils/widgets/custom_text_field.dart';
 import '../../../../core/utils/widgets/custom_toastification.dart';
+import '../../data/model/social_login_provider.dart';
 import '../logic/cubit/auth_cubit.dart';
 
-/// Shown the first time a user signs in with Google when no account exists yet.
+/// Shown the first time a user signs in with Google or Apple.
 /// Collects the required profile (full name + phone). The photo is optional and
 /// defaults to the Google profile photo.
 class GoogleCompleteProfileView extends StatefulWidget {
   const GoogleCompleteProfileView({
     super.key,
+    this.provider = SocialLoginProvider.google,
     required this.idToken,
     required this.name,
     required this.photo,
   });
 
+  final SocialLoginProvider provider;
   final String idToken;
   final String name;
   final String photo;
@@ -85,7 +88,9 @@ class _GoogleCompleteProfileViewState extends State<GoogleCompleteProfileView> {
                 verticalSpace(8),
                 Center(
                   child: Text(
-                    'الصورة اختيارية (سيتم استخدام صورة Google)',
+                    widget.provider == SocialLoginProvider.apple
+                        ? 'الصورة اختيارية'
+                        : 'الصورة اختيارية (سيتم استخدام صورة Google)',
                     style: AppStyle.styleRegular12.copyWith(color: AppColors.grey),
                   ),
                 ),
@@ -118,6 +123,7 @@ class _GoogleCompleteProfileViewState extends State<GoogleCompleteProfileView> {
                             return;
                           }
                           context.read<AuthCubit>().completeGoogleProfile(
+                                provider: widget.provider,
                                 idToken: widget.idToken,
                                 fullName: name,
                                 phone: phone,

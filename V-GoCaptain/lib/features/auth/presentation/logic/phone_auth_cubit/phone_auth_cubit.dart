@@ -1,9 +1,12 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:dio/dio.dart';
 import 'package:equatable/equatable.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:google_sign_in/google_sign_in.dart';
+import 'package:sign_in_with_apple/sign_in_with_apple.dart';
 
 import '../../../../../core/api/dio_factory.dart';
 import '../../../../../core/cache/cache_helper.dart';
@@ -14,11 +17,11 @@ import '../../../data/repo/auth_repo.dart';
 
 part 'phone_auth_state.dart';
 
-/// Captain auth: phone number + password (Google sign-in kept). After the phone
+/// Captain auth: phone number + password or native sign-in. After the phone
 /// is entered we check whether it's a registered captain (-> enter password) or
 /// new (-> set password + driver details). Forgot-password uses a backend SMS
-/// OTP. Google sign-in leaves [phone] empty so the sign-up screen
-/// can tell a Google sign-up (no password) from a phone sign-up.
+/// OTP. Native sign-in leaves [phone] empty so the sign-up screen
+/// can tell a native sign-up (no password) from a phone sign-up.
 class PhoneAuthCubit extends Cubit<PhoneAuthState> {
   PhoneAuthCubit(this._authRepo) : super(const PhoneAuthState());
 
@@ -218,7 +221,7 @@ class PhoneAuthCubit extends Cubit<PhoneAuthState> {
     }
   }
 
-  // ---------------- Google sign-in (kept) ----------------
+  // ---------------- Google / Apple sign-in ----------------
 
   /// Google Sign-In for captain. New users (not yet drivers) are routed to the
   /// driver sign-up form; the Google ID token is carried in [lastCode] and
@@ -247,25 +250,10 @@ class PhoneAuthCubit extends Cubit<PhoneAuthState> {
         ));
         return;
       }
-      final fcmToken =
-          (await CacheHelper.getSecuredString(AppConstants.fcmToken)) ?? '';
-      final result = await _authRepo.googleTokenDriver(
+      await _nativeSignIn(
+        provider: NativeAuthProvider.google,
         idToken: idToken,
-        fcmToken: fcmToken,
-        deviceType: AppConstants.deviceType,
       );
-      if (isClosed) return;
-      if (result.isNewUser) {
-        emit(state.copyWith(
-          status: PhoneAuthStatus.newUser,
-          // Carry the Google ID token; keep phone empty to flag a Google sign-up.
-          lastCode: idToken,
-          phone: '',
-        ));
-      } else {
-        await _cacheSession(result);
-        emit(state.copyWith(status: PhoneAuthStatus.loginSuccess));
-      }
     } catch (e) {
       if (isClosed) return;
       emit(state.copyWith(
@@ -275,7 +263,81 @@ class PhoneAuthCubit extends Cubit<PhoneAuthState> {
     }
   }
 
-  Future<void> registerDriverWithGoogle({
+  Future<void> appleSignIn() async {
+    if (kIsWeb || !Platform.isIOS) return;
+    emit(state.copyWith(
+        status: PhoneAuthStatus.authenticating, clearError: true));
+    try {
+      final credential = await SignInWithApple.getAppleIDCredential(
+        scopes: [
+          AppleIDAuthorizationScopes.email,
+          AppleIDAuthorizationScopes.fullName,
+        ],
+      );
+      if (isClosed) return;
+      final idToken = credential.identityToken;
+      if (idToken == null || idToken.isEmpty) {
+        emit(state.copyWith(
+          status: PhoneAuthStatus.failure,
+          errorMessage: 'فشل الحصول على رمز Apple.',
+        ));
+        return;
+      }
+      final fullName = [credential.givenName, credential.familyName]
+          .whereType<String>()
+          .map((name) => name.trim())
+          .where((name) => name.isNotEmpty)
+          .join(' ');
+      await _nativeSignIn(
+        provider: NativeAuthProvider.apple,
+        idToken: idToken,
+        fullName: fullName.isEmpty ? null : fullName,
+      );
+    } catch (e) {
+      if (isClosed) return;
+      if (e is SignInWithAppleAuthorizationException &&
+          e.code == AuthorizationErrorCode.canceled) {
+        emit(state.copyWith(
+            status: PhoneAuthStatus.initial, clearError: true));
+        return;
+      }
+      emit(state.copyWith(
+        status: PhoneAuthStatus.failure,
+        errorMessage: ServerFailure.fromError(e).errMessage,
+      ));
+    }
+  }
+
+  Future<void> _nativeSignIn({
+    required NativeAuthProvider provider,
+    required String idToken,
+    String? fullName,
+  }) async {
+    final fcmToken =
+        (await CacheHelper.getSecuredString(AppConstants.fcmToken)) ?? '';
+    final result = await _authRepo.nativeTokenDriver(
+      provider: provider,
+      idToken: idToken,
+      fullName: fullName,
+      fcmToken: fcmToken,
+      deviceType: AppConstants.deviceType,
+    );
+    if (isClosed) return;
+    if (result.isNewUser) {
+      emit(state.copyWith(
+        status: PhoneAuthStatus.newUser,
+        // Keep the provider and token for the profile-completion request.
+        provider: provider,
+        lastCode: idToken,
+        phone: '',
+      ));
+    } else {
+      await _cacheSession(result);
+      emit(state.copyWith(status: PhoneAuthStatus.loginSuccess));
+    }
+  }
+
+  Future<void> registerDriverWithNativeToken({
     required String fullName,
     required String phone,
     String? email,
@@ -290,8 +352,9 @@ class PhoneAuthCubit extends Cubit<PhoneAuthState> {
     try {
       final fcmToken =
           (await CacheHelper.getSecuredString(AppConstants.fcmToken)) ?? '';
-      final result = await _authRepo.googleTokenDriver(
-        idToken: state.lastCode, // lastCode holds the Google ID token
+      final result = await _authRepo.nativeTokenDriver(
+        provider: state.provider,
+        idToken: state.lastCode, // lastCode holds the native ID token
         fullName: fullName,
         phone: phone,
         gender: gender,

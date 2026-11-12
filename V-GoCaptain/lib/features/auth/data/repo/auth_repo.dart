@@ -3,6 +3,8 @@ import '../model/phone_login_response_model.dart';
 import '../model/register_request_model.dart';
 import '../model/reset_password_request_model.dart';
 
+enum NativeAuthProvider { google, apple }
+
 abstract class AuthRepo {
   Future<LoginResponseModel> login({
     required String email,
@@ -69,8 +71,9 @@ abstract class AuthRepo {
 
   Future<void> logout({required String refreshToken});
 
-  // Google Sign-In (native token)
-  Future<PhoneLoginResponseModel> googleTokenDriver({
+  // Google / Apple Sign-In (native token)
+  Future<PhoneLoginResponseModel> nativeTokenDriver({
+    required NativeAuthProvider provider,
     required String idToken,
     String? fullName,
     String? phone,

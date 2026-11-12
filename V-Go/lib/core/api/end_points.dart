@@ -34,6 +34,7 @@ abstract class EndPoint {
   static const String googleLogin = 'Auth/mobile/google-login';
   static String checkState(String state) => 'Auth/mobile/check-auth/$state';
   static const String googleLoginToken = 'Auth/google-login-token';
+  static const String appleLoginToken = 'Auth/apple-login-token';
 
   // Notification Endpoints
   static const String registerDevice = 'Notification/RegisterDevice';

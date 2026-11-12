@@ -1116,64 +1116,7 @@ namespace Masafet_Elseka.Infrastructure.Services.AuthService
                 if (string.IsNullOrWhiteSpace(email))
                     return Response<LoginResponseDTO>.Failure("لم يتم توفير البريد الإلكتروني من Google.", 400);
 
-                var user = await _userManager.FindByEmailAsync(email);
-
-                if (user == null)
-                {
-                    // Brand-new account. We require full name + phone before creating it,
-                    // because a rider cannot use the app without them. The first call
-                    // (no profile data) asks the app to show the complete-profile screen.
-                    if (string.IsNullOrWhiteSpace(model.FullName) || string.IsNullOrWhiteSpace(model.Phone))
-                    {
-                        return Response<LoginResponseDTO>.Success(new LoginResponseDTO
-                        {
-                            IsAuthenticated = false,
-                            IsNewUser = true,
-                            Name = payload.Name ?? "",
-                            ProfilePicture = payload.Picture ?? "",
-                        }, "مستخدم جديد، يرجى إكمال البيانات", 200);
-                    }
-
-                    var phone = NormalizePhone(model.Phone);
-                    var phoneOwner = await _userManager.Users.FirstOrDefaultAsync(u => u.PhoneNumber == phone);
-                    if (phoneOwner != null)
-                        return Response<LoginResponseDTO>.Failure("رقم الهاتف مستخدم بالفعل في حساب آخر.", 409);
-
-                    user = new ApplicationUser
-                    {
-                        UserName = email,
-                        Email = email,
-                        EmailConfirmed = true,
-                        FullName = model.FullName.Trim(),
-                        PhoneNumber = phone,
-                        PhoneNumberConfirmed = false,
-                        Gender = string.IsNullOrWhiteSpace(model.Gender) ? "Male" : model.Gender,
-                        CreatedAt = DateTime.UtcNow,
-                        ProfilePicture = string.IsNullOrWhiteSpace(model.ProfilePicture)
-                            ? (payload.Picture ?? "")
-                            : model.ProfilePicture,
-                    };
-                    var createResult = await _userManager.CreateAsync(user);
-                    if (!createResult.Succeeded)
-                    {
-                        var err = string.Join(" ", createResult.Errors.Select(e => e.Description));
-                        return Response<LoginResponseDTO>.Failure(string.IsNullOrWhiteSpace(err) ? "تعذّر إنشاء الحساب" : err, 400);
-                    }
-                    await _userManager.AddToRoleAsync(user, "Client");
-                    await _promotionService.GrantSignUpOffersAsync(user);
-                }
-
-                // Captain accounts cannot sign in to the rider app.
-                if (await _userManager.IsInRoleAsync(user, "Driver"))
-                    return Response<LoginResponseDTO>.Failure(CaptainOnRiderMessage, 403);
-
-                if (user.IsBlocked)
-                    return Response<LoginResponseDTO>.Failure("تم تعطيل حسابك، يُرجى التواصل مع الدعم", 403);
-
-                if (!string.IsNullOrEmpty(model.FCMToken))
-                    await _notificationService.RegisterDeviceAsync(user.Id, model.FCMToken, model.DeviceType);
-
-                return await BuildLoginResponse(user, false);
+                return await NativeTokenLoginCoreAsync(model, email, payload.Name, payload.Picture);
             }
             catch (Exception ex)
             {
@@ -1209,101 +1152,209 @@ namespace Masafet_Elseka.Infrastructure.Services.AuthService
                 if (string.IsNullOrWhiteSpace(email))
                     return Response<LoginResponseDTO>.Failure("لم يتم توفير البريد الإلكتروني من Google.", 400);
 
-                var user = await _userManager.FindByEmailAsync(email);
-                var roles = user != null ? await _userManager.GetRolesAsync(user) : new List<string>();
-
-                if (user != null && roles.Contains("Driver"))
-                {
-                    if (user.IsBlocked)
-                        return Response<LoginResponseDTO>.Failure("تم تعطيل حسابك، يُرجى التواصل مع الدعم", 403);
-
-                    if (!string.IsNullOrEmpty(model.FCMToken))
-                        await _notificationService.RegisterDeviceAsync(user.Id, model.FCMToken, model.DeviceType);
-
-                    // Older Google captains were created without a phone — fill it in if sent.
-                    if (string.IsNullOrWhiteSpace(user.PhoneNumber) && !string.IsNullOrWhiteSpace(model.Phone))
-                    {
-                        var existingPhone = NormalizePhone(model.Phone);
-                        if (!await _userManager.Users.AnyAsync(u => u.PhoneNumber == existingPhone && u.Id != user.Id))
-                            user.PhoneNumber = existingPhone;
-                    }
-
-                    return await BuildLoginResponse(user, false);
-                }
-
-                // Existing account that isn't a captain → it's a rider, block it.
-                if (user != null)
-                    return Response<LoginResponseDTO>.Failure(RiderOnCaptainMessage, 403);
-
-                // Brand-new account → prompt for captain signup data.
-                if (string.IsNullOrWhiteSpace(model.FullName))
-                    return Response<LoginResponseDTO>.Success(new LoginResponseDTO
-                    {
-                        IsAuthenticated = false,
-                        IsNewUser = true,
-                        Phone = null,
-                    }, "كابتن جديد، يرجى إكمال بيانات التسجيل", 200);
-
-                var scooterType = (ScooterType)model.ScooterType;
-                if (scooterType == ScooterType.Gasoline && string.IsNullOrWhiteSpace(model.ScooterLicense))
-                    return Response<LoginResponseDTO>.Failure("يرجى إدخال رخصة السكوتر (بنزين)", 400);
-
-                if (string.IsNullOrWhiteSpace(model.Phone))
-                    return Response<LoginResponseDTO>.Failure("يرجى إدخال رقم الهاتف", 400);
-                var captainPhone = NormalizePhone(model.Phone);
-                if (await _userManager.Users.AnyAsync(u => u.PhoneNumber == captainPhone))
-                    return Response<LoginResponseDTO>.Failure("رقم الهاتف مستخدم بالفعل في حساب آخر.", 409);
-
-                if (user == null)
-                {
-                    user = new ApplicationUser
-                    {
-                        UserName = email,
-                        Email = email,
-                        EmailConfirmed = true,
-                        PhoneNumber = captainPhone,
-                        FullName = model.FullName.Trim(),
-                        Gender = string.IsNullOrWhiteSpace(model.Gender) ? "Male" : model.Gender,
-                        NationalId = model.NationalId,
-                        License = model.DriverLicense,
-                        ProfilePicture = payload.Picture ?? "",
-                        CreatedAt = DateTime.UtcNow,
-                    };
-                    var createResult = await _userManager.CreateAsync(user);
-                    if (!createResult.Succeeded)
-                    {
-                        var err = string.Join(" ", createResult.Errors.Select(e => e.Description));
-                        return Response<LoginResponseDTO>.Failure(string.IsNullOrWhiteSpace(err) ? "تعذّر إنشاء الحساب" : err, 400);
-                    }
-                }
-                else
-                {
-                    if (string.IsNullOrWhiteSpace(user.NationalId)) user.NationalId = model.NationalId;
-                    if (string.IsNullOrWhiteSpace(user.License)) user.License = model.DriverLicense;
-                    await _userManager.UpdateAsync(user);
-                }
-
-                if (!await _userManager.IsInRoleAsync(user, "Driver"))
-                    await _userManager.AddToRoleAsync(user, "Driver");
-
-                await _unitOfWork.Scooters.AddAsync(new Scooter
-                {
-                    DriverId = user.Id,
-                    License = model.ScooterLicense,
-                    Type = scooterType,
-                });
-                await _unitOfWork.SaveAsync();
-
-                if (!string.IsNullOrEmpty(model.FCMToken))
-                    await _notificationService.RegisterDeviceAsync(user.Id, model.FCMToken, model.DeviceType);
-
-                return await BuildLoginResponse(user, false);
+                return await NativeTokenDriverCoreAsync(model, email, payload.Name, payload.Picture);
             }
             catch (Exception ex)
             {
                 Log.Error(ex, "GoogleTokenDriver error");
                 return Response<LoginResponseDTO>.Failure("حدث خطأ، يرجى المحاولة لاحقًا.", 500);
             }
+        }
+
+        public async Task<Response<LoginResponseDTO>> AppleTokenLoginAsync(AppleTokenLoginDTO model)
+        {
+            try
+            {
+                var email = await AppleTokenValidator.Shared.ValidateAsync(model?.IdToken ?? "", _config["Apple:Audiences"]);
+                return await NativeTokenLoginCoreAsync(model!, email, model!.FullName?.Trim(), null);
+            }
+            catch (Microsoft.IdentityModel.Tokens.SecurityTokenException ex)
+            {
+                Log.Warning(ex, "Invalid Apple ID token");
+                return Response<LoginResponseDTO>.Failure("رمز Apple غير صالح أو منتهي الصلاحية.", 401);
+            }
+            catch (Exception ex)
+            {
+                Log.Error(ex, "AppleTokenLogin error");
+                return Response<LoginResponseDTO>.Failure("حدث خطأ، يرجى المحاولة لاحقًا.", 500);
+            }
+        }
+
+        public async Task<Response<LoginResponseDTO>> AppleTokenDriverAsync(AppleTokenDriverDTO model)
+        {
+            try
+            {
+                var email = await AppleTokenValidator.Shared.ValidateAsync(model?.IdToken ?? "", _config["Apple:Audiences"]);
+                return await NativeTokenDriverCoreAsync(model!, email, model!.FullName?.Trim(), null, isApple: true);
+            }
+            catch (Microsoft.IdentityModel.Tokens.SecurityTokenException ex)
+            {
+                Log.Warning(ex, "Invalid Apple ID token");
+                return Response<LoginResponseDTO>.Failure("رمز Apple غير صالح أو منتهي الصلاحية.", 401);
+            }
+            catch (Exception ex)
+            {
+                Log.Error(ex, "AppleTokenDriver error");
+                return Response<LoginResponseDTO>.Failure("حدث خطأ، يرجى المحاولة لاحقًا.", 500);
+            }
+        }
+
+        private async Task<Response<LoginResponseDTO>> NativeTokenLoginCoreAsync(
+            GoogleTokenLoginDTO model, string email, string? name, string? picture)
+        {
+            var user = await _userManager.FindByEmailAsync(email);
+
+            if (user == null)
+            {
+                // Brand-new account. We require full name + phone before creating it,
+                // because a rider cannot use the app without them. The first call
+                // (no profile data) asks the app to show the complete-profile screen.
+                if (string.IsNullOrWhiteSpace(model.FullName) || string.IsNullOrWhiteSpace(model.Phone))
+                {
+                    return Response<LoginResponseDTO>.Success(new LoginResponseDTO
+                    {
+                        IsAuthenticated = false,
+                        IsNewUser = true,
+                        Name = name ?? "",
+                        ProfilePicture = picture ?? "",
+                    }, "مستخدم جديد، يرجى إكمال البيانات", 200);
+                }
+
+                var phone = NormalizePhone(model.Phone);
+                var phoneOwner = await _userManager.Users.FirstOrDefaultAsync(u => u.PhoneNumber == phone);
+                if (phoneOwner != null)
+                    return Response<LoginResponseDTO>.Failure("رقم الهاتف مستخدم بالفعل في حساب آخر.", 409);
+
+                user = new ApplicationUser
+                {
+                    UserName = email,
+                    Email = email,
+                    EmailConfirmed = true,
+                    FullName = model.FullName.Trim(),
+                    PhoneNumber = phone,
+                    PhoneNumberConfirmed = false,
+                    Gender = string.IsNullOrWhiteSpace(model.Gender) ? "Male" : model.Gender,
+                    CreatedAt = DateTime.UtcNow,
+                    ProfilePicture = string.IsNullOrWhiteSpace(model.ProfilePicture)
+                        ? (picture ?? "")
+                        : model.ProfilePicture,
+                };
+                var createResult = await _userManager.CreateAsync(user);
+                if (!createResult.Succeeded)
+                {
+                    var err = string.Join(" ", createResult.Errors.Select(e => e.Description));
+                    return Response<LoginResponseDTO>.Failure(string.IsNullOrWhiteSpace(err) ? "تعذّر إنشاء الحساب" : err, 400);
+                }
+                await _userManager.AddToRoleAsync(user, "Client");
+                await _promotionService.GrantSignUpOffersAsync(user);
+            }
+
+            // Captain accounts cannot sign in to the rider app.
+            if (await _userManager.IsInRoleAsync(user, "Driver"))
+                return Response<LoginResponseDTO>.Failure(CaptainOnRiderMessage, 403);
+
+            if (user.IsBlocked)
+                return Response<LoginResponseDTO>.Failure("تم تعطيل حسابك، يُرجى التواصل مع الدعم", 403);
+
+            if (!string.IsNullOrEmpty(model.FCMToken))
+                await _notificationService.RegisterDeviceAsync(user.Id, model.FCMToken, model.DeviceType);
+
+            return await BuildLoginResponse(user, false);
+        }
+
+        private async Task<Response<LoginResponseDTO>> NativeTokenDriverCoreAsync(
+            GoogleTokenDriverDTO model, string email, string? name, string? picture, bool isApple = false)
+        {
+            var user = await _userManager.FindByEmailAsync(email);
+            var roles = user != null ? await _userManager.GetRolesAsync(user) : new List<string>();
+
+            if (user != null && roles.Contains("Driver"))
+            {
+                if (user.IsBlocked)
+                    return Response<LoginResponseDTO>.Failure("تم تعطيل حسابك، يُرجى التواصل مع الدعم", 403);
+
+                if (!string.IsNullOrEmpty(model.FCMToken))
+                    await _notificationService.RegisterDeviceAsync(user.Id, model.FCMToken, model.DeviceType);
+
+                // Older Google captains were created without a phone — fill it in if sent.
+                if (string.IsNullOrWhiteSpace(user.PhoneNumber) && !string.IsNullOrWhiteSpace(model.Phone))
+                {
+                    var existingPhone = NormalizePhone(model.Phone);
+                    if (!await _userManager.Users.AnyAsync(u => u.PhoneNumber == existingPhone && u.Id != user.Id))
+                        user.PhoneNumber = existingPhone;
+                }
+
+                return await BuildLoginResponse(user, false);
+            }
+
+            // Existing account that isn't a captain → it's a rider, block it.
+            if (user != null)
+                return Response<LoginResponseDTO>.Failure(RiderOnCaptainMessage, 403);
+
+            // Brand-new account → prompt for captain signup data.
+            if (string.IsNullOrWhiteSpace(model.FullName) || (isApple && string.IsNullOrWhiteSpace(model.Phone)))
+                return Response<LoginResponseDTO>.Success(new LoginResponseDTO
+                {
+                    IsAuthenticated = false,
+                    IsNewUser = true,
+                    Phone = null,
+                    Name = isApple ? name ?? "" : null!,
+                }, "كابتن جديد، يرجى إكمال بيانات التسجيل", 200);
+
+            var scooterType = (ScooterType)model.ScooterType;
+            if (scooterType == ScooterType.Gasoline && string.IsNullOrWhiteSpace(model.ScooterLicense))
+                return Response<LoginResponseDTO>.Failure("يرجى إدخال رخصة السكوتر (بنزين)", 400);
+
+            if (string.IsNullOrWhiteSpace(model.Phone))
+                return Response<LoginResponseDTO>.Failure("يرجى إدخال رقم الهاتف", 400);
+            var captainPhone = NormalizePhone(model.Phone);
+            if (await _userManager.Users.AnyAsync(u => u.PhoneNumber == captainPhone))
+                return Response<LoginResponseDTO>.Failure("رقم الهاتف مستخدم بالفعل في حساب آخر.", 409);
+
+            if (user == null)
+            {
+                user = new ApplicationUser
+                {
+                    UserName = email,
+                    Email = email,
+                    EmailConfirmed = true,
+                    PhoneNumber = captainPhone,
+                    FullName = model.FullName.Trim(),
+                    Gender = string.IsNullOrWhiteSpace(model.Gender) ? "Male" : model.Gender,
+                    NationalId = model.NationalId,
+                    License = model.DriverLicense,
+                    ProfilePicture = picture ?? "",
+                    CreatedAt = DateTime.UtcNow,
+                };
+                var createResult = await _userManager.CreateAsync(user);
+                if (!createResult.Succeeded)
+                {
+                    var err = string.Join(" ", createResult.Errors.Select(e => e.Description));
+                    return Response<LoginResponseDTO>.Failure(string.IsNullOrWhiteSpace(err) ? "تعذّر إنشاء الحساب" : err, 400);
+                }
+            }
+            else
+            {
+                if (string.IsNullOrWhiteSpace(user.NationalId)) user.NationalId = model.NationalId;
+                if (string.IsNullOrWhiteSpace(user.License)) user.License = model.DriverLicense;
+                await _userManager.UpdateAsync(user);
+            }
+
+            if (!await _userManager.IsInRoleAsync(user, "Driver"))
+                await _userManager.AddToRoleAsync(user, "Driver");
+
+            await _unitOfWork.Scooters.AddAsync(new Scooter
+            {
+                DriverId = user.Id,
+                License = model.ScooterLicense,
+                Type = scooterType,
+            });
+            await _unitOfWork.SaveAsync();
+
+            if (!string.IsNullOrEmpty(model.FCMToken))
+                await _notificationService.RegisterDeviceAsync(user.Id, model.FCMToken, model.DeviceType);
+
+            return await BuildLoginResponse(user, false);
         }
 
         /// Lets a signed-in user add/replace their own phone (e.g. Google captains

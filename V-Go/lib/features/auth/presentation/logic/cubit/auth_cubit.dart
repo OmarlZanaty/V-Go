@@ -1,6 +1,9 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:equatable/equatable.dart';
+import 'package:flutter/foundation.dart';
+import 'package:sign_in_with_apple/sign_in_with_apple.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 
@@ -10,6 +13,7 @@ import '../../../../../core/errors/exception.dart';
 import '../../../../../core/helpers/app_type.dart';
 import '../../../../../core/utils/app_constants.dart';
 import '../../../data/model/login_response_model.dart';
+import '../../../data/model/social_login_provider.dart';
 import '../../../data/model/phone_login_response_model.dart';
 import '../../../data/model/register_request_model.dart';
 import '../../../data/model/reset_password_request_model.dart';
@@ -47,7 +51,10 @@ class AuthCubit extends Cubit<AuthState> {
   }
 
   Future<void> googleLogin() async {
-    emit(state.copyWith(status: AuthStatus.loginWithGoogleLoading));
+    emit(state.copyWith(
+      status: AuthStatus.loginWithGoogleLoading,
+      provider: SocialLoginProvider.google,
+    ));
     try {
       const webClientId =
           '792221536894-jqrpntom44mkat6kfn1lj916g5lp79a0.apps.googleusercontent.com';
@@ -107,16 +114,77 @@ class AuthCubit extends Cubit<AuthState> {
     }
   }
 
-  /// Completes a new Google account after the user fills the required profile
+  Future<void> appleLogin() async {
+    if (kIsWeb || !Platform.isIOS) return;
+    emit(state.copyWith(
+      status: AuthStatus.loginWithGoogleLoading,
+      provider: SocialLoginProvider.apple,
+    ));
+    try {
+      final credential = await SignInWithApple.getAppleIDCredential(
+        scopes: [
+          AppleIDAuthorizationScopes.email,
+          AppleIDAuthorizationScopes.fullName,
+        ],
+      );
+      final idToken = credential.identityToken;
+      if (idToken == null || idToken.isEmpty) {
+        throw 'فشل الحصول على رمز Apple.';
+      }
+      final fullName = [credential.givenName, credential.familyName]
+          .whereType<String>()
+          .map((name) => name.trim())
+          .where((name) => name.isNotEmpty)
+          .join(' ');
+      final result = await _authRepo.googleTokenLogin(
+        provider: SocialLoginProvider.apple,
+        idToken: idToken,
+        fullName: fullName.isEmpty ? null : fullName,
+        fcmToken: CacheHelper.getString(AppConstants.fcmToken),
+        deviceType: deviceType(),
+      );
+      if (isClosed) return;
+      if (result.isNewUser) {
+        emit(state.copyWith(
+          status: AuthStatus.loginWithGoogleNewUser,
+          googleIdToken: idToken,
+          googleName: fullName.isNotEmpty ? fullName : result.name ?? '',
+          googlePhoto: result.profilePicture ?? '',
+        ));
+      } else {
+        await _cacheUserDataFromGoogle(result);
+        unawaited(DeviceTokenSync.sync());
+        if (isClosed) return;
+        emit(state.copyWith(status: AuthStatus.loginWithGoogleSuccess));
+      }
+    } catch (e) {
+      if (isClosed) return;
+      if (e is SignInWithAppleAuthorizationException &&
+          e.code == AuthorizationErrorCode.canceled) {
+        emit(state.copyWith(status: AuthStatus.initial));
+        return;
+      }
+      emit(state.copyWith(
+        status: AuthStatus.loginWithGoogleFailure,
+        errorMessage: ServerFailure.fromError(e).errMessage,
+      ));
+    }
+  }
+
+  /// Completes a new social account after the user fills the required profile
   /// (full name + phone; photo optional, defaults to the Google photo).
   Future<void> completeGoogleProfile({
+    SocialLoginProvider provider = SocialLoginProvider.google,
     required String idToken,
     required String fullName,
     required String phone,
     String? gender,
     String? profilePicture,
   }) async {
-    emit(state.copyWith(status: AuthStatus.loginWithGoogleLoading));
+    emit(state.copyWith(
+      status: AuthStatus.loginWithGoogleLoading,
+      provider: provider,
+    ));
     try {
       // The FCM token is saved with CacheHelper.setData (SharedPreferences);
       // reading it from secure storage returned '' and registered nothing, so
@@ -124,12 +192,14 @@ class AuthCubit extends Cubit<AuthState> {
       final fcmToken = CacheHelper.getString(AppConstants.fcmToken);
       final result = await _authRepo.googleTokenLogin(
         idToken: idToken,
+        provider: provider,
         fullName: fullName,
         phone: phone,
         gender: gender,
         profilePicture: profilePicture,
         fcmToken: fcmToken,
-        deviceType: 'Android',
+        deviceType:
+            provider == SocialLoginProvider.apple ? deviceType() : 'Android',
       );
       if (isClosed) return;
       await _cacheUserDataFromGoogle(result);

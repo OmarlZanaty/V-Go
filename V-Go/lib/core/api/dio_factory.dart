@@ -3,7 +3,6 @@ import 'package:flutter/foundation.dart';
 import 'package:pretty_dio_logger/pretty_dio_logger.dart';
 
 import '../cache/cache_helper.dart';
-import '../errors/exception.dart';
 import '../helpers/account_blocked.dart';
 import '../helpers/navigation_handler.dart';
 import '../utils/app_constants.dart';
@@ -41,6 +40,7 @@ class DioFactory {
   }
 
   static Future<void> setTokenIntoHeaderAfterLogin(String token) async {
+    TokenService._signedOut = false;
     dio?.options.headers = {
       'Authorization': 'Bearer $token',
       'Content-Type': 'application/json',
@@ -75,6 +75,9 @@ class DioFactory {
           await AccountBlocked.signOut(data['message']?.toString());
           return handler.next(error);
         }
+        if (error.requestOptions.path.contains(EndPoint.newRefreshToken)) {
+          return handler.next(error);
+        }
         final is401 = error.response?.statusCode == 401;
         // Per-request guard: prevents an infinite refresh loop for a single
         // request while still allowing a fresh refresh on every future expiry.
@@ -93,8 +96,6 @@ class DioFactory {
             final clonedRequest = await dio!.fetch(error.requestOptions);
             return handler.resolve(clonedRequest);
           } catch (e) {
-            await _tokenService.clearTokens();
-            NavigationHandler.instance.goToLoginView();
             return handler.next(error);
           }
         }
@@ -102,8 +103,7 @@ class DioFactory {
         // A 401 that we already retried with a fresh token (or can't refresh)
         // means the session is dead — redirect to login instead of failing silently.
         if (is401 && alreadyRetried) {
-          await _tokenService.clearTokens();
-          NavigationHandler.instance.goToLoginView();
+          await _tokenService.signOutOnce();
         }
         return handler.next(error);
       },
@@ -112,6 +112,19 @@ class DioFactory {
 }
 
 class TokenService {
+  static Future<void>? _refreshing;
+  static bool _signedOut = false;
+  static final _refreshDio = Dio(BaseOptions(
+    baseUrl: EndPoint.baseUrl,
+    headers: {
+      'Accept': 'application/json',
+      'Content-Type': 'application/json',
+    },
+    connectTimeout: const Duration(seconds: 30),
+    sendTimeout: const Duration(seconds: 30),
+    receiveTimeout: const Duration(seconds: 30),
+  ));
+
   Future<String> getAccessToken() async {
     return await CacheHelper.getSecuredString(AppConstants.token);
   }
@@ -126,6 +139,7 @@ class TokenService {
     // SignalR hubs read kToken — keep it in sync after a refresh, otherwise
     // they keep negotiating with the expired token and get 401s.
     AppConstants.kToken = accessToken;
+    _signedOut = false;
   }
 
   Future<void> clearTokens() async {
@@ -138,17 +152,39 @@ class TokenService {
     AppConstants.kRole = '';
   }
 
-  Future<void> refreshToken() async {
+  Future<void> signOutOnce() async {
+    if (_signedOut) return;
+    _signedOut = true;
+    try {
+      await clearTokens();
+    } finally {
+      NavigationHandler.instance.goToLoginView();
+    }
+  }
+
+  Future<void> refreshToken() {
+    return _refreshing ??=
+        _refreshToken().whenComplete(() => _refreshing = null);
+  }
+
+  Future<void> _refreshToken() async {
     try {
       final refreshToken = await getRefreshToken();
-      final response = await DioFactory.getDio().post(
+      if (_signedOut || refreshToken.isEmpty) return;
+      final response = await _refreshDio.post(
         EndPoint.newRefreshToken,
         queryParameters: {'token': refreshToken},
       );
       await setTokens(response.data['token'], response.data['refreshToken']);
-      DioFactory.setTokenIntoHeaderAfterLogin(response.data['token']);
+      await DioFactory.setTokenIntoHeaderAfterLogin(response.data['token']);
     } catch (e) {
-      throw ServerFailure.fromError(e);
+      if (e is DioException &&
+          (e.response?.statusCode == 400 ||
+              e.response?.statusCode == 401 ||
+              e.response?.statusCode == 403)) {
+        await signOutOnce();
+      }
+      rethrow;
     }
   }
 }

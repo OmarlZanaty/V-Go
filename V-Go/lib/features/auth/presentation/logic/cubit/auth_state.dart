@@ -48,6 +48,7 @@ class AuthState extends Equatable {
     this.otp = '',
     this.errorMessage = '',
     this.message = '',
+    this.provider = SocialLoginProvider.google,
     this.googleIdToken = '',
     this.googleName = '',
     this.googlePhoto = '',
@@ -58,7 +59,8 @@ class AuthState extends Equatable {
   final String otp;
   final String errorMessage;
   final String message;
-  // Carried between the first Google sign-in and the complete-profile step.
+  // Shared by Google and Apple through the complete-profile step.
+  final SocialLoginProvider provider;
   final String googleIdToken;
   final String googleName;
   final String googlePhoto;
@@ -69,6 +71,7 @@ class AuthState extends Equatable {
     String? otp,
     String? errorMessage,
     String? message,
+    SocialLoginProvider? provider,
     String? googleIdToken,
     String? googleName,
     String? googlePhoto,
@@ -79,6 +82,7 @@ class AuthState extends Equatable {
       otp: otp ?? this.otp,
       errorMessage: errorMessage ?? this.errorMessage,
       message: message ?? this.message,
+      provider: provider ?? this.provider,
       googleIdToken: googleIdToken ?? this.googleIdToken,
       googleName: googleName ?? this.googleName,
       googlePhoto: googlePhoto ?? this.googlePhoto,
@@ -87,5 +91,5 @@ class AuthState extends Equatable {
 
   @override
   List<Object?> get props =>
-      [status, email, otp, errorMessage, message, googleIdToken, googleName, googlePhoto];
+      [status, email, otp, errorMessage, message, provider, googleIdToken, googleName, googlePhoto];
 }

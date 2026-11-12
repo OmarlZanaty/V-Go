@@ -5,7 +5,6 @@ import 'package:flutter/foundation.dart';
 import 'package:pretty_dio_logger/pretty_dio_logger.dart';
 
 import '../cache/cache_helper.dart';
-import '../errors/exception.dart';
 import '../helpers/account_blocked.dart';
 import '../helpers/navigation_handler.dart';
 import '../utils/app_constants.dart';
@@ -41,6 +40,7 @@ class DioFactory {
   }
 
   static Future<void> setTokenIntoHeaderAfterLogin(String token) async {
+    TokenService._signedOut = false;
     dio?.options.headers = {
       'Authorization': 'Bearer $token',
       'Content-Type': 'application/json',
@@ -61,8 +61,6 @@ class DioFactory {
     ]);
   }
 
-  static int _retryCount = 0;
-
   static Interceptor _authInterceptor() {
     return InterceptorsWrapper(
       onRequest: (options, handler) async {
@@ -78,22 +76,22 @@ class DioFactory {
           await AccountBlocked.signOut(data['message']?.toString());
           return handler.next(error);
         }
+        if (error.requestOptions.path.contains(EndPoint.newRefreshToken)) {
+          return handler.next(error);
+        }
+        final alreadyRetried = error.requestOptions.extra['retried'] == true;
         if (error.response?.statusCode == 401 &&
-            _retryCount < 1 &&
+            !alreadyRetried &&
             (await _tokenService.getRefreshToken()).isNotEmpty) {
-          _retryCount++;
           try {
             await _tokenService.refreshToken();
             final accessToken = await _tokenService.getAccessToken();
             error.requestOptions.headers['Authorization'] =
                 'Bearer $accessToken';
+            error.requestOptions.extra['retried'] = true;
             final cloned = await dio!.fetch(error.requestOptions);
-            _retryCount = 0;
             return handler.resolve(cloned);
           } catch (_) {
-            _retryCount = 0;
-            await _tokenService.clearTokens();
-            NavigationHandler.instance.goToLoginView();
             return handler.next(error);
           }
         }
@@ -104,12 +102,24 @@ class DioFactory {
 }
 
 class TokenService {
+  static bool _signedOut = false;
+  static final _refreshDio = Dio(BaseOptions(
+    baseUrl: EndPoint.baseUrl,
+    headers: {
+      'Accept': 'application/json',
+      'Content-Type': 'application/json',
+    },
+    connectTimeout: const Duration(seconds: 30),
+    sendTimeout: const Duration(seconds: 30),
+    receiveTimeout: const Duration(seconds: 30),
+  ));
+
   Future<String> getAccessToken() =>
       CacheHelper.getSecuredString(AppConstants.token);
 
-  // Shared so concurrent callers (both SignalR hubs) trigger a single refresh —
+  // Shared so concurrent callers (HTTP and SignalR) trigger a single refresh —
   // the backend rotates refresh tokens, so a second parallel refresh would fail.
-  static Future<String>? _refreshing;
+  static Future<void>? _refreshing;
 
   /// Access token that is guaranteed not to be (about to be) expired. Used by
   /// SignalR, which has no Dio interceptor to refresh on 401.
@@ -117,11 +127,9 @@ class TokenService {
     final token = await getAccessToken();
     if (token.isEmpty || !_isExpiring(token)) return token;
     if ((await getRefreshToken()).isEmpty) return token;
-    _refreshing ??= refreshToken()
-        .then((_) => getAccessToken())
-        .whenComplete(() => _refreshing = null);
     try {
-      return await _refreshing!;
+      await refreshToken();
+      return await getAccessToken();
     } catch (_) {
       return token;
     }
@@ -153,6 +161,7 @@ class TokenService {
     await CacheHelper.setSecuredString(AppConstants.refreshToken, refreshToken);
     // Keep the in-memory token in sync (SignalR reads it for reconnects).
     AppConstants.kToken = accessToken;
+    _signedOut = false;
   }
 
   Future<void> clearTokens() async {
@@ -163,17 +172,39 @@ class TokenService {
     AppConstants.kToken = '';
   }
 
-  Future<void> refreshToken() async {
+  Future<void> signOutOnce() async {
+    if (_signedOut) return;
+    _signedOut = true;
+    try {
+      await clearTokens();
+    } finally {
+      NavigationHandler.instance.goToLoginView();
+    }
+  }
+
+  Future<void> refreshToken() {
+    return _refreshing ??=
+        _refreshToken().whenComplete(() => _refreshing = null);
+  }
+
+  Future<void> _refreshToken() async {
     try {
       final refresh = await getRefreshToken();
-      final response = await DioFactory.getDio().post(
+      if (_signedOut || refresh.isEmpty) return;
+      final response = await _refreshDio.post(
         EndPoint.newRefreshToken,
         queryParameters: {'token': refresh},
       );
       await setTokens(response.data['token'], response.data['refreshToken']);
       await DioFactory.setTokenIntoHeaderAfterLogin(response.data['token']);
     } catch (e) {
-      throw ServerFailure.fromError(e);
+      if (e is DioException &&
+          (e.response?.statusCode == 400 ||
+              e.response?.statusCode == 401 ||
+              e.response?.statusCode == 403)) {
+        await signOutOnce();
+      }
+      rethrow;
     }
   }
 }

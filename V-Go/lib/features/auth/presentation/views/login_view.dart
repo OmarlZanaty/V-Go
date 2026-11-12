@@ -1,4 +1,7 @@
+import 'dart:io';
+
 import 'package:animate_do/animate_do.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import '../../../../core/helpers/spacing.dart';
@@ -6,6 +9,7 @@ import '../../../../core/utils/widgets/custom_app_bar.dart';
 import '../../../../core/utils/widgets/custom_text_field.dart';
 import '../widgets/forget_password_section.dart';
 import '../widgets/google_login_button.dart';
+import '../../data/model/social_login_provider.dart';
 import '../widgets/login_button_bloc.dart';
 
 class LoginView extends StatefulWidget {
@@ -83,6 +87,12 @@ class _LoginViewState extends State<LoginView> {
                           ),
                         ),
                         verticalSpace(14),
+                        if (!kIsWeb && Platform.isIOS) ...[
+                          const GoogleLoginButton(
+                            provider: SocialLoginProvider.apple,
+                          ),
+                          verticalSpace(14),
+                        ],
                         SlideInUp(
                           from: 400,
                           delay: const Duration(milliseconds: 400),

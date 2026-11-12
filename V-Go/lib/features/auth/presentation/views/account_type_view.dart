@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:animate_do/animate_do.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
@@ -14,6 +15,9 @@ import '../../../../core/theming/app_colors.dart';
 import '../../../../core/theming/app_style.dart';
 import '../../../../core/utils/widgets/custom_button.dart';
 import '../logic/cubit/auth_cubit.dart';
+import '../../data/model/social_login_provider.dart';
+import '../widgets/google_login_button.dart';
+import 'google_complete_profile_view.dart';
 
 class AccountTypeView extends StatelessWidget {
   const AccountTypeView({super.key});
@@ -22,6 +26,8 @@ class AccountTypeView extends StatelessWidget {
   Widget build(BuildContext context) {
     return Scaffold(
       body: BlocListener<AuthCubit, AuthState>(
+        listenWhen: (previous, current) =>
+            ModalRoute.of(context)?.isCurrent ?? true,
         listener: (context, state) {
           if (state.status == AuthStatus.loginWithGoogleSuccess) {
             Navigator.of(context).pushNamedAndRemoveUntil(
@@ -29,6 +35,21 @@ class AccountTypeView extends StatelessWidget {
               (_) => false,
             );
           } else if (state.status == AuthStatus.loginWithGoogleNewUser) {
+            if (state.provider == SocialLoginProvider.apple) {
+              final cubit = context.read<AuthCubit>();
+              Navigator.of(context).push(MaterialPageRoute<void>(
+                builder: (_) => BlocProvider.value(
+                  value: cubit,
+                  child: GoogleCompleteProfileView(
+                    provider: state.provider,
+                    idToken: state.googleIdToken,
+                    name: state.googleName,
+                    photo: state.googlePhoto,
+                  ),
+                ),
+              ));
+              return;
+            }
             Navigator.of(context).pushNamed(
               Routes.googleCompleteProfileViewRoute,
               arguments: {
@@ -42,8 +63,14 @@ class AccountTypeView extends StatelessWidget {
               context: context,
               type: ToastificationType.error,
               style: ToastificationStyle.fillColored,
-              title: Text(state.errorMessage.isNotEmpty ? state.errorMessage : 'فشل تسجيل الدخول بـ Google',
-                  style: AppStyle.styleRegular16),
+              title: Text(
+                state.errorMessage.isNotEmpty
+                    ? state.errorMessage
+                    : state.provider == SocialLoginProvider.apple
+                        ? 'فشل تسجيل الدخول بـ Apple'
+                        : 'فشل تسجيل الدخول بـ Google',
+                style: AppStyle.styleRegular16,
+              ),
               autoCloseDuration: const Duration(seconds: 4),
               alignment: Alignment.bottomCenter,
             );
@@ -70,9 +97,15 @@ class AccountTypeView extends StatelessWidget {
                   },
                 ),
               ),
-              // Google sign-in stays on Android; on iOS Apple would require
-              // "Sign in with Apple" next to it (App Store guideline 4.8).
-              if (!Platform.isIOS) ...[
+              if (!kIsWeb && Platform.isIOS) ...[
+                verticalSpace(12),
+                GoogleLoginButton(
+                  provider: SocialLoginProvider.apple,
+                  listen: false,
+                  height: 52.h,
+                  radius: 14.r,
+                ),
+              ],
               verticalSpace(12),
               SlideInLeft(
                 from: 200,
@@ -118,7 +151,6 @@ class AccountTypeView extends StatelessWidget {
                   },
                 ),
               ),
-              ],
             ],
           ),
         ),

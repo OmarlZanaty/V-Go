@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
@@ -200,9 +201,6 @@ class _PhoneLoginViewState extends State<PhoneLoginView> {
                   cubit.checkPhone(p);
                 },
               ),
-        // Google sign-in stays on Android; on iOS Apple would require "Sign in
-        // with Apple" next to it (App Store guideline 4.8).
-        if (!Platform.isIOS) ...[
         verticalSpace(16),
         Row(children: [
           const Expanded(child: Divider(color: AppColors.grey)),
@@ -213,6 +211,30 @@ class _PhoneLoginViewState extends State<PhoneLoginView> {
           const Expanded(child: Divider(color: AppColors.grey)),
         ]),
         verticalSpace(16),
+        if (!kIsWeb && Platform.isIOS) ...[
+          SizedBox(
+            height: 54,
+            child: OutlinedButton.icon(
+              onPressed: busy ? null : () => cubit.appleSignIn(),
+              style: OutlinedButton.styleFrom(
+                backgroundColor: Colors.black,
+                foregroundColor: Colors.white,
+                disabledBackgroundColor: Colors.black,
+                disabledForegroundColor: Colors.white,
+                side: const BorderSide(color: Colors.black),
+                shape: const RoundedRectangleBorder(
+                  borderRadius: BorderRadius.all(Radius.circular(50)),
+                ),
+              ),
+              icon: const Icon(Icons.apple, color: Colors.white, size: 22),
+              label: Text(
+                'تسجيل الدخول باستخدام Apple',
+                style: AppStyle.styleMedium16.copyWith(color: Colors.white),
+              ),
+            ),
+          ),
+          verticalSpace(16),
+        ],
         SizedBox(
           height: 54,
           child: OutlinedButton.icon(
@@ -230,7 +252,6 @@ class _PhoneLoginViewState extends State<PhoneLoginView> {
             ),
           ),
         ),
-        ],
       ],
     );
   }

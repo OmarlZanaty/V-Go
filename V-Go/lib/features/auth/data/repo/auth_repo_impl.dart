@@ -4,6 +4,7 @@ import '../../../../core/api/api_service.dart';
 import '../../../../core/api/end_points.dart';
 import '../model/check_state_response_model.dart';
 import '../model/google_login_response_model.dart';
+import '../model/social_login_provider.dart';
 import '../model/login_response_model.dart';
 import '../model/phone_login_response_model.dart';
 import '../model/register_request_model.dart';
@@ -215,6 +216,7 @@ class AuthRepoImpl implements AuthRepo {
 
   @override
   Future<PhoneLoginResponseModel> googleTokenLogin({
+    SocialLoginProvider provider = SocialLoginProvider.google,
     required String idToken,
     String? fullName,
     String? phone,
@@ -224,7 +226,9 @@ class AuthRepoImpl implements AuthRepo {
     required String deviceType,
   }) async {
     final response = await _apiServices.post(
-      EndPoint.googleLoginToken,
+      provider == SocialLoginProvider.apple
+          ? EndPoint.appleLoginToken
+          : EndPoint.googleLoginToken,
       data: {
         'idToken': idToken,
         'fullName': fullName,

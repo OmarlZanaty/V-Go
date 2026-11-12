@@ -32,9 +32,9 @@ class _PhoneDriverSignupViewState extends State<PhoneDriverSignupView> {
   String _gender = 'Male';
   int _scooterType = 0; // 0 = Gasoline, 1 = Electric
 
-  // Google sign-ups have no phone in state and use Google as the credential, so
+  // Native sign-ups have no phone in state and use a provider token, so
   // they skip the password fields.
-  bool get _isGoogle => widget.phone.isEmpty;
+  bool get _isNativeSignIn => widget.phone.isEmpty;
 
   @override
   void dispose() {
@@ -62,7 +62,7 @@ class _PhoneDriverSignupViewState extends State<PhoneDriverSignupView> {
 
   void _submit(PhoneAuthCubit cubit) {
     FocusManager.instance.primaryFocus?.unfocus();
-    if (!_isGoogle) {
+    if (!_isNativeSignIn) {
       if (_password.text.length < 6) {
         return _toast('كلمة المرور يجب ألا تقل عن 6 أحرف.');
       }
@@ -71,7 +71,7 @@ class _PhoneDriverSignupViewState extends State<PhoneDriverSignupView> {
       }
     }
     if (_name.text.trim().length < 2) return _toast('يرجى إدخال الاسم.');
-    if (_isGoogle && _phone.text.replaceAll(RegExp(r'\D'), '').length < 10) {
+    if (_isNativeSignIn && _phone.text.replaceAll(RegExp(r'\D'), '').length < 10) {
       return _toast('يرجى إدخال رقم هاتف صحيح.');
     }
     if (_scooterType == 0 && _scooterLicense.text.trim().isEmpty) {
@@ -89,9 +89,9 @@ class _PhoneDriverSignupViewState extends State<PhoneDriverSignupView> {
         ? null
         : _scooterLicense.text.trim();
 
-    if (_isGoogle) {
-      // Came from Google sign-in (no phone number, no password).
-      cubit.registerDriverWithGoogle(
+    if (_isNativeSignIn) {
+      // Came from native sign-in (no phone number, no password).
+      cubit.registerDriverWithNativeToken(
         fullName: fullName,
         phone: _phone.text.trim(),
         email: email,
@@ -140,13 +140,13 @@ class _PhoneDriverSignupViewState extends State<PhoneDriverSignupView> {
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   Text(
-                    _isGoogle
+                    _isNativeSignIn
                         ? 'إكمال بيانات الكابتن'
                         : 'رقم الهاتف: ${widget.phone}',
                     style: AppStyle.hint,
                   ),
                   SizedBox(height: 16.h),
-                  if (!_isGoogle) ...[
+                  if (!_isNativeSignIn) ...[
                     PasswordField(controller: _password, hint: 'كلمة المرور'),
                     SizedBox(height: 12.h),
                     PasswordField(
@@ -157,7 +157,7 @@ class _PhoneDriverSignupViewState extends State<PhoneDriverSignupView> {
                   ],
                   _field(_name, 'الاسم بالكامل', Icons.person_outline),
                   SizedBox(height: 12.h),
-                  if (_isGoogle) ...[
+                  if (_isNativeSignIn) ...[
                     // Riders need it to call the captain during a trip.
                     _field(
                       _phone,

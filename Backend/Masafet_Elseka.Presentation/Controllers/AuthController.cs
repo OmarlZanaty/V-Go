@@ -520,6 +520,20 @@ namespace Masafet_Elseka.Presentation.Controllers
             return StatusCode(result.StatusCode, result.IsSuccess ? new { data = result.Data, message = result.Message } : (object)result.Message);
         }
 
+        [HttpPost("apple-login-token")]
+        public async Task<IActionResult> AppleLoginToken([FromBody] AppleTokenLoginDTO model)
+        {
+            var result = await _authService.AppleTokenLoginAsync(model);
+            return StatusCode(result.StatusCode, result.IsSuccess ? new { data = result.Data, message = result.Message } : (object)result.Message);
+        }
+
+        [HttpPost("apple-login-driver-token")]
+        public async Task<IActionResult> AppleDriverToken([FromBody] AppleTokenDriverDTO model)
+        {
+            var result = await _authService.AppleTokenDriverAsync(model);
+            return StatusCode(result.StatusCode, result.IsSuccess ? new { data = result.Data, message = result.Message } : (object)result.Message);
+        }
+
         public class SetPhoneDTO { public string Phone { get; set; } = string.Empty; }
 
         /// Signed-in user sets their own phone number.

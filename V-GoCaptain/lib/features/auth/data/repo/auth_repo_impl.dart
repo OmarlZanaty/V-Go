@@ -207,7 +207,8 @@ class AuthRepoImpl implements AuthRepo {
   }
 
   @override
-  Future<PhoneLoginResponseModel> googleTokenDriver({
+  Future<PhoneLoginResponseModel> nativeTokenDriver({
+    required NativeAuthProvider provider,
     required String idToken,
     String? fullName,
     String? phone,
@@ -220,7 +221,9 @@ class AuthRepoImpl implements AuthRepo {
     required String deviceType,
   }) async {
     final response = await _apiServices.post(
-      EndPoint.googleLoginDriverToken,
+      provider == NativeAuthProvider.apple
+          ? EndPoint.appleLoginDriverToken
+          : EndPoint.googleLoginDriverToken,
       data: {
         'idToken': idToken,
         'fullName': fullName,

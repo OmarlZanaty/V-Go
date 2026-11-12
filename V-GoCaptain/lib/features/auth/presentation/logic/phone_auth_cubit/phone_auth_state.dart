@@ -5,8 +5,8 @@ enum PhoneAuthStatus {
   // phone + password sign-in
   checkingPhone,
   existingUser, // phone registered -> ask for password (login)
-  newUser, // phone OR google new user -> set details (password only for phone)
-  authenticating, // login / register / google in flight
+  newUser, // phone OR native sign-in new user -> set details (password only for phone)
+  authenticating, // login / register / native sign-in in flight
   loginSuccess,
   failure,
   // forgot password (backend SMS OTP) flow
@@ -23,7 +23,9 @@ class PhoneAuthState extends Equatable {
   final String phone;
   final String errorMessage;
   final int cooldownSeconds;
-  final String lastCode; // carries the Google ID token for the signup form
+  final String lastCode; // carries the native ID token for the signup form
+
+  final NativeAuthProvider provider;
 
   const PhoneAuthState({
     this.status = PhoneAuthStatus.initial,
@@ -31,6 +33,7 @@ class PhoneAuthState extends Equatable {
     this.errorMessage = '',
     this.cooldownSeconds = 0,
     this.lastCode = '',
+    this.provider = NativeAuthProvider.google,
   });
 
   PhoneAuthState copyWith({
@@ -40,6 +43,7 @@ class PhoneAuthState extends Equatable {
     bool clearError = false,
     int? cooldownSeconds,
     String? lastCode,
+    NativeAuthProvider? provider,
   }) {
     return PhoneAuthState(
       status: status ?? this.status,
@@ -47,10 +51,11 @@ class PhoneAuthState extends Equatable {
       errorMessage: clearError ? '' : (errorMessage ?? this.errorMessage),
       cooldownSeconds: cooldownSeconds ?? this.cooldownSeconds,
       lastCode: lastCode ?? this.lastCode,
+      provider: provider ?? this.provider,
     );
   }
 
   @override
   List<Object?> get props =>
-      [status, phone, errorMessage, cooldownSeconds, lastCode];
+      [status, phone, errorMessage, cooldownSeconds, lastCode, provider];
 }
