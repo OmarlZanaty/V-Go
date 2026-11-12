@@ -101,10 +101,10 @@ definitions:
   publishing: &publishing
     app_store_connect:
       auth: integration
-      # TestFlight external review needs beta test info this account has not
-      # filled in; the App Store submission below is what we actually want.
+      # Builds only upload to App Store Connect; the review submission is done
+      # by hand in ASC after the store screenshots are ready.
       submit_to_testflight: false
-      submit_to_app_store: true
+      submit_to_app_store: false
       release_type: AFTER_APPROVAL
 
 workflows:
