@@ -13,6 +13,7 @@
 # The App Store Connect key "ShoppingMarket ASC Key" is in the personal
 # account's Developer Portal integration.
 # Start a build: Codemagic -> V-Go -> Start new build -> pick the workflow.
+# Start all 4 builds: git tag vgo-release-<n> && git push origin vgo-release-<n>
 #
 # Android builds (same Mac machines; Linux is not on the free plan) produce
 # signed .aab files to upload to Google Play by hand. The upload keystores live
@@ -22,6 +23,13 @@
 # environment variable groups "vgo_rider_firebase" / "vgo_captain_firebase".
 
 definitions:
+  release_trigger: &release_trigger
+    events:
+      - tag
+    tag_patterns:
+      - pattern: 'vgo-release-*'
+        include: true
+    cancel_previous_builds: false
   ios_env: &ios_env
     flutter: 3.41.9
     xcode: latest
@@ -112,6 +120,7 @@ workflows:
     name: V-Go (rider) - iOS App Store
     instance_type: mac_mini_m2
     max_build_duration: 90
+    triggering: *release_trigger
     working_directory: V-Go
     integrations:
       app_store_connect: ShoppingMarket ASC Key
@@ -135,6 +144,7 @@ workflows:
     name: V-Go Captain - iOS App Store
     instance_type: mac_mini_m2
     max_build_duration: 90
+    triggering: *release_trigger
     working_directory: V-GoCaptain
     integrations:
       app_store_connect: ShoppingMarket ASC Key
@@ -158,6 +168,7 @@ workflows:
     name: V-Go (rider) - Android Play Store
     instance_type: mac_mini_m2
     max_build_duration: 60
+    triggering: *release_trigger
     working_directory: V-Go
     environment:
       <<: *android_env
@@ -181,6 +192,7 @@ workflows:
     name: V-Go Captain - Android Play Store
     instance_type: mac_mini_m2
     max_build_duration: 60
+    triggering: *release_trigger
     working_directory: V-GoCaptain
     environment:
       <<: *android_env
