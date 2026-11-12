@@ -228,6 +228,7 @@ namespace Masafet_Elseka.Presentation.Controllers
         }
 
         [HttpPost("newrefreshtoken")]
+        [EnableRateLimiting("refresh")]
         public async Task<IActionResult> NewRefreshToken(string token)
         {
             if (string.IsNullOrEmpty(token))

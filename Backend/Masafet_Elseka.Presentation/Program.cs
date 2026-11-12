@@ -367,26 +367,38 @@ builder.Services.AddRateLimiter(options =>
                 QueueLimit = 0
             }));
 
-    // Limiter for auth/OTP endpoints: 20 requests / minute per client IP.
-    // The phone+password flow makes ~2 calls per login (phone-exists + sign-in),
-    // so 20/min still blocks brute-forcing while not locking out normal use.
+    // Limiter for auth/OTP endpoints: 120 requests / minute per client IP.
+    // Egyptian mobile carriers put many subscribers behind one shared (CGNAT) IP,
+    // so a low per-IP cap locks real users out ("too many attempts"). 120/min still
+    // stops brute-forcing; override with env RATE_LIMIT_AUTH_PER_MIN if needed.
     options.AddPolicy("auth", httpContext =>
         RateLimitPartition.GetFixedWindowLimiter(
             partitionKey: httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown",
             factory: _ => new FixedWindowRateLimiterOptions
             {
-                PermitLimit = 20,
+                PermitLimit = int.TryParse(Environment.GetEnvironmentVariable("RATE_LIMIT_AUTH_PER_MIN"), out var authLimit) ? authLimit : 120,
                 Window = TimeSpan.FromMinutes(1),
                 QueueLimit = 0
             }));
 
-    // Global fallback limiter: 100 requests / minute per client IP.
+    // Keep dead-token refresh loops from exhausting the shared auth bucket.
+    options.AddPolicy("refresh", httpContext =>
+        RateLimitPartition.GetFixedWindowLimiter(
+            partitionKey: httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+            factory: _ => new FixedWindowRateLimiterOptions
+            {
+                PermitLimit = int.TryParse(Environment.GetEnvironmentVariable("RATE_LIMIT_REFRESH_PER_MIN"), out var refreshLimit) ? refreshLimit : 60,
+                Window = TimeSpan.FromMinutes(1),
+                QueueLimit = 0
+            }));
+
+    // Global fallback limiter: 600 requests / minute per client IP (shared CGNAT IPs).
     options.GlobalLimiter = PartitionedRateLimiter.Create<HttpContext, string>(httpContext =>
         RateLimitPartition.GetFixedWindowLimiter(
             partitionKey: httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown",
             factory: _ => new FixedWindowRateLimiterOptions
             {
-                PermitLimit = 100,
+                PermitLimit = 600,
                 Window = TimeSpan.FromMinutes(1),
                 QueueLimit = 0
             }));
