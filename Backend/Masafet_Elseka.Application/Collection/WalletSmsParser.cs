@@ -80,7 +80,16 @@ namespace Masafet_Elseka.Application.Collection
 
         // ---- classification ----
 
-        private static readonly Regex Failed = new(@"لم يتم|فشل|مرفوض|رفض|failed|declined|unsuccessful|not completed|insufficient", Opt);
+        private static readonly Regex Failed = new(@"لم يتم|لم تتم|لا يمكن|تعذر|غير كاف|عدم وجود رصيد|فشل|مرفوض|رفض|failed|declined|unsuccessful|not completed|insufficient|cannot|can['’]t|could not|unable", Opt);
+        // Links in receipts and ads ("http://vf.eg/vfcash", "vf.eg/vfcash?id=VFRecharge")
+        // carry words and digits that look like keywords or money.
+        private static readonly Regex Url = new(@"\b(?:https?://|www\.)\S+|\b[A-Za-z0-9\-]+\.(?:eg|com|ly|net|org|io)/\S*", Opt);
+        // Airtime top-up of the phone line ("تم شحن 10 ج و رصيدك 23 ج"): it only counts
+        // as a wallet message when the text names the wallet.
+        private static readonly Regex LineRecharge = new(@"تم شحن|recharged?|top(?:ped)?[\s\-]?up", Opt);
+        private static readonly Regex WalletCue = new(@"محفظ|فودافون كاش|vodafone\s*cash|vf\s*cash|wallet|etisalat\s*money|e&\s*money|et\s*money|اتصالات كاش|instapay|انستاباي", Opt);
+        // Prize / cashback text that follows a receipt; its sums are never the amount.
+        private static readonly Regex PromoCue = new(@"cash\s?back|كاش\s?باك|هتكسب|اكسب|\bwin\b|up to|ضعف", Opt);
         private static readonly Regex Incoming = new(
             @"استلام|استقبال|استلمت|وصل(?:ك|تك|ت لك)|تم اضافة|اضيف|ايداع|حول لك|حوّل لك|(?:الى|ل)\s*محفظتك|received|credited|deposited|added to your|transferred to you|(?:sent|transferred) to your|sent you|to your wallet|you got", Opt);
         private static readonly Regex Outgoing = new(
@@ -94,7 +103,8 @@ namespace Masafet_Elseka.Application.Collection
         private static readonly Regex MoneyBefore = new(@"(?<![A-Za-z])(?:EGP|LE|L\.E\.?)\s*" + Num + @"(?![\d])", Opt);
         private static readonly Regex MoneyMablagh = new(@"مبلغ\s*(?:و?قدره\s*)?" + Num + @"(?![\d])", Opt);
         private static readonly Regex BalanceCue = new(@"رصيد|balance", Opt);
-        private static readonly Regex FeeCue = new(@"رسوم|مصاريف|مصروفات|عمولة|fees?|charges?|commission", Opt);
+        // English words need word boundaries: "recharged" contains "charge" and would hide the amount.
+        private static readonly Regex FeeCue = new(@"رسوم|مصاريف|مصروفات|عمولة|\bfees?\b|\bcharges?\b|\bcommission\b", Opt);
 
         // ---- phone / reference ----
 
@@ -152,7 +162,7 @@ namespace Masafet_Elseka.Application.Collection
             if (string.IsNullOrWhiteSpace(body))
                 return new(provider, WalletSmsKind.Ignored, null, null, null, null);
 
-            var text = Normalize(body);
+            var text = Regex.Replace(Url.Replace(Normalize(body), " "), @" {2,}", " ").Trim();
             var own = new HashSet<string>(ownNumbers ?? Enumerable.Empty<string>());
 
             // Amount = the first sum that isn't introduced as a balance or a fee.
@@ -169,6 +179,7 @@ namespace Masafet_Elseka.Application.Collection
                 var near = cut >= 0 && cut < lead.Length - 1 ? lead[(cut + 1)..] : lead;
                 if (BalanceCue.IsMatch(near)) { balance ??= m.Value; continue; }
                 if (FeeCue.IsMatch(near)) continue;
+                if (PromoCue.IsMatch(near)) continue;
                 amount ??= m.Value;
             }
 
@@ -217,8 +228,12 @@ namespace Masafet_Elseka.Application.Collection
             // The InstaPay app itself, or a bank SMS / push about an InstaPay transfer.
             if (provider == null && (account != null || MentionsInstaPay(text))) provider = WalletProvider.InstaPay;
 
+            // Phone-line (airtime) top-up: not the wallet, so it must not touch its balance chain.
+            var airtime = LineRecharge.IsMatch(text) && !WalletCue.IsMatch(text) && !Incoming.IsMatch(text);
+            if (airtime) { amount = null; balance = null; }
+
             WalletSmsKind kind;
-            if (Failed.IsMatch(text))
+            if (Failed.IsMatch(text) || airtime)
                 kind = WalletSmsKind.Ignored;
             else if (Incoming.IsMatch(text) && !OutgoingDominates(text))
                 kind = amount != null ? WalletSmsKind.Incoming

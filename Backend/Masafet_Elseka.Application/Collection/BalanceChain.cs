@@ -27,8 +27,9 @@ namespace Masafet_Elseka.Application.Collection
                     return new(expected.Value + amount.Value == balanceAfter.Value ? WalletSmsChainStatus.Ok : WalletSmsChainStatus.Gap, balanceAfter);
                 case WalletSmsKind.Outgoing:
                     // Money left but we can't tell where the balance stands: drop the anchor
-                    // rather than call the next receipt forged.
-                    if (balanceAfter == null) return new(WalletSmsChainStatus.NotApplicable, null);
+                    // rather than call the next receipt forged. If nothing is known to have
+                    // moved (no amount either), keep it.
+                    if (balanceAfter == null) return new(WalletSmsChainStatus.NotApplicable, amount == null ? expected : null);
                     if (expected == null || amount == null) return new(WalletSmsChainStatus.First, balanceAfter);
                     return new(expected.Value - amount.Value == balanceAfter.Value ? WalletSmsChainStatus.Ok : WalletSmsChainStatus.Resync, balanceAfter);
                 case WalletSmsKind.Unparsed:

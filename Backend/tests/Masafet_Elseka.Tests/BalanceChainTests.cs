@@ -50,6 +50,40 @@ namespace Masafet_Elseka.Tests
         }
 
         [Fact]
+        public void Outgoing_with_nothing_known_keeps_the_anchor()
+        {
+            var step = BalanceChain.Next(100m, WalletSmsKind.Outgoing, null, null);
+            Assert.Equal(WalletSmsChainStatus.NotApplicable, step.Status);
+            Assert.Equal(100m, step.Expected);
+        }
+
+        // Real sequence on one wallet (2026-11, masked): wallet recharge, phone-line top-up,
+        // failed operation, ad, then a receipt. Only the first and last move the chain.
+        [Fact]
+        public void Noise_between_receipts_does_not_break_the_chain()
+        {
+            var own = new[] { "01000000001" };
+            var messages = new (string Sender, string Body)[]
+            {
+                ("VF-Cash", "10.5 L.E was successfully recharged to your mobile balance; your current Vodafone Cash balance is 9.1 LE; Transfer money to any wallet and get a chance to win a gold coin! You will also get cashback up to 100 EGP.http://vf.eg/vfcash?id=money_transfer"),
+                ("Vodafone", "تم شحن10.5 ج و رصيدك23.22 ج. رقم العملية PFATP01261116094504106."),
+                ("VF-Cash", "لا يمكن إتمام العملية لعدم وجود رصيد كافي في حساب فودافون كاش؛رصيد حسابك فى فودافون كاش الحالي 9.10 جنيه.لمعرفة أقرب فرع للإيداع كلم #9*9*.رقم العملية 025837927871"),
+                ("VF-Cash", "اشحن رصيد بمحفظة فودافون كاش و هتكسب 50 ضعف شحنتك! زور: https://vf.eg/vfcash?id=VFRecharge او اطلب #9*"),
+                ("VF-Cash", "تم استلام مبلغ 16.00 جنيه من 01100000002؛\nالمسجل بإسم AHMED SAMIR ALI\nعلى رقم محفظتك 01000000001 بتاريخ 17:53 26-11-17.\nرصيدك الحالي: 25.10 جنيه\nرقم العملية: 025888336955\n تقدر تتابع كل مصروفاتك من تاريخ المعاملات على أبلكيشن أنا فودافون http://vf.eg/vfcash"),
+            };
+            decimal? expected = null;
+            BalanceChain.Step? step = null;
+            foreach (var (sender, body) in messages)
+            {
+                var r = WalletSmsParser.Parse(sender, body, own);
+                step = BalanceChain.Next(expected, r.Kind, r.Amount, r.BalanceAfter);
+                expected = step.Expected;
+            }
+            Assert.Equal(WalletSmsChainStatus.Ok, step!.Status);
+            Assert.Equal(25.10m, step.Expected);
+        }
+
+        [Fact]
         public void Receipt_without_balance_keeps_the_anchor()
         {
             var step = BalanceChain.Next(100m, WalletSmsKind.Incoming, 20m, null);

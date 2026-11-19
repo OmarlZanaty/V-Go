@@ -266,6 +266,65 @@ namespace Masafet_Elseka.Tests
             Assert.Equal(1500m, r.Amount);
         }
 
+        // Real sequence on one wallet (2026-11, numbers / names masked): ads, a failed
+        // operation and a phone-line top-up must not disturb the receipt after them.
+        [Fact]
+        public void Vf_wallet_recharge_amount_is_not_the_cashback_ad()
+        {
+            var r = WalletSmsParser.Parse("VF-Cash",
+                "10.5 L.E was successfully recharged to your mobile balance; your current Vodafone Cash balance is 9.1 LE; Transfer money to any wallet and get a chance to win a gold coin! You will also get cashback up to 100 EGP.http://vf.eg/vfcash?id=money_transfer");
+            Assert.Equal(WalletSmsKind.Outgoing, r.Kind);
+            Assert.Equal(10.5m, r.Amount);
+            Assert.Equal(9.1m, r.BalanceAfter);
+        }
+
+        [Fact]
+        public void Vf_english_wallet_recharge()
+        {
+            var r = WalletSmsParser.Parse("VF-Cash",
+                "You have successfully recharged 10.5 LE to the balance of 01100000002; your current Vodafone Cash balance is 34.1 LE;Trx date: 10-11-26 09:01 Trx ID 025628617032. Transfer money to any wallet and get a chance to win a gold coin! You will also get cashback up to 100 EGP.http://vf.eg/vfcash?id=money_transfer.");
+            Assert.Equal(WalletSmsKind.Outgoing, r.Kind);
+            Assert.Equal(10.5m, r.Amount);
+            Assert.Equal(34.1m, r.BalanceAfter);
+        }
+
+        [Fact]
+        public void Phone_line_recharge_is_ignored_and_has_no_wallet_balance()
+        {
+            var r = WalletSmsParser.Parse("Vodafone",
+                "تم شحن10.5 ج و رصيدك23.22 ج. رقم العملية PFATP01261116094504106.");
+            Assert.Equal(WalletSmsKind.Ignored, r.Kind);
+            Assert.Null(r.BalanceAfter);
+        }
+
+        [Fact]
+        public void Insufficient_balance_failure_is_ignored_not_incoming()
+        {
+            var r = WalletSmsParser.Parse("VF-Cash",
+                "لا يمكن إتمام العملية لعدم وجود رصيد كافي في حساب فودافون كاش؛رصيد حسابك فى فودافون كاش الحالي 9.10 جنيه.لمعرفة أقرب فرع للإيداع كلم #9*9*.رقم العملية 025837927871");
+            Assert.Equal(WalletSmsKind.Ignored, r.Kind);
+        }
+
+        [Fact]
+        public void Recharge_ad_with_url_is_ignored()
+        {
+            var r = WalletSmsParser.Parse("VF-Cash",
+                "اشحن رصيد بمحفظة فودافون كاش و هتكسب 50 ضعف شحنتك! زور: https://vf.eg/vfcash?id=VFRecharge او اطلب #9*");
+            Assert.Equal(WalletSmsKind.Ignored, r.Kind);
+            Assert.Null(r.Amount);
+        }
+
+        [Fact]
+        public void Vf_receipt_with_newlines_after_the_ads()
+        {
+            var r = WalletSmsParser.Parse("VF-Cash",
+                "تم استلام مبلغ 16.00 جنيه من 01100000002؛\nالمسجل بإسم AHMED SAMIR ALI\nعلى رقم محفظتك 01000000001 بتاريخ 17:53 26-11-17.\nرصيدك الحالي: 25.10 جنيه\nرقم العملية: 025888336955\n تقدر تتابع كل مصروفاتك من تاريخ المعاملات على أبلكيشن أنا فودافون http://vf.eg/vfcash",
+                new[] { "01000000001" });
+            Assert.Equal(WalletSmsKind.Incoming, r.Kind);
+            Assert.Equal(16m, r.Amount);
+            Assert.Equal(25.10m, r.BalanceAfter);
+        }
+
         [Fact]
         public void Received_without_amount_is_unparsed()
         {
