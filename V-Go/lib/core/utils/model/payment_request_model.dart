@@ -1,7 +1,7 @@
 class PaymentRequestModel {
   final String userId;
   final String tripId;
-  final int price;
+  final num price;
   final String currency;
 
   PaymentRequestModel({

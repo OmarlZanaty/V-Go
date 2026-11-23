@@ -1,3 +1,4 @@
+import '../../../../core/utils/price_format.dart';
 import 'package:flutter/material.dart';
 
 import '../../../../core/helpers/convert_time.dart';
@@ -157,7 +158,7 @@ class TripItem extends StatelessWidget {
                       title: 'السعر',
                       value: trip.isFreeRide
                           ? 'مجانية'
-                          : '${trip.riderPrice.ceil()} ج.م',
+                          : '${formatEgp(trip.riderPrice)} ج.م',
                     ),
                   ),
                 ],

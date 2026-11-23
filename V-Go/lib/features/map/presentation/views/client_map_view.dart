@@ -1,3 +1,4 @@
+import '../../../../core/utils/price_format.dart';
 import 'dart:async';
 import 'dart:developer';
 import 'dart:io' show Platform;
@@ -121,7 +122,7 @@ class _ClientMapViewState extends State<ClientMapView> {
       errorToast(context, 'خطأ', 'تعذر تحديد السعر، حاول مرة أخرى');
       return false;
     }
-    if (newPrice.ceil() == shownPrice.ceil()) return true;
+    if ((newPrice * 2).floor() == (shownPrice * 2).floor()) return true;
 
     final ok = await showDialog<bool>(
       context: context,
@@ -130,7 +131,7 @@ class _ClientMapViewState extends State<ClientMapView> {
         child: AlertDialog(
           title: Text('تم تحديث السعر', style: AppStyle.styleMedium18),
           content: Text(
-            'سعر الرحلة من موقعك الحالي ${newPrice.ceil()} ج.م',
+            'سعر الرحلة من موقعك الحالي ${formatEgp(newPrice)} ج.م',
             style: AppStyle.styleRegular14,
           ),
           actions: [
@@ -1641,7 +1642,7 @@ class _ClientMapViewState extends State<ClientMapView> {
                                           ),
                                           horizontalSpace(8),
                                           Text(
-                                            '${tripState.fareQuote!.price.ceil()} ج.م',
+                                            '${formatEgp(tripState.fareQuote!.price)} ج.م',
                                             style: AppStyle.styleMedium14
                                                 .copyWith(
                                               color: AppColors.lightGrey,
@@ -1670,7 +1671,7 @@ class _ClientMapViewState extends State<ClientMapView> {
                                       Row(
                                         children: [
                                           Text(
-                                            '${tripState.fareQuote!.riderPrice.ceil()} ج.م',
+                                            '${formatEgp(tripState.fareQuote!.riderPrice)} ج.م',
                                             style: AppStyle.styleMedium16
                                                 .copyWith(
                                               color: AppColors.primary,
@@ -1678,7 +1679,7 @@ class _ClientMapViewState extends State<ClientMapView> {
                                           ),
                                           horizontalSpace(8),
                                           Text(
-                                            '${tripState.fareQuote!.price.ceil()} ج.م',
+                                            '${formatEgp(tripState.fareQuote!.price)} ج.م',
                                             style: AppStyle.styleMedium14
                                                 .copyWith(
                                               color: AppColors.lightGrey,
@@ -1690,7 +1691,7 @@ class _ClientMapViewState extends State<ClientMapView> {
                                       ),
                                       verticalSpace(4),
                                       Text(
-                                        'خصم ${tripState.fareQuote!.discount.ceil()} ج.م 🎁 ${tripState.fareQuote!.promotionTitle ?? ''}',
+                                        'خصم ${formatEgp(tripState.fareQuote!.discount)} ج.م 🎁 ${tripState.fareQuote!.promotionTitle ?? ''}',
                                         style: AppStyle.styleMedium12.copyWith(
                                           color: AppColors.white,
                                         ),
@@ -1700,7 +1701,7 @@ class _ClientMapViewState extends State<ClientMapView> {
                                 )
                               else
                               Text(
-                                '${tripState.tripPrice.ceil()} ج.م',
+                                '${formatEgp(tripState.tripPrice)} ج.م',
                                 style: AppStyle.styleMedium16.copyWith(
                                   color: AppColors.white,
                                 ),
@@ -2110,7 +2111,7 @@ class _ClientMapViewState extends State<ClientMapView> {
             textBaseline: TextBaseline.alphabetic,
             children: [
               Text(
-                '${price.ceil()}',
+                '${formatEgp(price)}',
                 style: AppStyle.styleBold38.copyWith(color: AppColors.primary),
               ),
               horizontalSpace(6),
@@ -2129,7 +2130,7 @@ class _ClientMapViewState extends State<ClientMapView> {
           ] else if (discount > 0) ...[
             verticalSpace(4),
             Text(
-              'بدل ${serverPrice.ceil()} ج.م — خصم ${discount.ceil()} ج.م من V-Go 🎁',
+              'بدل ${formatEgp(serverPrice)} ج.م — خصم ${formatEgp(discount)} ج.م من V-Go 🎁',
               style: AppStyle.styleMedium14.copyWith(color: AppColors.white),
             ),
           ],

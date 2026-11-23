@@ -1,3 +1,4 @@
+import '../../../../core/utils/price_format.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -63,7 +64,7 @@ class RequestedTripItem extends StatelessWidget {
                     borderRadius: BorderRadius.all(Radius.circular(25)),
                   ),
                   child: Text(
-                    '${newTrip.price.ceil()} ج.م',
+                    '${formatEgp(newTrip.price)} ج.م',
                     style: AppStyle.styleMedium14.copyWith(
                       color: AppColors.white,
                     ),

@@ -48,7 +48,7 @@ Future<void> _payOutstandingDebt(BuildContext context) async {
     model: PaymentRequestModel(
       userId: AppConstants.kUserId,
       tripId: debt.tripId,
-      price: debt.amount.ceil(),
+      price: (debt.amount * 2).floor() / 2,
       currency: 'EGP',
     ),
   );

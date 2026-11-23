@@ -1,5 +1,6 @@
 // ignore_for_file: prefer_foreach
 
+import '../../../../core/utils/price_format.dart';
 import 'dart:async';
 import 'dart:developer';
 
@@ -1023,7 +1024,7 @@ class _DriverMapViewState extends State<DriverMapView> {
             borderRadius: BorderRadius.all(Radius.circular(50)),
           ),
           child: Text(
-            '${widget.requestedTrip.price.ceil()} ج.م',
+            '${formatEgp(widget.requestedTrip.price)} ج.م',
             style: AppStyle.styleMedium16.copyWith(color: AppColors.black),
           ),
         ),

@@ -1,3 +1,4 @@
+import '../../../../core/utils/price_format.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -90,7 +91,7 @@ class CurrentTripItem extends StatelessWidget {
                     borderRadius: BorderRadius.all(Radius.circular(25)),
                   ),
                   child: Text(
-                    '${currentTrip.price.toInt()} ج.م',
+                    '${formatEgp(currentTrip.price)} ج.م',
                     style: AppStyle.styleMedium14.copyWith(
                       color: AppColors.black,
                     ),

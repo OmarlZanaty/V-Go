@@ -248,7 +248,7 @@ void _createPaymentRequestModel(
     model: PaymentRequestModel(
       userId: AppConstants.kUserId,
       tripId: currentTrip?.tripId ?? tripState.tripId,
-      price: currentTrip?.riderPrice.ceil() ?? tripState.tripPrice.ceil(),
+      price: ((currentTrip?.riderPrice ?? tripState.tripPrice) * 2).floor() / 2,
       currency: 'EGP',
     ),
   );

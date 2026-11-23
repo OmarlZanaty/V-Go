@@ -1,3 +1,4 @@
+import 'price_format.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 
@@ -55,8 +56,8 @@ class DiscountBadge extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final text = isVisa
-        ? 'خصم ${discount.ceil()} ج.م للعميل على حساب الشركة — نصيبك من السعر الكامل'
-        : 'خصم ${discount.ceil()} ج.م على حساب الشركة — حصّل ${riderPrice.ceil()} ج.م بس، والخصم يتضاف لرصيدك';
+        ? 'خصم ${formatEgp(discount)} ج.م للعميل على حساب الشركة — نصيبك من السعر الكامل'
+        : 'خصم ${formatEgp(discount)} ج.م على حساب الشركة — حصّل ${formatEgp(riderPrice)} ج.م بس، والخصم يتضاف لرصيدك';
     return Container(
       padding: EdgeInsets.symmetric(vertical: 10.h, horizontal: 14.w),
       decoration: BoxDecoration(

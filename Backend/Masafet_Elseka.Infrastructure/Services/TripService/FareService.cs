@@ -37,8 +37,11 @@ namespace Masafet_Elseka.Infrastructure.Services.TripService
             if (pricePerKm == null) return null;
 
             var (distanceKm, source) = await GetDistanceKmAsync(startLat, startLng, endLat, endLng, ct);
-            // Distance × price per km, rounded up — no opening fee and no minimum fare.
-            var price = Math.Ceiling((decimal)distanceKm * pricePerKm.Value);
+            // Distance (2 decimals, as the apps show it) × price per km, ALWAYS rounded DOWN
+            // to the nearest 0.5 EGP (owner rule 2026-11-23: never round up).
+            // No opening fee and no minimum fare.
+            var shownKm = Math.Round((decimal)distanceKm, 2, MidpointRounding.AwayFromZero);
+            var price = Math.Floor(shownKm * pricePerKm.Value * 2m) / 2m;
             return new FareQuoteDTO { DistanceKm = Math.Round(distanceKm, 3), Price = price, RiderPrice = price, Source = source };
         }
 
