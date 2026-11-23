@@ -165,6 +165,7 @@ namespace Masafet_Elseka.Infrastructure.Services.UserService
                         PhoneNumber = user.PhoneNumber,
                         Email = user.Email,
                         Gender = user.Gender,
+                        GenderConfirmed = user.GenderConfirmed,
                         NationalId = user.NationalId,
                         ProfilePicture = user.ProfilePicture,
                         Roles = await _userManager.GetRolesAsync(user),
@@ -200,6 +201,7 @@ namespace Masafet_Elseka.Infrastructure.Services.UserService
                     Name = user.FullName,
                     PhoneNumber = user.PhoneNumber,
                     Gender = user.Gender,
+                    GenderConfirmed = user.GenderConfirmed,
                     NationalId = user.NationalId,
                     ProfilePicture = user.ProfilePicture,
                     Roles=await _userManager.GetRolesAsync(user),
@@ -434,7 +436,9 @@ namespace Masafet_Elseka.Infrastructure.Services.UserService
 
                 user.FullName = model.Name ?? user.FullName;
                 user.PhoneNumber = model.PhoneNumber ?? user.PhoneNumber;
-                user.Gender = model.Gender ?? user.Gender;
+                var genderError = ApplyGender(user, model.Gender);
+                if (genderError != null)
+                    return Response<string>.Failure(genderError, 400);
                 user.ProfilePicture = imgPath ?? user.ProfilePicture;
 
                 var result = await _userManager.UpdateAsync(user);
@@ -449,6 +453,53 @@ namespace Masafet_Elseka.Infrastructure.Services.UserService
             {
                 Log.Error(ex, "Updating user {UserId} failed", userId);
                 return Response<string>.Failure($"حدث خطأ اثناء تحديث البيانات", 500);
+            }
+        }
+
+        // Staff-side gender change: validates + normalizes, marks it confirmed. Null/empty = unchanged.
+        private string? ApplyGender(ApplicationUser user, string? gender)
+        {
+            if (string.IsNullOrWhiteSpace(gender)) return null;
+            var g = GenderHelper.Normalize(gender);
+            if (g == null) return GenderHelper.InvalidMessage;
+            if (g != user.Gender || !user.GenderConfirmed)
+            {
+                user.Gender = g;
+                user.GenderConfirmed = true;
+                _driverService.RefreshCachedDriverGender(user.Id, g);
+                DriverHub.InvalidateDriverProfile(user.Id);
+            }
+            return null;
+        }
+
+        public async Task<Response<string>> SetGenderAsync(string userId, string? gender)
+        {
+            try
+            {
+                var g = GenderHelper.Normalize(gender);
+                if (g == null)
+                    return Response<string>.Failure(GenderHelper.InvalidMessage, 400);
+
+                var user = await _userManager.FindByIdAsync(userId);
+                if (user is null)
+                    return Response<string>.Failure("المستخدم غير موجود", 404);
+                if (user.GenderConfirmed)
+                    return Response<string>.Failure("تم تحديد النوع من قبل ولا يمكن تغييره، تواصل مع الدعم", 409);
+
+                user.Gender = g;
+                user.GenderConfirmed = true;
+                var result = await _userManager.UpdateAsync(user);
+                if (!result.Succeeded)
+                    return Response<string>.Failure("حدث خطأ اثناء حفظ النوع", 400);
+
+                _driverService.RefreshCachedDriverGender(user.Id, g);
+                DriverHub.InvalidateDriverProfile(user.Id);
+                return Response<string>.Success(g, "تم حفظ النوع بنجاح", 200);
+            }
+            catch (Exception ex)
+            {
+                Log.Error(ex, "Setting gender for {UserId} failed", userId);
+                return Response<string>.Failure("حدث خطأ اثناء حفظ النوع", 500);
             }
         }
 
@@ -494,7 +545,9 @@ namespace Masafet_Elseka.Infrastructure.Services.UserService
                 user.FullName = model.Name ?? user.FullName;
                 if (!string.IsNullOrWhiteSpace(model.PhoneNumber))
                     user.PhoneNumber = NormalizePhone(model.PhoneNumber);
-                user.Gender = model.Gender ?? user.Gender;
+                var genderError = ApplyGender(user, model.Gender);
+                if (genderError != null)
+                    return Response<UpdateAllDTO>.Failure(genderError, 400);
                 user.NationalId = model.NationalId ?? user.NationalId;
                 user.License = model.License ?? user.License;
                 user.ProfilePicture = imgPath ?? user.ProfilePicture;

@@ -383,6 +383,7 @@ class AuthCubit extends Cubit<AuthState> {
       CacheHelper.clearAllSecuredData(),
       CacheHelper.removeData(key: AppConstants.role),
       CacheHelper.removeData(key: AppConstants.gender),
+      CacheHelper.removeData(key: AppConstants.genderConfirmed),
     ]);
     AppConstants.kUserId = '';
     AppConstants.kRole = '';
@@ -399,6 +400,10 @@ class AuthCubit extends Cubit<AuthState> {
       ),
       CacheHelper.setData(key: AppConstants.role, value: response.role),
       CacheHelper.setData(key: AppConstants.gender, value: response.gender),
+      CacheHelper.setData(
+        key: AppConstants.genderConfirmed,
+        value: response.genderConfirmed,
+      ),
     ]);
     AppConstants.kUserId = response.userId;
     AppConstants.kRole = response.role;
@@ -420,6 +425,10 @@ class AuthCubit extends Cubit<AuthState> {
       CacheHelper.setSecuredString(AppConstants.refreshToken, refresh),
       CacheHelper.setData(key: AppConstants.role, value: role),
       CacheHelper.setData(key: AppConstants.gender, value: gender),
+      CacheHelper.setData(
+        key: AppConstants.genderConfirmed,
+        value: response.genderConfirmed,
+      ),
     ]);
     AppConstants.kUserId = userId;
     AppConstants.kRole = role;

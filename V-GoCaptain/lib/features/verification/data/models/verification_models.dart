@@ -36,7 +36,6 @@ enum DriverDocumentType {
   driverLicenseBack,
   vehicleLicense,
   vehicleLicenseBack,
-  // Optional: not needed to get verified.
   criminalRecord,
   medicalExam,
   scooterMaintenance,
@@ -75,7 +74,6 @@ extension DriverDocumentTypeX on DriverDocumentType {
   };
 
   bool get isOptional =>
-      this == DriverDocumentType.criminalRecord ||
       this == DriverDocumentType.medicalExam ||
       this == DriverDocumentType.scooterMaintenance;
 

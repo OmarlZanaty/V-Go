@@ -409,6 +409,10 @@ class PhoneAuthCubit extends Cubit<PhoneAuthState> {
     await CacheHelper.setSecuredString(AppConstants.refreshToken, refresh);
     await CacheHelper.setSecuredString(AppConstants.userId, userId);
     await CacheHelper.setData(key: AppConstants.role, value: role);
+    await CacheHelper.setData(
+      key: AppConstants.genderConfirmed,
+      value: r.genderConfirmed,
+    );
     await CacheHelper.setData(key: AppConstants.userName, value: name);
     await CacheHelper.setData(key: AppConstants.profileImage, value: pic);
     AppConstants.kToken = token;

@@ -1,3 +1,5 @@
+import '../../../../core/helpers/get_gender.dart';
+
 /// Response of `Auth/phone-login`. For an existing user the session fields are
 /// present; for a new (unregistered) verified phone, [isNewUser] is true and
 /// [phone] carries the verified number to continue sign-up.
@@ -11,6 +13,7 @@ class PhoneLoginResponseModel {
   final String? role;
   final String? name;
   final String? profilePicture;
+  final bool genderConfirmed;
 
   PhoneLoginResponseModel({
     required this.isNewUser,
@@ -22,6 +25,7 @@ class PhoneLoginResponseModel {
     this.role,
     this.name,
     this.profilePicture,
+    this.genderConfirmed = true,
   });
 
   factory PhoneLoginResponseModel.fromJson(Map<String, dynamic> json) {
@@ -36,6 +40,7 @@ class PhoneLoginResponseModel {
       role: (roles is List && roles.isNotEmpty) ? roles.first as String : null,
       name: json['name'] as String?,
       profilePicture: json['profilePicture'] as String?,
+      genderConfirmed: parseGenderConfirmed(json),
     );
   }
 }

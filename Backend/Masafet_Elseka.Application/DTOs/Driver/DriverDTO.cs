@@ -17,6 +17,7 @@ namespace Masafet_Elseka.Application.DTOs.Driver
         public string? PhoneNumber { get; set; }
         public string Email { get; set; }
         public string Gender { get; set; }
+        public bool GenderConfirmed { get; set; }
         public string NationalId { get; set; }
         public string License { get; set; }
         public string? ProfilePicture { get; set; }

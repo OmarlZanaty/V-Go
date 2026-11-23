@@ -286,6 +286,9 @@ namespace Masafet_Elseka.Infrastructure.Migrations
                         .IsRequired()
                         .HasColumnType("nvarchar(max)");
 
+                    b.Property<bool>("GenderConfirmed")
+                        .HasColumnType("bit");
+
                     b.Property<bool?>("IsAvailable")
                         .HasColumnType("bit");
 

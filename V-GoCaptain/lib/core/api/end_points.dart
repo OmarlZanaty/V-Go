@@ -6,6 +6,7 @@ abstract class EndPoint {
   static String get baseUrl => AppConfig.apiBaseUrl;
 
   // Auth
+  static const String setGender = 'User/gender';
   static const String login = 'Auth/login';
   static const String phoneLogin =
       'Auth/phone-login-driver'; // phone + password

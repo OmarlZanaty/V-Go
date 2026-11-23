@@ -161,6 +161,7 @@ namespace Masafet_Elseka.Infrastructure.ExternalService.GoogleAuth.GoogleAuthMan
                             userId = authState.UserData.UserId,
                             name = authState.UserData.Name,
                             gender=authState.UserData.Gender,
+                            genderConfirmed=authState.UserData.GenderConfirmed,
                             profilePicture = authState.UserData.ProfilePicture,
                             roles = authState.UserData.Roles,
                             isAuthenticated = authState.UserData.IsAuthenticated,

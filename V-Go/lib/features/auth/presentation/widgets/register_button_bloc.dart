@@ -7,6 +7,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../../../core/cache/cache_helper.dart';
 import '../../../../core/helpers/app_type.dart';
 import '../../../../core/helpers/extensions.dart';
+import '../../../../core/helpers/get_gender.dart';
 import '../../../../core/helpers/upload_image_to_api.dart';
 import '../../../../core/routing/routes.dart';
 import '../../../../core/utils/app_constants.dart';
@@ -80,6 +81,10 @@ class RegisterButtonBlocConsumer extends StatelessWidget {
   }
 
   _registerFormValidation(BuildContext context) async {
+    if (apiGender(gender) == null) {
+      errorToast(context, 'تنبيه', 'اختار النوع (ذكر أو أنثى).');
+      return;
+    }
     MultipartFile? imageFile;
     if (imageProfile != null) {
       imageFile = await uploadImageToApi(imageProfile ?? File(''));
@@ -91,7 +96,7 @@ class RegisterButtonBlocConsumer extends StatelessWidget {
       fullName: fullNameController.text,
       phone: phoneController.text,
       role: UserRole.client.capitalized,
-      gender: gender == null || gender == 'none' ? null : gender,
+      gender: apiGender(gender),
       imageProfile: imageFile,
       deviceType: deviceType(),
       fcmToken: CacheHelper.getString(AppConstants.fcmToken),

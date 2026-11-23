@@ -76,6 +76,7 @@ namespace Masafet_Elseka.Infrastructure.Services.DriverService
                     Name = driver.FullName,
                     ProfilePicture = driver.ProfilePicture,
                     Gender = driver.Gender,
+                    GenderConfirmed = driver.GenderConfirmed,
                     Email=driver.Email,
                     PhoneNumber = driver.PhoneNumber,
                     License = driver.License!,
@@ -158,6 +159,7 @@ namespace Masafet_Elseka.Infrastructure.Services.DriverService
                         PhoneNumber = driver.PhoneNumber,
                         Email = driver.Email,
                         Gender = driver.Gender,
+                        GenderConfirmed = driver.GenderConfirmed,
                         License = driver.License!,
                         NationalId = driver.NationalId!,
                         ScooterLicense = driver.Scooter?.License,
@@ -254,9 +256,7 @@ namespace Masafet_Elseka.Infrastructure.Services.DriverService
 
                 if (!string.IsNullOrEmpty(clientGender))
                 {
-                    availableDrivers = availableDrivers
-                        .Where(d => string.Equals(d.DriverGender, clientGender, StringComparison.OrdinalIgnoreCase))
-                        .ToList();
+                    availableDrivers = await FilterByGenderAsync(availableDrivers, clientGender);
                 }
 
                 #region can be used for parallel fetching from cache
@@ -358,6 +358,44 @@ namespace Masafet_Elseka.Infrastructure.Services.DriverService
             {
                 return Response<bool>.Failure($"حدث خطأ أثناء تحديث الموقع", 500);
             }
+        }
+
+        /// <summary>
+        /// Keeps only drivers whose gender matches the client's. A cached status without a usable
+        /// DriverGender is resolved from the DB (and written back to the cache) instead of being dropped.
+        /// </summary>
+        public async Task<List<DriverStatusDTO>> FilterByGenderAsync(List<DriverStatusDTO> drivers, string clientGender)
+        {
+            var missing = drivers.Where(d => GenderHelper.Normalize(d.DriverGender) == null)
+                                 .Select(d => d.DriverId).Distinct().ToList();
+            if (missing.Count > 0)
+            {
+                var fromDb = await _context.Users.AsNoTracking()
+                    .Where(u => missing.Contains(u.Id))
+                    .Select(u => new { u.Id, u.Gender })
+                    .ToListAsync();
+                var map = fromDb.ToDictionary(x => x.Id, x => GenderHelper.Normalize(x.Gender) ?? GenderHelper.Male);
+                foreach (var d in drivers.Where(d => GenderHelper.Normalize(d.DriverGender) == null))
+                {
+                    d.DriverGender = map.TryGetValue(d.DriverId, out var g) ? g : GenderHelper.Male;
+                    _cacheService.SetData($"DriverStatus_{d.DriverId}", d);
+                }
+            }
+            return drivers.Where(d => GenderHelper.IsCompatible(clientGender, d.DriverGender)).ToList();
+        }
+
+        public void RefreshCachedDriverGender(string driverId, string gender)
+        {
+            var existing = _cacheService.GetData<DriverStatusDTO>($"DriverStatus_{driverId}");
+            if (existing == null) return;
+            existing.DriverGender = gender;
+            _cacheService.SetData($"DriverStatus_{driverId}", existing);
+        }
+
+        public async Task<string> GetDriverGenderAsync(string driverId)
+        {
+            var g = await _context.Users.AsNoTracking().Where(u => u.Id == driverId).Select(u => u.Gender).FirstOrDefaultAsync();
+            return GenderHelper.Normalize(g) ?? GenderHelper.Male;
         }
 
         public async Task SetDriverStatusToCache(DriverStatusDTO status)

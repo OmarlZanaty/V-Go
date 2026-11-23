@@ -32,7 +32,8 @@ namespace Masafet_Elseka.Application.Interfaces.ITripService
         public Task UpdateTripStateInCache(string tripId, TripStatus newStatus);
         public Task<List<TripResponseDTO>> GetAllTripsFromCache();
         public Task<int> GetTripCountForUser(string userId);
-        public Task<Response<List<TripDetailsDTO>>> GetPendingTrips();
+        // forDriverId: when set, only trips whose rider has the same gender as that captain.
+        public Task<Response<List<TripDetailsDTO>>> GetPendingTrips(string? forDriverId = null);
         public Task<Response<TripProgressDTO>> ArrivedToTrip(string tripId);
         public Task<Response<TripProgressDTO>> StartTrip(string tripId);
         public Task<Response<TripProgressDTO>> EndTrip(string tripId);

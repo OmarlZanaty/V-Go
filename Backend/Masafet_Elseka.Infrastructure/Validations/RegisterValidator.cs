@@ -23,11 +23,7 @@ public class RegisterValidator : AbstractValidator<RegisterDTO>
 
         RuleFor(x => x.Gender)
             .NotEmpty().WithMessage("النوع مطلوب.")
-            .Must(g =>
-                string.Equals(g, "ذكر", StringComparison.OrdinalIgnoreCase) ||
-                string.Equals(g, "أنثى", StringComparison.OrdinalIgnoreCase) ||
-                string.Equals(g, "male", StringComparison.OrdinalIgnoreCase) ||
-                string.Equals(g, "female", StringComparison.OrdinalIgnoreCase))
+            .Must(g => Masafet_Elseka.Application.Helpers.GenderHelper.Normalize(g) != null)
             .WithMessage("النوع يجب أن يكون ذكر / أنثى أو Male / Female.");
 
         RuleFor(x => x.Role)

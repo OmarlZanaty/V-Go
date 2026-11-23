@@ -11,6 +11,8 @@ namespace Masafet_Elseka.Application.DTOs.AuthDTOs
         public string UserId { get; set; }
         public string Name { get; set; }
         public string Gender { get; set; }
+        // false for legacy users whose stored gender was only a default; the app must ask them once.
+        public bool GenderConfirmed { get; set; }
         public bool IsAuthenticated { get; set; }
         // Phone-login: true when the verified phone has no account yet, so the
         // app should continue to sign-up (Phone carries the verified number).

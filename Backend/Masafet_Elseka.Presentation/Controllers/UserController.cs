@@ -159,7 +159,10 @@ namespace Masafet_Elseka.Presentation.Controllers
                 return StatusCode(403, "غير مسموح بتعديل بيانات مستخدم آخر");
             // The phone is the login: only staff may change it (riders go through OTP).
             if (!IsStaff)
+            {
                 model.PhoneNumber = null;
+                model.Gender = null; // a user picks his gender once via PUT api/User/gender; only staff can change it later
+            }
             var result = await _userService.UpdateUserForAdminAsync(userId, model);
             if (result.IsSuccess)
             {
@@ -168,11 +171,27 @@ namespace Masafet_Elseka.Presentation.Controllers
             return StatusCode(result.StatusCode, result.Message);
         }
 
+        // Both roles (rider/captain): choose the gender ONCE. 409 when already confirmed.
+        // Body: { "gender": "Male" | "Female" }  ->  200 { gender, genderConfirmed:true }
+        [HttpPut("gender")]
+        [Authorize(AuthenticationSchemes = JwtBearerDefaults.AuthenticationScheme)]
+        public async Task<IActionResult> SetGender([FromBody] SetGenderDTO model)
+        {
+            var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+            if (string.IsNullOrEmpty(userId)) return Unauthorized();
+            var result = await _userService.SetGenderAsync(userId, model?.Gender);
+            if (result.IsSuccess)
+                return Ok(new { gender = result.Data, genderConfirmed = true, message = result.Message });
+            return StatusCode(result.StatusCode, new { message = result.Message });
+        }
+
         [HttpPut("update/{userId}")]
         public async Task<IActionResult> UpdateAsync(string userId, [FromForm] UserUpdateDTO model)
         {
             if (!CanEdit(userId))
                 return StatusCode(403, "غير مسموح بتعديل بيانات مستخدم آخر");
+            if (!IsStaff)
+                model.Gender = null;
             var result = await _userService.UpdateAsync(userId, model);
             if (result.IsSuccess)
             {

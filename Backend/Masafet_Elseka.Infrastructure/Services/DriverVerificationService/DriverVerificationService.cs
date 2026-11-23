@@ -1,4 +1,4 @@
-using Masafet_Elseka.Application.Common.Pagination;
+﻿using Masafet_Elseka.Application.Common.Pagination;
 using Masafet_Elseka.Application.DTOs.DriverVerification;
 using Masafet_Elseka.Application.ExternalInterfaces.ICloudinaryService;
 using Masafet_Elseka.Application.Interfaces.IDriverFinanceService;
@@ -130,8 +130,8 @@ namespace Masafet_Elseka.Infrastructure.Services.DriverVerificationService
                 Note = user.VerificationNote,
                 DocumentsDeadline = user.DocumentsDeadline,
                 Documents = docs.OrderBy(d => d.Type).Select(ToDto).ToList(),
-                RequiredTypes = Required.Select(t => t.ToString()).ToList(),
-                MissingTypes = Required.Where(t => !usable.Contains(t)).Select(t => t.ToString()).ToList(),
+                RequiredTypes = FinanceService.RequiredFor(user.VerificationStatus).Select(t => t.ToString()).ToList(),
+                MissingTypes = FinanceService.RequiredFor(user.VerificationStatus).Where(t => !usable.Contains(t)).Select(t => t.ToString()).ToList(),
                 CanGoOnline = eligibility.CanGoOnline,
                 BlockCode = eligibility.Code,
                 BlockMessage = eligibility.Message,
@@ -369,7 +369,7 @@ namespace Masafet_Elseka.Infrastructure.Services.DriverVerificationService
             await _context.SaveChangesAsync();
 
             var docs = await _context.DriverDocuments.AsNoTracking().Where(d => d.DriverId == user.Id).ToListAsync();
-            var allApproved = Required.All(t => docs.Any(d => d.Type == t && d.Status == DriverDocumentStatus.Approved));
+            var allApproved = FinanceService.RequiredFor(user.VerificationStatus).All(t => docs.Any(d => d.Type == t && d.Status == DriverDocumentStatus.Approved));
             var inGrace = user.VerificationStatus == DriverVerificationStatus.Approved
                 && user.DocumentsDeadline.HasValue && Now < user.DocumentsDeadline.Value;
 
@@ -416,7 +416,12 @@ namespace Masafet_Elseka.Infrastructure.Services.DriverVerificationService
             if (target == DriverVerificationStatus.Approved)
             {
                 var docs = await _context.DriverDocuments.Where(d => d.DriverId == driverId).ToListAsync();
-                var missing = Required.Where(t => !docs.Any(d => d.Type == t && d.Status != DriverDocumentStatus.Rejected)).ToList();
+                // A suspended captain can't upload anything, so reinstating him must not demand the
+                // newly mandatory criminal record (he was normally approved before the suspension).
+                var requiredNow = user.VerificationStatus == DriverVerificationStatus.Suspended
+                    ? FinanceService.LegacyRequiredDocuments
+                    : FinanceService.RequiredFor(user.VerificationStatus);
+                var missing = requiredNow.Where(t => !docs.Any(d => d.Type == t && d.Status != DriverDocumentStatus.Rejected)).ToList();
                 if (missing.Count > 0)
                     return Response<DriverVerificationDTO>.Failure(
                         "لا يمكن الموافقة: مستندات ناقصة أو مرفوضة (" + string.Join("، ", missing.Select(DocumentName)) + ")", 400);

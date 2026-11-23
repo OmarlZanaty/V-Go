@@ -13,7 +13,9 @@ import '../../../../core/utils/widgets/custom_loading_widget.dart';
 import '../../../../core/utils/widgets/custom_text_field.dart';
 import '../../../../core/utils/widgets/custom_toastification.dart';
 import '../../data/model/social_login_provider.dart';
+import '../../../../core/helpers/get_gender.dart';
 import '../logic/cubit/auth_cubit.dart';
+import '../widgets/gender_radio_widget.dart';
 
 /// Shown the first time a user signs in with Google or Apple.
 /// Collects the required profile (full name + phone). The photo is optional and
@@ -41,7 +43,7 @@ class _GoogleCompleteProfileViewState extends State<GoogleCompleteProfileView> {
   late final TextEditingController _nameController =
       TextEditingController(text: widget.name);
   final _phoneController = TextEditingController();
-  // Optional (App Review 5.1.1(v)): nothing chosen by default; 'none' = prefers not to say.
+  String? _gender; // required: nothing chosen by default
 
   @override
   void dispose() {
@@ -105,6 +107,12 @@ class _GoogleCompleteProfileViewState extends State<GoogleCompleteProfileView> {
                   controller: _phoneController,
                   keyboardType: TextInputType.phone,
                 ),
+                verticalSpace(16),
+                Text('النوع', style: AppStyle.styleMedium14),
+                GenderRadioWidget(
+                  groupValue: _gender,
+                  onGenderChanged: (v) => setState(() => _gender = v),
+                ),
                 verticalSpace(24),
                 busy
                     ? const CustomLoadingWidget()
@@ -122,12 +130,17 @@ class _GoogleCompleteProfileViewState extends State<GoogleCompleteProfileView> {
                             errorToast(context, 'تنبيه', 'يرجى إدخال رقم هاتف صحيح.');
                             return;
                           }
+                          final gender = apiGender(_gender);
+                          if (gender == null) {
+                            errorToast(context, 'تنبيه', 'اختار النوع (ذكر أو أنثى).');
+                            return;
+                          }
                           context.read<AuthCubit>().completeGoogleProfile(
                                 provider: widget.provider,
                                 idToken: widget.idToken,
                                 fullName: name,
                                 phone: phone,
-                                gender: null,
+                                gender: gender,
                                 profilePicture:
                                     widget.photo.isEmpty ? null : widget.photo,
                               );

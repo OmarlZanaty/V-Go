@@ -62,11 +62,15 @@ import '../utils/model/user_model.dart';
 import '../utils/widgets/custom_payment_web_view.dart';
 import '../../features/client/presentation/views/saved_cards_view.dart';
 import '../../features/client/presentation/views/promotions_view.dart';
+import '../../features/auth/presentation/views/gender_gate_view.dart';
+import '../helpers/get_route.dart';
 import 'routes.dart';
 
 class AppRouter {
   static Route<dynamic>? generateRoute(RouteSettings settings) {
     switch (settings.name) {
+      case Routes.genderGateViewRoute:
+        return MaterialPageRoute(builder: (_) => const GenderGateView());
       case Routes.onboraingViewRoute:
         return MaterialPageRoute(builder: (_) => const OnboraingView());
       case Routes.loginViewRoute:
@@ -433,6 +437,9 @@ class AppRouter {
   static String initialRoute() {
     if (!CacheHelper.getBool(AppConstants.showOnboardingBefore)) {
       return Routes.onboraingViewRoute;
+    }
+    if (needsGenderConfirmation()) {
+      return Routes.genderGateViewRoute;
     }
     if (AppConstants.kRole == UserRole.accountant.capitalized) {
       return Routes.accountantDashboardViewRoute;

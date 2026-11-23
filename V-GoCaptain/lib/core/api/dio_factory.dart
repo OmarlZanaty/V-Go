@@ -167,6 +167,7 @@ class TokenService {
   Future<void> clearTokens() async {
     await CacheHelper.clearAllSecuredData();
     await CacheHelper.removeData(key: AppConstants.role);
+    await CacheHelper.removeData(key: AppConstants.genderConfirmed);
     AppConstants.kUserId = '';
     AppConstants.kRole = '';
     AppConstants.kToken = '';

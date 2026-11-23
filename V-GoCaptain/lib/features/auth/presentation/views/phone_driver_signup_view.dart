@@ -29,7 +29,7 @@ class _PhoneDriverSignupViewState extends State<PhoneDriverSignupView> {
   final _nationalId = TextEditingController();
   final _driverLicense = TextEditingController();
   final _scooterLicense = TextEditingController();
-  String _gender = 'Male';
+  String? _gender; // required: nothing chosen by default
   int _scooterType = 0; // 0 = Gasoline, 1 = Electric
 
   // Native sign-ups have no phone in state and use a provider token, so
@@ -74,6 +74,7 @@ class _PhoneDriverSignupViewState extends State<PhoneDriverSignupView> {
     if (_isNativeSignIn && _phone.text.replaceAll(RegExp(r'\D'), '').length < 10) {
       return _toast('يرجى إدخال رقم هاتف صحيح.');
     }
+    if (_gender == null) return _toast('اختار النوع (ذكر أو أنثى).');
     if (_scooterType == 0 && _scooterLicense.text.trim().isEmpty) {
       return _toast('يرجى إدخال رخصة السكوتر (بنزين).');
     }
@@ -201,7 +202,7 @@ class _PhoneDriverSignupViewState extends State<PhoneDriverSignupView> {
                     Icons.confirmation_number_outlined,
                   ),
                   SizedBox(height: 12.h),
-                  Text('الجنس', style: AppStyle.hint),
+                  Text('النوع (مطلوب)', style: AppStyle.hint),
                   Row(
                     children: [
                       Expanded(
@@ -211,7 +212,7 @@ class _PhoneDriverSignupViewState extends State<PhoneDriverSignupView> {
                           title: const Text('ذكر'),
                           activeColor: AppColors.primary,
                           contentPadding: EdgeInsets.zero,
-                          onChanged: (v) => setState(() => _gender = v!),
+                          onChanged: (v) => setState(() => _gender = v),
                         ),
                       ),
                       Expanded(
@@ -221,7 +222,7 @@ class _PhoneDriverSignupViewState extends State<PhoneDriverSignupView> {
                           title: const Text('أنثى'),
                           activeColor: AppColors.primary,
                           contentPadding: EdgeInsets.zero,
-                          onChanged: (v) => setState(() => _gender = v!),
+                          onChanged: (v) => setState(() => _gender = v),
                         ),
                       ),
                     ],

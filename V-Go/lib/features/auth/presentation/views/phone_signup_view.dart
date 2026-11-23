@@ -11,7 +11,9 @@ import '../../../../core/utils/widgets/custom_button.dart';
 import '../../../../core/utils/widgets/custom_loading_widget.dart';
 import '../../../../core/utils/widgets/custom_text_field.dart';
 import '../../../../core/utils/widgets/custom_toastification.dart';
+import '../../../../core/helpers/get_gender.dart';
 import '../logic/phone_auth_cubit/phone_auth_cubit.dart';
+import '../widgets/gender_radio_widget.dart';
 
 /// First-time sign-up for a new phone number: the user sets a password (saved as
 /// the account password), then fills the rest of the profile (name and
@@ -29,7 +31,7 @@ class _PhoneSignupViewState extends State<PhoneSignupView> {
   final _confirmController = TextEditingController();
   final _nameController = TextEditingController();
   final _emailController = TextEditingController();
-  // Optional (App Review 5.1.1(v)): nothing chosen by default; 'none' = prefers not to say.
+  String? _gender; // required: nothing chosen by default
 
   @override
   void dispose() {
@@ -90,6 +92,12 @@ class _PhoneSignupViewState extends State<PhoneSignupView> {
                   controller: _emailController,
                   keyboardType: TextInputType.emailAddress,
                 ),
+                verticalSpace(16),
+                Text('النوع', style: AppStyle.styleMedium14),
+                GenderRadioWidget(
+                  groupValue: _gender,
+                  onGenderChanged: (v) => setState(() => _gender = v),
+                ),
                 verticalSpace(24),
                 busy
                     ? const CustomLoadingWidget()
@@ -121,13 +129,18 @@ class _PhoneSignupViewState extends State<PhoneSignupView> {
       errorToast(context, 'تنبيه', 'يرجى إدخال الاسم.');
       return;
     }
+    final gender = apiGender(_gender);
+    if (gender == null) {
+      errorToast(context, 'تنبيه', 'اختار النوع (ذكر أو أنثى).');
+      return;
+    }
     final email = _emailController.text.trim();
     context.read<PhoneAuthCubit>().register(
           phone: widget.phone,
           password: password,
           fullName: name,
           email: email.isEmpty ? null : email,
-          gender: null,
+          gender: gender,
         );
   }
 }

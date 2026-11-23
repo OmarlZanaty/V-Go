@@ -27,6 +27,8 @@ namespace Masafet_Elseka.Application.Interfaces.User
         public Task<Response<BulkOperationResult>> UnblockUsers(IEnumerable<string> userId);
         public Task<Response<string>> UpdateAsync(string userId, UserUpdateDTO model);
         public Task<Response<UpdateAllDTO>> UpdateUserForAdminAsync(string userId, UpdateAllDTO model);
+        // The signed-in user picks his gender once (409 if already confirmed). Data = normalized gender.
+        public Task<Response<string>> SetGenderAsync(string userId, string? gender);
         public Task<Response<int>> GetUsersNumber(string role);
         public Task<ApplicationUser> GetCurrentUserAsync();
     }

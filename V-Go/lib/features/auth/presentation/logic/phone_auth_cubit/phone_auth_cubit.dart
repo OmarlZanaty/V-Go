@@ -255,6 +255,10 @@ class PhoneAuthCubit extends Cubit<PhoneAuthState> {
     // setData — writing it to secure storage left kRole empty on relaunch, which
     // sent returning users to the login screen every time.
     await CacheHelper.setData(key: AppConstants.role, value: role);
+    await CacheHelper.setData(
+      key: AppConstants.genderConfirmed,
+      value: r.genderConfirmed,
+    );
     AppConstants.kToken = token;
     AppConstants.kUserId = userId;
     AppConstants.kRole = role;

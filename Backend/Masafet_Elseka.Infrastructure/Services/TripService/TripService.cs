@@ -598,7 +598,7 @@ namespace Masafet_Elseka.Infrastructure.Services.TripService
                 return Response<TripProgressDTO>.Failure( $"حدث خطأ أثناء إنهاء هذه الرحلة", 500);
             }
         }
-        public async Task<Response<List<TripDetailsDTO>>> GetPendingTrips()
+        public async Task<Response<List<TripDetailsDTO>>> GetPendingTrips(string? forDriverId = null)
         {
             try
             {
@@ -607,6 +607,16 @@ namespace Masafet_Elseka.Infrastructure.Services.TripService
                         .ThenInclude(us => us.User)
                         .Where(t => t.Status ==TripStatus.Pending)
                     .ToListAsync();
+
+                // A captain only sees trips of riders of his own gender (legacy/unknown = Male).
+                if (!string.IsNullOrEmpty(forDriverId))
+                {
+                    var driverGender = await _context.Users.AsNoTracking()
+                        .Where(u => u.Id == forDriverId).Select(u => u.Gender).FirstOrDefaultAsync();
+                    trips = trips.Where(t => GenderHelper.IsCompatible(
+                        t.UserTrips.FirstOrDefault(ut => ut.Role == UserTripRole.Client)?.User?.Gender,
+                        driverGender)).ToList();
+                }
 
                 var rates = await _ratingService.GetAverageRatesFor(
                     trips.SelectMany(t => t.UserTrips).Select(ut => ut.UserId));

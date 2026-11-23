@@ -77,6 +77,7 @@ namespace Masafet_Elseka.Infrastructure.ExternalService.GoogleAuth.GoogleAuthSer
                     Name = user.FullName,
                     ProfilePicture = user.ProfilePicture,
                     Gender = user.Gender,
+                    GenderConfirmed = user.GenderConfirmed,
                     License = user.License,
                     NationalId = user.NationalId,
                     Roles = userRoles.ToList(),

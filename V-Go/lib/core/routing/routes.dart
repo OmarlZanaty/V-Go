@@ -1,4 +1,5 @@
 abstract class Routes {
+  static const String genderGateViewRoute = "/genderGateView";
   static const String welcomeViewRoute = "/welcomeView";
   static const String accountTypeViewRoute = "/accountTypeView";
   static const String loginViewRoute = "/loginView";

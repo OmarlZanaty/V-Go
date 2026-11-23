@@ -18,6 +18,7 @@ namespace Masafet_Elseka.Application.DTOs.User
         public string Email { get; set; }
         public IList<string> Roles { get; set; }
         public string Gender { get; set; }
+        public bool GenderConfirmed { get; set; }
         public string? NationalId { get; set; }
         public string? ProfilePicture { get; set; }
         public int TripCount { get; set; }

@@ -147,6 +147,10 @@ class AuthCubit extends Cubit<AuthState> {
     );
     await CacheHelper.setSecuredString(AppConstants.userId, result.userId);
     await CacheHelper.setData(key: AppConstants.role, value: result.role);
+    await CacheHelper.setData(
+      key: AppConstants.genderConfirmed,
+      value: result.genderConfirmed,
+    );
     await CacheHelper.setData(key: AppConstants.userName, value: result.name);
     await CacheHelper.setData(
         key: AppConstants.profileImage, value: result.profilePicture);

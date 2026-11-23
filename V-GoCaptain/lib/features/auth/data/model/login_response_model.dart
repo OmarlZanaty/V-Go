@@ -1,3 +1,5 @@
+import '../../../../core/helpers/gender_helper.dart';
+
 class LoginResponseModel {
   final String userId;
   final String token;
@@ -6,6 +8,7 @@ class LoginResponseModel {
   final String role;
   final String name;
   final String profilePicture;
+  final bool genderConfirmed;
 
   LoginResponseModel({
     required this.token,
@@ -15,6 +18,7 @@ class LoginResponseModel {
     required this.gender,
     required this.name,
     required this.profilePicture,
+    this.genderConfirmed = true,
   });
 
   factory LoginResponseModel.fromJson(Map<String, dynamic> json) {
@@ -29,6 +33,7 @@ class LoginResponseModel {
       gender: json['gender']?.toString() ?? '',
       name: json['name']?.toString() ?? '',
       profilePicture: json['profilePicture']?.toString() ?? '',
+      genderConfirmed: parseGenderConfirmed(json),
     );
   }
 }

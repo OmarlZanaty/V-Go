@@ -2,6 +2,7 @@
 using FluentValidation;
 using Google.Apis.Auth;
 using Masafet_Elseka.Application.Common;
+using Masafet_Elseka.Application.Helpers;
 using Masafet_Elseka.Application.DTOs;
 using Masafet_Elseka.Application.DTOs.AuthDTOs;
 using Masafet_Elseka.Application.DTOs.Driver;
@@ -237,6 +238,7 @@ namespace Masafet_Elseka.Infrastructure.Services.AuthService
                     UserId = user.Id,
                     Name = user.FullName,
                     Gender = user.Gender,
+                    GenderConfirmed = user.GenderConfirmed,
                     IsAuthenticated = true,
                     Token = new JwtSecurityTokenHandler().WriteToken(token),
                     RefreshToken = refreshToken,
@@ -308,6 +310,7 @@ namespace Masafet_Elseka.Infrastructure.Services.AuthService
                     UserId = user.Id,
                     Name = user.FullName,
                     Gender = user.Gender,
+                    GenderConfirmed = user.GenderConfirmed,
                     IsAuthenticated = true,
                     IsNewUser = false,
                     Phone = phone,
@@ -383,6 +386,7 @@ namespace Masafet_Elseka.Infrastructure.Services.AuthService
                     UserId = user.Id,
                     Name = user.FullName,
                     Gender = user.Gender,
+                    GenderConfirmed = user.GenderConfirmed,
                     IsAuthenticated = true,
                     IsNewUser = false,
                     Phone = phone,
@@ -412,6 +416,8 @@ namespace Masafet_Elseka.Infrastructure.Services.AuthService
                     return Response<LoginResponseDTO>.Failure("رقم الهاتف وكلمة المرور مطلوبان", 400);
                 if (string.IsNullOrWhiteSpace(model.FullName))
                     return Response<LoginResponseDTO>.Failure("الاسم مطلوب", 400);
+                if (GenderHelper.Normalize(model.Gender) == null)
+                    return Response<LoginResponseDTO>.Failure(GenderHelper.InvalidMessage, 400);
 
                 var phone = NormalizePhone(model.Phone);
 
@@ -434,7 +440,8 @@ namespace Masafet_Elseka.Infrastructure.Services.AuthService
                     FullName = model.FullName.Trim(),
                     Email = string.IsNullOrWhiteSpace(model.Email) ? null : model.Email.Trim(),
                     EmailConfirmed = true,
-                    Gender = string.IsNullOrWhiteSpace(model.Gender) ? "Male" : model.Gender,
+                    Gender = GenderHelper.Normalize(model.Gender)!,
+                    GenderConfirmed = true,
                     CreatedAt = DateTime.UtcNow,
                 };
 
@@ -464,6 +471,7 @@ namespace Masafet_Elseka.Infrastructure.Services.AuthService
                     UserId = user.Id,
                     Name = user.FullName,
                     Gender = user.Gender,
+                    GenderConfirmed = user.GenderConfirmed,
                     IsAuthenticated = true,
                     IsNewUser = false,
                     Phone = phone,
@@ -515,6 +523,9 @@ namespace Masafet_Elseka.Infrastructure.Services.AuthService
                 }
                 else
                 {
+                    if (GenderHelper.Normalize(model.Gender) == null)
+                        return Response<LoginResponseDTO>.Failure(GenderHelper.InvalidMessage, 400);
+
                     if (!string.IsNullOrWhiteSpace(model.Email))
                     {
                         var byEmail = await _userManager.FindByEmailAsync(model.Email);
@@ -530,7 +541,8 @@ namespace Masafet_Elseka.Infrastructure.Services.AuthService
                         FullName = model.FullName.Trim(),
                         Email = string.IsNullOrWhiteSpace(model.Email) ? null : model.Email.Trim(),
                         EmailConfirmed = true,
-                        Gender = string.IsNullOrWhiteSpace(model.Gender) ? "Male" : model.Gender,
+                        Gender = GenderHelper.Normalize(model.Gender)!,
+                    GenderConfirmed = true,
                         NationalId = model.NationalId,
                         License = model.DriverLicense,
                         CreatedAt = DateTime.UtcNow,
@@ -572,6 +584,7 @@ namespace Masafet_Elseka.Infrastructure.Services.AuthService
                     UserId = user.Id,
                     Name = user.FullName,
                     Gender = user.Gender,
+                    GenderConfirmed = user.GenderConfirmed,
                     IsAuthenticated = true,
                     IsNewUser = false,
                     Phone = phone,
@@ -1015,7 +1028,8 @@ namespace Masafet_Elseka.Infrastructure.Services.AuthService
                     // Gender is optional for riders (App Review 5.1.1(v)); the column
                     // isn't nullable, so an unanswered one gets the same default the
                     // phone and Google sign-ups already use.
-                    Gender = string.IsNullOrWhiteSpace(model.Gender) ? "Male" : model.Gender,
+                    Gender = GenderHelper.Normalize(model.Gender)!,
+                    GenderConfirmed = true,
                     ProfilePicture = photoPath.Url,
                     License=model.DriverLicense,
                     NationalId = model.NationalId,
@@ -1220,6 +1234,9 @@ namespace Masafet_Elseka.Infrastructure.Services.AuthService
                     }, "مستخدم جديد، يرجى إكمال البيانات", 200);
                 }
 
+                if (GenderHelper.Normalize(model.Gender) == null)
+                    return Response<LoginResponseDTO>.Failure(GenderHelper.InvalidMessage, 400);
+
                 var phone = NormalizePhone(model.Phone);
                 var phoneOwner = await _userManager.Users.FirstOrDefaultAsync(u => u.PhoneNumber == phone);
                 if (phoneOwner != null)
@@ -1233,7 +1250,8 @@ namespace Masafet_Elseka.Infrastructure.Services.AuthService
                     FullName = model.FullName.Trim(),
                     PhoneNumber = phone,
                     PhoneNumberConfirmed = false,
-                    Gender = string.IsNullOrWhiteSpace(model.Gender) ? "Male" : model.Gender,
+                    Gender = GenderHelper.Normalize(model.Gender)!,
+                    GenderConfirmed = true,
                     CreatedAt = DateTime.UtcNow,
                     ProfilePicture = string.IsNullOrWhiteSpace(model.ProfilePicture)
                         ? (picture ?? "")
@@ -1311,6 +1329,9 @@ namespace Masafet_Elseka.Infrastructure.Services.AuthService
             if (await _userManager.Users.AnyAsync(u => u.PhoneNumber == captainPhone))
                 return Response<LoginResponseDTO>.Failure("رقم الهاتف مستخدم بالفعل في حساب آخر.", 409);
 
+            if (user == null && GenderHelper.Normalize(model.Gender) == null)
+                return Response<LoginResponseDTO>.Failure(GenderHelper.InvalidMessage, 400);
+
             if (user == null)
             {
                 user = new ApplicationUser
@@ -1320,7 +1341,8 @@ namespace Masafet_Elseka.Infrastructure.Services.AuthService
                     EmailConfirmed = true,
                     PhoneNumber = captainPhone,
                     FullName = model.FullName.Trim(),
-                    Gender = string.IsNullOrWhiteSpace(model.Gender) ? "Male" : model.Gender,
+                    Gender = GenderHelper.Normalize(model.Gender)!,
+                    GenderConfirmed = true,
                     NationalId = model.NationalId,
                     License = model.DriverLicense,
                     ProfilePicture = picture ?? "",
@@ -1410,6 +1432,7 @@ namespace Masafet_Elseka.Infrastructure.Services.AuthService
                 UserId = user.Id,
                 Name = user.FullName,
                 Gender = user.Gender,
+                GenderConfirmed = user.GenderConfirmed,
                 IsAuthenticated = true,
                 IsNewUser = isNewUser,
                 Phone = user.PhoneNumber,

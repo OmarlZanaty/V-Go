@@ -11,6 +11,9 @@ namespace Masafet_Elseka.Domain.Entities
     {
         public string FullName { get; set; }
         public string Gender { get; set; }
+        // True once the user (or an admin) actually chose the gender. Legacy rows are false
+        // because every pre-existing user was defaulted to "Male".
+        public bool GenderConfirmed { get; set; }
         public string? LastLogin { get; set; }
         public string? ProfilePicture { get; set; }
         public string? NationalId { get; set; }

@@ -76,7 +76,9 @@ namespace Masafet_Elseka.Presentation.Controllers
         [HttpGet("GetAllPendingTrips")]
         public async Task<IActionResult> GetPendingTrips()
         {
-            var response = await _tripService.GetPendingTrips();
+            // Captains get only same-gender riders' trips; staff see everything.
+            var forDriverId = User.IsInRole("Driver") && !IsPrivileged ? (CurrentUserId ?? "__none__") : null;
+            var response = await _tripService.GetPendingTrips(forDriverId);
             if (response.IsSuccess)
             {
                 return StatusCode(response.StatusCode, response.Data);

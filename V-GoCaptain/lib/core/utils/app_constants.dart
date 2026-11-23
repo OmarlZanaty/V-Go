@@ -4,6 +4,7 @@ abstract class AppConstants {
   static const String refreshToken = "refreshToken";
   static const String role = "role";
   static const String gender = "gender";
+  static const String genderConfirmed = "genderConfirmed";
   static const String userId = "userId";
   static const String userName = "userName";
   static const String profileImage = "profileImage";

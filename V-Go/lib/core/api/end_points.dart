@@ -13,6 +13,7 @@ abstract class EndPoint {
   static const String myPromotions = 'Promotions/mine';
   static const String redeemPromotion = 'Promotions/redeem';
 
+  static const String setGender = 'User/gender';
   static const String login = 'Auth/login';
   static const String phoneLogin = 'Auth/phone-login'; // phone + password
   static const String phoneRegister = 'Auth/phone-register'; // phone + password

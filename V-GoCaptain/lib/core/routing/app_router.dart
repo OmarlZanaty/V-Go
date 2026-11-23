@@ -29,6 +29,8 @@ import '../../features/shell/presentation/views/captain_shell_view.dart';
 import '../../features/verification/data/repo/verification_repo.dart';
 import '../../features/verification/presentation/cubit/verification_cubit.dart';
 import '../../features/verification/presentation/views/verification_view.dart';
+import '../../features/auth/presentation/views/gender_gate_view.dart';
+import '../cache/cache_helper.dart';
 import '../di/di.dart';
 import '../services/realtime_service.dart';
 import '../utils/app_constants.dart';
@@ -106,11 +108,16 @@ class AppRouter {
         return _page(_auth(const ChangePasswordView()));
 
       case Routes.captainHomeViewRoute:
+        final openVerification =
+            args?['openVerificationOnStart'] as bool? ?? false;
+        // Existing captains must confirm their gender before reaching home.
+        if (!CacheHelper.getBool(AppConstants.genderConfirmed)) {
+          return _page(
+            GenderGateView(openVerificationOnStart: openVerification),
+          );
+        }
         return _page(
-          CaptainShellView(
-            openVerificationOnStart:
-                args?['openVerificationOnStart'] as bool? ?? false,
-          ),
+          CaptainShellView(openVerificationOnStart: openVerification),
         );
 
       case Routes.scooterViewRoute:

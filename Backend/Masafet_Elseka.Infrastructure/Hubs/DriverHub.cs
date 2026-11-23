@@ -38,6 +38,8 @@ namespace Masafet_Elseka.Infrastructure.Hubs
         // profile photo change shows up without a redeploy.
         private static readonly ConcurrentDictionary<string, (string? Gender, string? ProfilePhoto, DateTime CachedAt)> _driverProfiles = new();
         private static readonly TimeSpan DriverProfileTtl = TimeSpan.FromMinutes(10);
+        /// <summary>Drop the cached profile (gender/photo) so the next status update re-reads the DB.</summary>
+        public static void InvalidateDriverProfile(string driverId) => _driverProfiles.TryRemove(driverId, out _);
         private readonly ITripService _tripService;
         private readonly UserManager<ApplicationUser> _userManager;
         private readonly IHubContext<TripHub> _tripHubContext;
@@ -109,19 +111,20 @@ namespace Masafet_Elseka.Infrastructure.Hubs
                 }
             }
 
-            if (string.IsNullOrEmpty(status.DriverGender))
             {
-                // The app never sends these, so without the cache every location
-                // tick costs a user lookup in the DB.
+                // Gender drives dispatch (female<->female, male<->male), so it always comes
+                // from the server profile, never from what the app sends. The cache keeps
+                // this from costing a user lookup on every location tick.
                 if (!_driverProfiles.TryGetValue(driverId, out var profile)
                     || DateTime.UtcNow - profile.CachedAt > DriverProfileTtl)
                 {
                     var driver = await _userManager.FindByIdAsync(driverId);
-                    profile = (driver?.Gender, driver?.ProfilePicture, DateTime.UtcNow);
+                    profile = (driver == null ? null : (GenderHelper.Normalize(driver.Gender) ?? GenderHelper.Male), driver?.ProfilePicture, DateTime.UtcNow);
                     _driverProfiles[driverId] = profile;
                 }
-                status.DriverGender = profile.Gender;
-                status.ProfilePhoto = profile.ProfilePhoto;
+                status.DriverGender = profile.Gender ?? GenderHelper.Normalize(status.DriverGender);
+                if (string.IsNullOrEmpty(status.ProfilePhoto))
+                    status.ProfilePhoto = profile.ProfilePhoto;
             }
 
             _driversIds[Context.ConnectionId] = driverId;
@@ -172,7 +175,7 @@ namespace Masafet_Elseka.Infrastructure.Hubs
             {
                 await Groups.AddToGroupAsync(Context.ConnectionId, "Drivers");
                 await Groups.AddToGroupAsync(Context.ConnectionId, $"Driver_{driverId}");
-                await NotifyPendingTripsToDriver(driverId, status.Latitude, status.Longitude);
+                await NotifyPendingTripsToDriver(driverId, status.Latitude, status.Longitude, status.DriverGender);
             }
             else
             {
@@ -257,7 +260,7 @@ namespace Masafet_Elseka.Infrastructure.Hubs
             await Groups.RemoveFromGroupAsync(Context.ConnectionId, "Admin");
             await base.OnDisconnectedAsync(exception);
         }
-        private async Task NotifyPendingTripsToDriver(string driverId, double? latitude, double? longitude)
+        private async Task NotifyPendingTripsToDriver(string driverId, double? latitude, double? longitude, string? driverGender)
         {
             var allTrips = await _tripService.GetAllTripsFromCache();
 
@@ -269,8 +272,12 @@ namespace Masafet_Elseka.Infrastructure.Hubs
                 return;
 
             var radiusKm = await _dispatch.GetRadiusKmAsync();
+            var driverG = GenderHelper.Normalize(driverGender) ?? GenderHelper.Male;
             foreach (var trip in pendingTrips)
             {
+                // Never cross genders: a captain only sees trips from riders of his own gender.
+                if (!GenderHelper.IsCompatible(trip.ClientGender, driverG))
+                    continue;
                 if(latitude.HasValue && longitude.HasValue)
                 {
                     // Proximity = distance from the driver to the trip's PICKUP point.

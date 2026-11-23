@@ -147,6 +147,7 @@ class TokenService {
       CacheHelper.clearAllSecuredData(),
       CacheHelper.removeData(key: AppConstants.role),
       CacheHelper.removeData(key: AppConstants.gender),
+      CacheHelper.removeData(key: AppConstants.genderConfirmed),
     ]);
     AppConstants.kUserId = '';
     AppConstants.kRole = '';

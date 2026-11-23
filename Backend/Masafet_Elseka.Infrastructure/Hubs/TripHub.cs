@@ -188,6 +188,14 @@ namespace Masafet_Elseka.Infrastructure.Hubs
                     return Response<TripResponseDTO>.Failure("هذا الطلب غير صالح", 400);
                 }
 
+                // The rider is the signed-in caller, never a client-supplied id (otherwise anyone
+                // could book as another user and bypass gender matching). Staff keep the old behavior.
+                var callerId = Context.User?.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+                var callerIsStaff = Context.User?.FindAll(ClaimTypes.Role)
+                    .Any(c => c.Value == "Admin" || c.Value == "Dispatcher") == true;
+                if (!callerIsStaff && !string.IsNullOrEmpty(callerId))
+                    request.UserId = callerId;
+
                 var userResult = await _userService.GetByIdAsync(request.UserId);
                 if (!userResult.IsSuccess)
                 {
@@ -229,7 +237,7 @@ namespace Masafet_Elseka.Infrastructure.Hubs
                 var trip = createTrip.Data;
                 trip.ClientId = userResult.Data.Id;
                 trip.ClientName = userResult.Data.Name;
-                trip.ClientGender = userResult.Data.Gender;
+                trip.ClientGender = GenderHelper.Normalize(userResult.Data.Gender) ?? GenderHelper.Male;
                 trip.ClientPhone = userResult.Data.PhoneNumber;
                 trip.ClientProfilePicture = userResult.Data.ProfilePicture;
                 await _tripService.SetTripToCache(trip);
@@ -298,6 +306,15 @@ namespace Masafet_Elseka.Infrastructure.Hubs
 
                 if (driver.IsAvailable==false)
                     return Response<string>.Failure("السائق غير متاح حالياً", 400);
+
+                // Defense in depth: even if an offer leaked (stale app/cache), a captain can never
+                // accept a trip of the other gender. Legacy/unknown = "Male".
+                var tripClientGender = await _context.UserTrips
+                    .Where(ut => ut.TripId == tripId && ut.Role == UserTripRole.Client)
+                    .Select(ut => ut.User.Gender)
+                    .FirstOrDefaultAsync();
+                if (!GenderHelper.IsCompatible(tripClientGender, driver.Gender))
+                    return Response<string>.Failure("هذه الرحلة غير متاحة لك", 403);
 
                 trip.Status = TripStatus.Accepted;
 
@@ -613,7 +630,7 @@ namespace Masafet_Elseka.Infrastructure.Hubs
                     RiderPrice = trip.Price - trip.DiscountAmount,
                     ClientId = client.Id,
                     ClientName = client.Name,
-                    ClientGender = client.Gender,
+                    ClientGender = GenderHelper.Normalize(client.Gender) ?? GenderHelper.Male,
                     ClientPhone = client.PhoneNumber,
                     ClientProfilePicture = client.ProfilePicture,
                     ClientRating = (double)(client.Rate ?? 0)
@@ -814,9 +831,10 @@ namespace Masafet_Elseka.Infrastructure.Hubs
         #region Notify Avilable Drivers Event
         private async Task NotifyAvailableDrivers(TripRequest request, TripResponseDTO trip, UserDTO client, string? excludeDriverId = null)
         {
-            // Notify ALL available nearby drivers regardless of gender — gender
-            // matching previously hid new-ride offers from opposite-gender captains.
-            var drivers = await _driverService.GetAvailableDriversFromCache();
+            // Gender rule (owner, 2026-11-23): female riders <-> female captains, male <-> male,
+            // never crossed. Legacy/unknown genders count as "Male" (the old default).
+            var drivers = await _driverService.GetAvailableDriversFromCache(
+                GenderHelper.Normalize(client.Gender) ?? GenderHelper.Male);
             var availableDrivers = new List<DriverStatusDTO>();
 
             if (!drivers.IsSuccess || drivers.Data == null || !drivers.Data.Any())
@@ -971,7 +989,8 @@ namespace Masafet_Elseka.Infrastructure.Hubs
 
         private async Task NotifyOtherDriversTripTaken(string tripId, string assignedDriverId, string clientGender)
         {
-            var availableDrivers = await _driverService.GetAvailableDriversFromCache();
+            var availableDrivers = await _driverService.GetAvailableDriversFromCache(
+                GenderHelper.Normalize(clientGender) ?? GenderHelper.Male);
             if (availableDrivers.IsSuccess && availableDrivers.Data != null)
             {
                 foreach (var driver in availableDrivers.Data)
@@ -1119,7 +1138,8 @@ namespace Masafet_Elseka.Infrastructure.Hubs
 
         private async Task NotifyAvailableDriversTripCancelled(string tripId, string userId, string Gender)
         {
-            var availableDrivers = await _driverService.GetAvailableDriversFromCache();
+            var availableDrivers = await _driverService.GetAvailableDriversFromCache(
+                GenderHelper.Normalize(Gender) ?? GenderHelper.Male);
 
             if (availableDrivers.IsSuccess && availableDrivers.Data != null)
             {

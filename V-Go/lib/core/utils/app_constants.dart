@@ -7,6 +7,7 @@ abstract class AppConstants {
   static const String refreshToken = "refreshToken";
   static const String role = "role";
   static const String gender = "gender";
+  static const String genderConfirmed = "genderConfirmed";
   static const String userId = "userId";
   static const String fcmToken = "fcmToken";
   static const String showOnboardingBefore = "showOnboardingBefore";

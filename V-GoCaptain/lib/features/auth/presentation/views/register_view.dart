@@ -33,7 +33,7 @@ class _RegisterViewState extends State<RegisterView> {
   final _driverLicense = TextEditingController();
   final _scooterLicense = TextEditingController();
 
-  String _gender = 'male';
+  String? _gender; // required: nothing chosen by default
   String _scooterType = 'electric'; // gasoline | electric
   File? _photo;
 
@@ -56,6 +56,10 @@ class _RegisterViewState extends State<RegisterView> {
 
   Future<void> _submit(BuildContext context) async {
     if (!(_formKey.currentState?.validate() ?? false)) return;
+    if (_gender == null) {
+      _toast(context, 'اختار النوع (ذكر أو أنثى)');
+      return;
+    }
     if (_photo == null) {
       _toast(context, 'برجاء إضافة صورة شخصية');
       return;
@@ -66,7 +70,7 @@ class _RegisterViewState extends State<RegisterView> {
       fullName: _name.text.trim(),
       email: _email.text.trim(),
       phone: _phone.text.trim(),
-      gender: _gender,
+      gender: _gender == 'female' ? 'Female' : 'Male',
       role: 'Driver',
       password: _password.text,
       confirmPassword: _confirm.text,
@@ -215,7 +219,7 @@ class _RegisterViewState extends State<RegisterView> {
     );
   }
 
-  Widget _radio(String value, String label, String group, ValueChanged<String> onChanged) {
+  Widget _radio(String value, String label, String? group, ValueChanged<String> onChanged) {
     return InkWell(
       onTap: () => onChanged(value),
       child: Row(

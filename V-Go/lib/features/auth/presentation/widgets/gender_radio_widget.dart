@@ -59,7 +59,7 @@ class GenderRadioWidget extends StatelessWidget {
                       activeColor: AppColors.primary,
                     ),
                     Text(
-                      'انثى',
+                      'أنثى',
                       style: AppStyle.styleMedium16.copyWith(
                         color: AppColors.white,
                       ),

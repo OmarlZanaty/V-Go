@@ -1,4 +1,4 @@
-using Masafet_Elseka.Application.Common.Pagination;
+﻿using Masafet_Elseka.Application.Common.Pagination;
 using Masafet_Elseka.Application.DTOs.DriverFinance;
 using Masafet_Elseka.Application.Interfaces.IDriverFinanceService;
 using Masafet_Elseka.Application.Interfaces.INotificationService;
@@ -33,7 +33,9 @@ namespace Masafet_Elseka.Infrastructure.Services.DriverFinanceService
         private static readonly ConcurrentDictionary<string, (OnlineEligibilityDTO Result, DateTime At)> _eligibilityCache = new();
         private static readonly TimeSpan EligibilityTtl = TimeSpan.FromSeconds(20);
 
-        public static readonly DriverDocumentType[] RequiredDocuments =
+        // What captains verified BEFORE the criminal record became mandatory (2026-11-23) had to upload.
+        // Captains already Approved are held to this set only, so they are never blocked for the new one.
+        public static readonly DriverDocumentType[] LegacyRequiredDocuments =
         {
             DriverDocumentType.Selfie,
             DriverDocumentType.NationalIdFront,
@@ -43,6 +45,14 @@ namespace Masafet_Elseka.Infrastructure.Services.DriverFinanceService
             DriverDocumentType.VehicleLicense,
             DriverDocumentType.VehicleLicenseBack,
         };
+
+        // Everything a NEW / not-yet-verified captain must upload (adds the criminal record, الفيش الجنائي).
+        public static readonly DriverDocumentType[] RequiredDocuments =
+            LegacyRequiredDocuments.Concat(new[] { DriverDocumentType.CriminalRecord }).ToArray();
+
+        // Already-Approved captains are grandfathered on the legacy set; everyone else needs the full set.
+        public static DriverDocumentType[] RequiredFor(DriverVerificationStatus status) =>
+            status == DriverVerificationStatus.Approved ? LegacyRequiredDocuments : RequiredDocuments;
 
         public DriverFinanceService(Context context, UserManager<ApplicationUser> userManager,
             IHubContext<TripHub> tripHub, INotificationService notificationService)
@@ -507,9 +517,9 @@ namespace Masafet_Elseka.Infrastructure.Services.DriverFinanceService
             {
                 var uploaded = await _context.DriverDocuments
                     .Where(d => d.DriverId == driverId && d.Status != DriverDocumentStatus.Rejected
-                        && RequiredDocuments.Contains(d.Type))
+                        && LegacyRequiredDocuments.Contains(d.Type))
                     .Select(d => d.Type).Distinct().CountAsync();
-                if (uploaded < RequiredDocuments.Length)
+                if (uploaded < LegacyRequiredDocuments.Length)
                     return Blocked("DOCS_OVERDUE", "انتهت مهلة رفع المستندات. ارفع صورتك ومستنداتك علشان تقدر تشتغل تاني");
             }
 

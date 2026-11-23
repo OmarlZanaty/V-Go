@@ -22,6 +22,7 @@ class ProfileView extends StatelessWidget {
     } catch (_) {}
     await CacheHelper.clearAllSecuredData();
     await CacheHelper.removeData(key: AppConstants.role);
+    await CacheHelper.removeData(key: AppConstants.genderConfirmed);
     await CacheHelper.removeData(key: AppConstants.userName);
     await CacheHelper.removeData(key: AppConstants.profileImage);
     AppConstants.kToken = '';

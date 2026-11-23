@@ -17,6 +17,10 @@ namespace Masafet_Elseka.Application.Interfaces.IDriverService
         public Task<Response<DriverDTO>> GetByIdAsync(string Id);
         public Task<Response<ICollection<DriverStatusDTO>>> GetAvailableDrivers();
         public Task<Response<ICollection<DriverStatusDTO>>> GetAvailableDriversFromCache(string? clientGender = null);
+        /// <summary>Normalized gender ("Male"/"Female") of a driver straight from the DB; legacy/unknown = "Male".</summary>
+        public Task<string> GetDriverGenderAsync(string driverId);
+        /// <summary>Refresh the gender stored in the cached driver status (after a gender change).</summary>
+        public void RefreshCachedDriverGender(string driverId, string gender);
         public Task<Response<bool>> UpdateAvailability(string driverId, bool isAvailable);
         public Task<Response<bool>> UpdateLocation(string driverId, double latitude, double longitude);
         public Task SetDriverStatusToCache(DriverStatusDTO status);
