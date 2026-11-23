@@ -18,6 +18,9 @@ namespace Masafet_Elseka.Domain.Entities
         public ApplicationUser User { get; set; }
 
         public bool IsRead { get; set; }
+
+        // Created by the admin dashboard broadcast (used to pick users not yet reached).
+        public bool IsBroadcast { get; set; }
         public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     }
 

@@ -53,19 +53,31 @@ namespace Masafet_Elseka.Presentation.Controllers
         // Dashboard «الإشعارات» page.
         [Authorize(Roles = "Admin", AuthenticationSchemes = JwtBearerDefaults.AuthenticationScheme)]
         [HttpPost("sendToAll")]
-        public async Task<IActionResult> SendToAll([FromBody] BroadcastNotificationDTO model, CancellationToken ct)
-        {
-            var result = await _notificationService.BroadcastAsync(model.Title, model.Body, null, ct);
-            return StatusCode(result.StatusCode, new { message = result.Message, data = result.Data });
-        }
+        public Task<IActionResult> SendToAll([FromBody] BroadcastNotificationDTO model, CancellationToken ct)
+            => Broadcast(model, null, ct);
 
         [Authorize(Roles = "Admin", AuthenticationSchemes = JwtBearerDefaults.AuthenticationScheme)]
         [HttpPost("sendToRole")]
-        public async Task<IActionResult> SendToRole([FromBody] BroadcastNotificationDTO model, CancellationToken ct)
+        public Task<IActionResult> SendToRole([FromBody] BroadcastNotificationDTO model, CancellationToken ct)
         {
             if (model.Role is not ("Client" or "Driver"))
-                return BadRequest(new { message = "الفئة لازم تكون Client أو Driver" });
-            var result = await _notificationService.BroadcastAsync(model.Title, model.Body, model.Role, ct);
+                return Task.FromResult<IActionResult>(BadRequest(new { message = "الفئة لازم تكون Client أو Driver" }));
+            return Broadcast(model, model.Role, ct);
+        }
+
+        [Authorize(Roles = "Admin", AuthenticationSchemes = JwtBearerDefaults.AuthenticationScheme)]
+        [HttpGet("broadcastStats")]
+        public async Task<IActionResult> BroadcastStats([FromQuery] string? role, CancellationToken ct)
+        {
+            var result = await _notificationService.BroadcastStatsAsync(role, ct);
+            return StatusCode(result.StatusCode, new { message = result.Message, data = result.Data });
+        }
+
+        private async Task<IActionResult> Broadcast(BroadcastNotificationDTO model, string? role, CancellationToken ct)
+        {
+            if (model.Limit is <= 0)
+                return BadRequest(new { message = "عدد المستلمين لازم يكون أكبر من صفر" });
+            var result = await _notificationService.BroadcastAsync(model.Title, model.Body, role, model.Limit, model.OnlyNew ?? true, ct);
             return StatusCode(result.StatusCode, new { message = result.Message, data = result.Data });
         }
     }
@@ -75,5 +87,9 @@ namespace Masafet_Elseka.Presentation.Controllers
         public string Title { get; set; } = string.Empty;
         public string Body { get; set; } = string.Empty;
         public string? Role { get; set; }
+        // Optional: send to this many users only, picked at random.
+        public int? Limit { get; set; }
+        // With Limit: pick only among users never reached by a broadcast (default true).
+        public bool? OnlyNew { get; set; }
     }
 }

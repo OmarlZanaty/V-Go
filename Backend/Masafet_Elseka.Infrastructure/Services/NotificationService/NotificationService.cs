@@ -9,6 +9,7 @@ using Masafet_Elseka.Infrastructure.Data;
 using Masafet_Elseka.Infrastructure.ExtensionMethods;
 using Masafet_Elseka.Infrastructure.UOW;
 using Microsoft.AspNetCore.Identity;
+using Microsoft.EntityFrameworkCore;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -132,18 +133,20 @@ namespace Masafet_Elseka.Infrastructure.Services.NotificationService
             await SendNotificationToUserAsync(userId, title, body, data, ct);
         }
 
-        public async Task<Response<object>> BroadcastAsync(string title, string body, string? role, CancellationToken ct = default)
+        public async Task<Response<object>> BroadcastAsync(string title, string body, string? role, int? limit = null, bool onlyNew = true, CancellationToken ct = default)
         {
             if (string.IsNullOrWhiteSpace(title) || string.IsNullOrWhiteSpace(body))
                 return Response<object>.Failure("العنوان والنص مطلوبين", 400);
+            if (limit is <= 0)
+                return Response<object>.Failure("عدد المستلمين لازم يكون أكبر من صفر", 400);
 
-            var roles = role is "Client" or "Driver" ? new[] { role } : new[] { "Client", "Driver" };
-            var userIds = new HashSet<string>();
-            foreach (var r in roles)
-                foreach (var u in await _userManager.GetUsersInRoleAsync(r))
-                    if (!u.IsDeleted && !u.IsBlocked) userIds.Add(u.Id);
+            var roles = BroadcastSelection.RolesFor(role);
+            // No limit = everyone (each send is still marked IsBroadcast so later limited sends skip them).
+            // Limited: only users with an active push device, so "15" means 15 phones get it.
+            var candidates = await BroadcastSelection.CandidateIds(_context, roles, limit != null && onlyNew, reachableOnly: limit != null).ToListAsync(ct);
+            var userIds = limit == null ? candidates : BroadcastSelection.Pick(candidates, limit.Value);
             if (userIds.Count == 0)
-                return Response<object>.Success(new { users = 0, devices = 0 }, "مفيش مستخدمين", 200);
+                return Response<object>.Success(new { users = 0, devices = 0, remainingNew = 0 }, "مفيش مستخدمين", 200);
 
             // Saved so it also shows in each user's in-app notifications list.
             var now = DateTime.Now.ToEgyptTime();
@@ -153,12 +156,14 @@ namespace Masafet_Elseka.Infrastructure.Services.NotificationService
                 Title = title,
                 Body = body,
                 CreatedAt = now,
-                IsRead = false
+                IsRead = false,
+                IsBroadcast = true
             }));
             await _context.SaveChangesAsync(ct);
 
+            var idSet = userIds.ToHashSet();
             var devices = _context.Set<UserDevice>()
-                .Where(d => d.IsActive && !d.IsDeletd && userIds.Contains(d.UserId))
+                .Where(d => d.IsActive && !d.IsDeletd && idSet.Contains(d.UserId))
                 .ToList();
             var tokens = devices.Select(d => d.DeviceToken).Distinct().ToList();
             var message = new PushFireBaseNotificationMessage { Title = title, Body = body };
@@ -177,10 +182,19 @@ namespace Masafet_Elseka.Infrastructure.Services.NotificationService
                 await _context.SaveChangesAsync(ct);
             }
 
-            return Response<object>.Success(new { users = userIds.Count, devices = tokens.Count - dead.Count },
-                $"اتبعت لـ {userIds.Count} مستخدم", 200);
+            var remaining = await BroadcastSelection.CandidateIds(_context, roles, true, reachableOnly: true).CountAsync(ct);
+            return Response<object>.Success(new { users = userIds.Count, devices = tokens.Count - dead.Count, remainingNew = remaining },
+                $"اتبعت لـ {userIds.Count} مستخدم، المتبقي {remaining}", 200);
         }
 
+        public async Task<Response<object>> BroadcastStatsAsync(string? role, CancellationToken ct = default)
+        {
+            var roles = BroadcastSelection.RolesFor(role);
+            // Counts the pool a limited send draws from: users with an active push device.
+            var total = await BroadcastSelection.CandidateIds(_context, roles, false, reachableOnly: true).CountAsync(ct);
+            var remaining = await BroadcastSelection.CandidateIds(_context, roles, true, reachableOnly: true).CountAsync(ct);
+            return Response<object>.Success(new { totalUsers = total, reached = total - remaining, remaining }, "ok", 200);
+        }
 
         public async Task<Response<object>> DeleteNotificationsAsync(string userId, List<int> notificationIds, CancellationToken ct = default)
         {

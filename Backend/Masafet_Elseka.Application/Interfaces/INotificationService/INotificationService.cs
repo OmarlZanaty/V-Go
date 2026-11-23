@@ -16,7 +16,9 @@ namespace Masafet_Elseka.Application.Interfaces.INotificationService
        Task SendNotificationToUserAsync(string userId, string title, string body, Dictionary<string, string>? data = null, CancellationToken ct = default);
        Task SendNotificationToUserWithSavingAsync(string userId, string title, string body, Dictionary<string, string>? data = null, CancellationToken ct = default);
        // Dashboard broadcast. role: "Client", "Driver", or null for both. Returns the number of users reached.
-       Task<Response<object>> BroadcastAsync(string title, string body, string? role, CancellationToken ct = default);
+       // limit: when set, send only to that many users picked at random (onlyNew: among those never reached by a broadcast).
+       Task<Response<object>> BroadcastAsync(string title, string body, string? role, int? limit = null, bool onlyNew = true, CancellationToken ct = default);
+       Task<Response<object>> BroadcastStatsAsync(string? role, CancellationToken ct = default);
        Task<Response<object>> DeleteNotificationsAsync(string userId, List<int> notificationIds, CancellationToken ct = default);
        Task<Response<object>> MarkAsReadAsync(string userId, int notificationId, CancellationToken ct = default);
        Task<Response<object>> MarkAllAsReadAsync(string userId, CancellationToken ct = default);

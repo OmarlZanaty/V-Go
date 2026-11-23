@@ -881,6 +881,9 @@ namespace Masafet_Elseka.Infrastructure.Migrations
                         .HasColumnType("datetime2")
                         .HasDefaultValueSql("GETUTCDATE()");
 
+                    b.Property<bool>("IsBroadcast")
+                        .HasColumnType("bit");
+
                     b.Property<bool>("IsRead")
                         .HasColumnType("bit");
 
