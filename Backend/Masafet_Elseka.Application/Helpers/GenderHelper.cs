@@ -29,6 +29,19 @@
         }
 
         /// <summary>
+        /// Signup resolution. Riders may omit gender (old iOS build, App Review 5.1.1(v)): they get the
+        /// legacy default "Male" with confirmed=false so newer apps ask later. A supplied value must be
+        /// valid (error = true otherwise) and is confirmed. Captains must always supply a valid gender.
+        /// </summary>
+        public static (string Gender, bool Confirmed, bool Error) ResolveForSignup(string? value, bool isRider)
+        {
+            if (string.IsNullOrWhiteSpace(value))
+                return isRider ? (Male, false, false) : (Male, false, true);
+            var n = Normalize(value);
+            return n == null ? (Male, false, true) : (n, true, false);
+        }
+
+        /// <summary>
         /// Dispatch rule: a trip and a captain are compatible only when they have the same gender.
         /// An empty/unknown value is treated as "Male", which is what every legacy account was
         /// defaulted to, so old users keep working exactly as before.

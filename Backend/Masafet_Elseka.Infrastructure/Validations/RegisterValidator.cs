@@ -21,9 +21,12 @@ public class RegisterValidator : AbstractValidator<RegisterDTO>
             .Matches(@"^(?:\+201|01)[0125]\d{8}$").WithMessage("رقم الهاتف يجب أن يكون رقم مصري صحيح.")
             .MaximumLength(13).WithMessage("رقم الهاتف يجب ألا يزيد عن 13 رقم.");
 
+        // Riders (Client) may omit gender; if sent it must be valid. Every other role requires it.
         RuleFor(x => x.Gender)
-            .NotEmpty().WithMessage("النوع مطلوب.")
+            .NotEmpty().When(x => x.Role != "Client").WithMessage("النوع مطلوب.");
+        RuleFor(x => x.Gender)
             .Must(g => Masafet_Elseka.Application.Helpers.GenderHelper.Normalize(g) != null)
+            .When(x => !string.IsNullOrWhiteSpace(x.Gender))
             .WithMessage("النوع يجب أن يكون ذكر / أنثى أو Male / Female.");
 
         RuleFor(x => x.Role)

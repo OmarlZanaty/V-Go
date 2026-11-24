@@ -98,18 +98,20 @@ namespace Masafet_Elseka.Tests
         };
 
         [Theory]
-        [InlineData(null, false)]
-        [InlineData("", false)]
-        [InlineData("other", false)]
-        [InlineData("Male", true)]
-        [InlineData("female", true)]
-        [InlineData("أنثى", true)]
-        public void RegisterValidator_requires_a_valid_gender(string? gender, bool valid)
+        [InlineData(null, "Driver", false)]
+        [InlineData("", "Driver", false)]
+        [InlineData("other", "Driver", false)]
+        [InlineData("other", "Client", false)]
+        [InlineData(null, "Client", true)]   // riders may omit gender (old iOS app)
+        [InlineData("Male", "Client", true)]
+        [InlineData("female", "Driver", true)]
+        [InlineData("أنثى", "Client", true)]
+        public void RegisterValidator_requires_a_valid_gender(string? gender, string role, bool valid)
         {
             var dto = new RegisterDTO
             {
                 FullName = "Test User", Email = "t@example.com", Phone = "01012345678", Gender = gender,
-                Role = "Client", Password = "123456", ConfirmPassword = "123456",
+                Role = role, Password = "123456", ConfirmPassword = "123456",
             };
             var result = new RegisterValidator().Validate(dto);
             Assert.Equal(valid, !result.Errors.Any(e => e.PropertyName == nameof(RegisterDTO.Gender)));
